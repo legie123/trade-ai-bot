@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "weights": {
+    "volumeWeight": 0.26,
+    "liquidityWeight": 0.21,
+    "momentumWeight": 0.21,
+    "holderWeight": 0.16,
+    "socialWeight": 0.11,
+    "emaWeight": 0.05
+  },
+  "lastOptimizedAt": "2026-03-14T16:41:22.476Z",
+  "improvementPercent": 0,
+  "history": [
+    {
+      "date": "2026-03-14T16:41:22.477Z",
+      "weightChanges": {
+        "volumeWeight": {
+          "from": 0.25,
+          "to": 0.26
+        },
+        "liquidityWeight": {
+          "from": 0.2,
+          "to": 0.21
+        },
+        "momentumWeight": {
+          "from": 0.2,
+          "to": 0.21
+        },
+        "holderWeight": {
+          "from": 0.15,
+          "to": 0.16
+        },
+        "socialWeight": {
+          "from": 0.1,
+          "to": 0.11
+        },
+        "emaWeight": {
+          "from": 0.1,
+          "to": 0.05
+        }
+      },
+      "winRateBefore": 0,
+      "winRateAfter": 0
+    }
+  ]
+}

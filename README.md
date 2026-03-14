@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Crypto Deal Radar
 
-## Getting Started
+Real-time crypto monitoring dashboard with TradingView webhook integration.
 
-First, run the development server:
+## Quick Start
 
 ```bash
+# Install dependencies
+npm install
+
+# Copy env and add your API keys
+cp .env.example .env.local
+
+# Start dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) → redirects to `/crypto-radar`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## API Keys
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Add to `.env.local` (optional — dashboard works with free providers):
 
-## Learn More
+| Key | Required | Provider |
+|-----|----------|----------|
+| `BIRDEYE_API_KEY` | Optional | Birdeye token intelligence |
+| `RUGCHECK_API_KEY` | Optional | Bulk rugcheck reports |
+| `JUPITER_API_KEY` | Optional | Higher rate limits |
 
-To learn more about Next.js, take a look at the following resources:
+Free providers (no key needed): **DEX Screener**, **GeckoTerminal**, **Rugcheck** (public), **Pump** (composite)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API Endpoints
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tradingview` | `POST` | Receive TradingView webhook alerts |
+| `/api/tradingview` | `GET` | Get recent signals + stats |
+| `/api/tokens` | `GET` | Aggregated scored token list |
+| `/api/tokens/[address]` | `GET` | Single token detail |
+| `/api/health` | `GET` | Provider health status |
+| `/api/alerts` | `GET` | Evaluated live alerts |
 
-## Deploy on Vercel
+## TradingView Webhook
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Send POST to `/api/tradingview`:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```json
+{
+  "symbol": "SOL",
+  "signal": "BUY",
+  "timeframe": "15m",
+  "price": 148.55,
+  "message": "Optional message"
+}
+```
+
+Valid signals: `BUY`, `SELL`, `LONG`, `SHORT`, `ALERT`, `NEUTRAL`
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── crypto-radar/page.tsx   ← Main dashboard
+│   └── api/
+│       ├── tradingview/        ← Webhook endpoint
+│       ├── tokens/             ← Token aggregation
+│       ├── health/             ← Provider health
+│       └── alerts/             ← Alert evaluation
+├── lib/
+│   ├── providers/              ← 6 provider adapters
+│   ├── scoring/                ← Deal/Risk/Conviction engine
+│   ├── normalizers/            ← Per-provider → unified model
+│   ├── alerts/                 ← Alert rule evaluation
+│   ├── cache/                  ← TTL cache with freshness
+│   ├── store/                  ← Signal store (dedup)
+│   └── types/                  ← All TypeScript types
+```
+
+## Bot Preparation
+
+Schema ready in `src/lib/types/radar.ts` (BotRuleSet):
+- Entry/exit rules with signal types and confirmations
+- Stop loss, take profit, trailing stop
+- Position sizing, max positions, risk/reward ratio
+- **Not active** — infrastructure only, activate when ready
+
+## Provider Status
+
+| Provider | Status | Key Required |
+|----------|--------|-------------|
+| DEX Screener | ✅ Healthy | No |
+| Rugcheck | ✅ Healthy | No (public) |
+| GeckoTerminal | ✅ Healthy | No |
+| Pump (composite) | ✅ Healthy | No |
+| Birdeye | ⚠️ Needs key | Yes |
+| Jupiter | ⚠️ Needs key | Optional |

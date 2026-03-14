@@ -1,0 +1,28 @@
+[
+  {
+    "signalType": "BUY",
+    "source": "CryptoRadar Engine",
+    "totalTrades": 24,
+    "wins": 0,
+    "losses": 0,
+    "neutral": 24,
+    "winRate": 0,
+    "avgPnlPercent": -0.02,
+    "bestTrade": 0.17,
+    "worstTrade": -0.13,
+    "lastUpdated": "2026-03-14T16:41:26.879Z"
+  },
+  {
+    "signalType": "SELL",
+    "source": "CryptoRadar Engine",
+    "totalTrades": 2,
+    "wins": 0,
+    "losses": 0,
+    "neutral": 2,
+    "winRate": 0,
+    "avgPnlPercent": -0.15,
+    "bestTrade": 0,
+    "worstTrade": -0.16,
+    "lastUpdated": "2026-03-14T16:41:26.879Z"
+  }
+]

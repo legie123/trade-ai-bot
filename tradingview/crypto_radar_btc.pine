@@ -1,0 +1,123 @@
+// =============================================================
+// Crypto Radar — BTC Liquidity + EMA Signal Script
+// Based on Traders Reality concepts: Open/Close liquidity,
+// Psychological levels, and 50/200/800 EMA confluence
+// =============================================================
+// HOW TO USE:
+// 1. Add this script to TradingView on BTCUSDT (any timeframe)
+// 2. Create Alert → select this indicator
+// 3. Set Webhook URL: http://YOUR_SERVER/api/tradingview
+// 4. Signals auto-sent as JSON to your Crypto Radar dashboard
+// =============================================================
+
+//@version=6
+indicator("Crypto Radar — BTC Signals", overlay=true, max_labels_count=50)
+
+// ─── INPUTS ────────────────────────────────────────
+ema_fast   = input.int(50,  "Fast EMA",  minval=1)
+ema_mid    = input.int(200, "Mid EMA",   minval=1)
+ema_slow   = input.int(800, "Slow EMA",  minval=1)
+psych_round = input.int(1000, "Psych Level Rounding ($)", tooltip="Round number interval for psychological levels")
+show_labels = input.bool(true, "Show Signal Labels")
+
+// ─── EMAs ──────────────────────────────────────────
+ema50  = ta.ema(close, ema_fast)
+ema200 = ta.ema(close, ema_mid)
+ema800 = ta.ema(close, ema_slow)
+
+plot(ema50,  "EMA 50",  color=color.new(#3b82f6, 0), linewidth=1)
+plot(ema200, "EMA 200", color=color.new(#f59e0b, 0), linewidth=2)
+plot(ema800, "EMA 800", color=color.new(#ef4444, 0), linewidth=2)
+
+// ─── LIQUIDITY LEVELS (Open / Close) ───────────────
+// Daily Open & Close as key liquidity zones
+daily_open  = request.security(syminfo.tickerid, "D", open,  lookahead=barmerge.lookahead_on)
+daily_close = request.security(syminfo.tickerid, "D", close, lookahead=barmerge.lookahead_on)
+prev_high   = request.security(syminfo.tickerid, "D", high[1])
+prev_low    = request.security(syminfo.tickerid, "D", low[1])
+
+plot(daily_open,  "Daily Open",  color=color.new(#06b6d4, 40), style=plot.style_steplinebr, linewidth=1)
+plot(daily_close, "Daily Close", color=color.new(#8b5cf6, 40), style=plot.style_steplinebr, linewidth=1)
+
+// ─── PSYCHOLOGICAL LEVELS ──────────────────────────
+psych_high = math.ceil(high / psych_round) * psych_round
+psych_low  = math.floor(low / psych_round) * psych_round
+
+plot(psych_high, "Psych High", color=color.new(#10b981, 60), style=plot.style_circles, linewidth=1)
+plot(psych_low,  "Psych Low",  color=color.new(#ef4444, 60), style=plot.style_circles, linewidth=1)
+
+// ─── EMA CONFLUENCE DETECTION ──────────────────────
+// Price position relative to EMAs
+above_all = close > ema50 and close > ema200 and close > ema800
+below_all = close < ema50 and close < ema200 and close < ema800
+
+// EMA order (bullish stack: 50 > 200 > 800)
+ema_bullish_stack = ema50 > ema200 and ema200 > ema800
+ema_bearish_stack = ema50 < ema200 and ema200 < ema800
+
+// EMA crossovers
+cross_50_200_up   = ta.crossover(ema50, ema200)
+cross_50_200_down = ta.crossunder(ema50, ema200)
+cross_200_800_up  = ta.crossover(ema200, ema800)
+
+// ─── LIQUIDITY SIGNALS ─────────────────────────────
+// Sweep & reclaim at Daily Open (liquidity grab)
+sweep_open_bull = low < daily_open and close > daily_open and close > open
+sweep_open_bear = high > daily_open and close < daily_open and close < open
+
+// Bounce off psychological level
+bounce_psych_high = high >= psych_high and close < psych_high and close < open
+bounce_psych_low  = low <= psych_low and close > psych_low and close > open
+
+// Previous day high/low liquidity grab
+sweep_prev_high = high > prev_high and close < prev_high
+sweep_prev_low  = low < prev_low and close > prev_low
+
+// ─── COMPOSITE SIGNALS ────────────────────────────
+// BUY: liquidity grab at lows + EMA support
+sig_buy = (sweep_open_bull or bounce_psych_low or sweep_prev_low) and (close > ema50 or close > ema200)
+
+// SELL: liquidity grab at highs + EMA resistance
+sig_sell = (sweep_open_bear or bounce_psych_high or sweep_prev_high) and (close < ema50 or close < ema200)
+
+// LONG: strong bullish confirmation (EMA cross + above all)
+sig_long = cross_50_200_up and above_all and ema_bullish_stack
+
+// SHORT: strong bearish confirmation
+sig_short = cross_50_200_down and below_all and ema_bearish_stack
+
+// ─── LABELS ────────────────────────────────────────
+if show_labels and sig_buy
+    label.new(bar_index, low, "BUY", style=label.style_label_up, color=color.new(#10b981, 20), textcolor=color.white, size=size.small)
+
+if show_labels and sig_sell
+    label.new(bar_index, high, "SELL", style=label.style_label_down, color=color.new(#ef4444, 20), textcolor=color.white, size=size.small)
+
+if show_labels and sig_long
+    label.new(bar_index, low, "LONG", style=label.style_label_up, color=color.new(#3b82f6, 20), textcolor=color.white, size=size.small)
+
+if show_labels and sig_short
+    label.new(bar_index, high, "SHORT", style=label.style_label_down, color=color.new(#8b5cf6, 20), textcolor=color.white, size=size.small)
+
+// ─── EMA ZONE BACKGROUND ──────────────────────────
+bg_color = ema_bullish_stack ? color.new(#10b981, 95) : ema_bearish_stack ? color.new(#ef4444, 95) : na
+bgcolor(bg_color, title="EMA Stack Zone")
+
+// ─── ALERTS → WEBHOOK ──────────────────────────────
+// Each alert sends JSON to your Crypto Radar webhook
+// Webhook URL: http://YOUR_SERVER/api/tradingview
+
+alertcondition(sig_buy, title="BUY Signal",
+     message='{"symbol":"BTCUSDT","signal":"BUY","timeframe":"{{interval}}","price":{{close}},"message":"Liquidity grab + EMA support"}')
+
+alertcondition(sig_sell, title="SELL Signal",
+     message='{"symbol":"BTCUSDT","signal":"SELL","timeframe":"{{interval}}","price":{{close}},"message":"Liquidity rejection + EMA resistance"}')
+
+alertcondition(sig_long, title="LONG Signal",
+     message='{"symbol":"BTCUSDT","signal":"LONG","timeframe":"{{interval}}","price":{{close}},"message":"EMA 50/200 cross up + bullish stack"}')
+
+alertcondition(sig_short, title="SHORT Signal",
+     message='{"symbol":"BTCUSDT","signal":"SHORT","timeframe":"{{interval}}","price":{{close}},"message":"EMA 50/200 cross down + bearish stack"}')
+
+alertcondition(cross_200_800_up, title="Golden Cross 200/800",
+     message='{"symbol":"BTCUSDT","signal":"ALERT","timeframe":"{{interval}}","price":{{close}},"message":"Golden cross: EMA 200 crossed above EMA 800"}')

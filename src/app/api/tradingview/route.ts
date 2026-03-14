@@ -1,0 +1,73 @@
+// POST /api/tradingview — receive TradingView alerts → Signal Router
+import { NextRequest, NextResponse } from 'next/server';
+import { signalStore } from '@/lib/store/signalStore';
+import { Signal, TradingViewWebhook } from '@/lib/types/radar';
+import { routeSignal, normalizeSignalType } from '@/lib/router/signalRouter';
+
+export const dynamic = 'force-dynamic';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body: TradingViewWebhook = await request.json();
+
+    // Validate required fields
+    if (!body.symbol) {
+      console.warn('[Webhook] Rejected: missing symbol');
+      return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
+    }
+
+    // Build raw signal
+    const rawSignalText = body.signal || body.message || 'ALERT';
+    const normalized = normalizeSignalType(rawSignalText);
+
+    const signal: Signal = {
+      id: `sig_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      symbol: body.symbol.toUpperCase().trim(),
+      timeframe: body.timeframe || '—',
+      signal: normalized,
+      price: body.price || 0,
+      timestamp: body.timestamp || new Date().toISOString(),
+      source: 'TradingView',
+      message: body.message,
+    };
+
+    // Route through Signal Router
+    const routed = routeSignal(signal);
+
+    // Store the routed signal
+    const result = signalStore.addSignal(routed);
+
+    if (!result.added) {
+      console.log(`[Webhook] Skipped duplicate: ${routed.symbol} ${routed.signal}`);
+      return NextResponse.json({ status: 'skipped', reason: result.reason }, { status: 200 });
+    }
+
+    console.log(`[Webhook] ✓ Routed: ${routed.direction} ${routed.action} | ${routed.symbol} ${routed.signal} @ ${routed.price} | conf:${routed.confidence}%`);
+
+    return NextResponse.json({
+      status: 'received',
+      signal: {
+        id: routed.id,
+        symbol: routed.symbol,
+        signal: routed.signal,
+        direction: routed.direction,
+        action: routed.action,
+        confidence: routed.confidence,
+        price: routed.price,
+      },
+    });
+  } catch (err) {
+    console.error('[Webhook] Error:', err);
+    return NextResponse.json(
+      { error: 'Invalid webhook payload', detail: (err as Error).message },
+      { status: 400 }
+    );
+  }
+}
+
+// GET — return recent signals with routing data
+export async function GET() {
+  const signals = signalStore.getSignals(50);
+  const stats = signalStore.getStats();
+  return NextResponse.json({ signals, stats, timestamp: new Date().toISOString() });
+}

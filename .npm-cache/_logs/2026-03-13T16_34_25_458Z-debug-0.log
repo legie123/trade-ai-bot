@@ -1,0 +1,23 @@
+0 verbose cli /opt/homebrew/Cellar/node@22/22.22.1_1/bin/node /opt/homebrew/Cellar/node@22/22.22.1_1/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@10.9.4
+2 info using node@v22.22.1
+3 silly config load:file:/opt/homebrew/Cellar/node@22/22.22.1_1/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/user/Desktop/BUSSINES/Antigraity/.npmrc
+5 silly config load:file:/Users/user/.npmrc
+6 silly config load:file:/opt/homebrew/etc/npmrc
+7 verbose title npm exec create-next-app@latest ./ --typescript --eslint --app --src-dir --no-tailwind --import-alias @/* --use-npm --no-turbopack
+8 verbose argv "exec" "--yes" "--" "create-next-app@latest" "./" "--typescript" "--eslint" "--app" "--src-dir" "--no-tailwind" "--import-alias" "@/*" "--use-npm" "--no-turbopack"
+9 verbose logfile logs-max:10 dir:/Users/user/Desktop/BUSSINES/Antigraity/TRADE AI/.npm-cache/_logs/2026-03-13T16_34_25_458Z-
+10 verbose logfile /Users/user/Desktop/BUSSINES/Antigraity/TRADE AI/.npm-cache/_logs/2026-03-13T16_34_25_458Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 verbose shrinkwrap failed to load node_modules/.package-lock.json out of date, updated: node_modules
+14 http fetch GET 200 https://registry.npmjs.org/create-next-app 103ms (cache revalidated)
+15 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+16 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+17 verbose cwd /Users/user/Desktop/BUSSINES/Antigraity/TRADE AI
+18 verbose os Darwin 24.1.0
+19 verbose node v22.22.1
+20 verbose npm  v10.9.4
+21 verbose exit 1
+22 verbose code 1
