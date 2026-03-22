@@ -4,6 +4,9 @@
 // ============================================================
 import { getPendingDecisions, updateDecision, recalculatePerformance } from '@/lib/store/db';
 import { fetchWithRetry } from '@/lib/providers/base';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('TradeEvaluator');
 
 // ─── Fetch current BTC price ───────────────────────
 async function getCurrentPrice(symbol: string): Promise<number> {
@@ -77,50 +80,94 @@ export async function evaluatePendingDecisions(): Promise<{
   for (const decision of pending) {
     const ageMinutes = (now - new Date(decision.timestamp).getTime()) / 60000;
 
-    // Only evaluate decisions older than 60 minutes
-    if (ageMinutes < 60) continue;
-
     const currentPrice = await getCurrentPrice(decision.symbol);
     if (currentPrice === 0) continue;
 
-    // Fill in price-after fields based on age
+    // Calculate live PnL %
+    const changePercent = ((currentPrice - decision.price) / decision.price) * 100;
+    
+    // Trailing TP/SL levels (Dynamic Asset Segregation / Golden Configs from Grid Sweep)
+    let TAKE_PROFIT = 3.0; // Default
+    let STOP_LOSS = 0.5;   // Default (Sniper cut loss)
+
+    const symbol = decision.symbol.toUpperCase();
+    const volatileMemes = ['BONK', 'WIF', 'MEW', 'BOME', 'POPCAT', 'PEPE', 'SHIB', 'DOGE', 'FLOKI'];
+    const stableMajors = ['BTC', 'ETH', 'SOL'];
+
+    if (volatileMemes.includes(symbol)) {
+      TAKE_PROFIT = 5.0; // High Reward
+      STOP_LOSS = 1.5;   // Wide Room for volatility
+    } else if (stableMajors.includes(symbol)) {
+      TAKE_PROFIT = 3.0; // Stable Gain
+      STOP_LOSS = 0.5;   // Strict Sniper Stop-Loss
+    } else {
+      // Mid-caps (JTO, JUP, RAY, RNDR, PYTH etc)
+      TAKE_PROFIT = 4.0; 
+      STOP_LOSS = 1.0;   
+    }
+
+    let forcedOutcome: 'WIN' | 'LOSS' | null = null;
+    let forcedPnL = changePercent;
+
+    if (decision.signal === 'BUY' || decision.signal === 'LONG') {
+      // TP hit
+      if (changePercent >= TAKE_PROFIT) { forcedOutcome = 'WIN'; forcedPnL = TAKE_PROFIT; }
+      // SL hit
+      else if (changePercent <= -STOP_LOSS) { forcedOutcome = 'LOSS'; forcedPnL = -STOP_LOSS; }
+      // ATR-based Trailing Stop: activates at 2%+ profit after 30min
+      // Uses volatility-adaptive trail distance instead of fixed 50%
+      else if (changePercent >= 2.0 && ageMinutes >= 30) {
+        // ATR proxy: use absolute change as volatility measure
+        // More volatile → wider trail (less likely premature exit)
+        const atrProxy = Math.max(0.5, Math.abs(changePercent) * 0.3); // 30% of swing as ATR
+        const trailDistance = atrProxy * 1.5; // 1.5x ATR trailing distance
+        const trailLevel = changePercent - trailDistance;
+
+        // If price has retraced past the trail level, close with profit
+        if (trailLevel > 0 && changePercent < (changePercent * 0.7)) {
+          forcedOutcome = 'WIN';
+          forcedPnL = Math.max(trailLevel, changePercent * 0.5); // Min 50% of peak gains
+        }
+        // If holding strong above trail, check for extended target
+        else if (changePercent >= TAKE_PROFIT * 0.8 && ageMinutes >= 45) {
+          // Near TP after 45min — lock 70% of gains
+          forcedOutcome = 'WIN';
+          forcedPnL = changePercent * 0.7;
+        }
+      }
+    } else if (decision.signal === 'SELL' || decision.signal === 'SHORT') {
+      if (changePercent <= -TAKE_PROFIT) { forcedOutcome = 'WIN'; forcedPnL = TAKE_PROFIT; }
+      else if (changePercent >= STOP_LOSS) { forcedOutcome = 'LOSS'; forcedPnL = -STOP_LOSS; }
+    }
+
     const updates: Partial<typeof decision> = {};
 
-    if (ageMinutes >= 5 && decision.priceAfter5m === null) {
-      updates.priceAfter5m = currentPrice;
-    }
-    if (ageMinutes >= 15 && decision.priceAfter15m === null) {
-      updates.priceAfter15m = currentPrice;
-    }
-    if (ageMinutes >= 60 && decision.priceAfter1h === null) {
-      updates.priceAfter1h = currentPrice;
-    }
-    if (ageMinutes >= 240 && decision.priceAfter4h === null) {
-      updates.priceAfter4h = currentPrice;
-    }
-
-    // Evaluate after 1 hour
-    if (ageMinutes >= 60) {
-      const { outcome, pnlPercent } = evaluateOutcome(
-        decision.signal,
-        decision.price,
-        currentPrice
-      );
-
-      updates.outcome = outcome;
-      updates.pnlPercent = pnlPercent;
+    // If early TP/SL hit, OR 60 mins expired
+    if (forcedOutcome || ageMinutes >= 60) {
+      if (forcedOutcome) {
+        updates.outcome = forcedOutcome;
+        updates.pnlPercent = Math.round(forcedPnL * 100) / 100;
+      } else {
+        const { outcome, pnlPercent } = evaluateOutcome(decision.signal, decision.price, currentPrice);
+        updates.outcome = outcome;
+        updates.pnlPercent = pnlPercent;
+      }
       updates.evaluatedAt = new Date().toISOString();
 
       evaluated++;
-      if (outcome === 'WIN') wins++;
-      if (outcome === 'LOSS') losses++;
+      if (updates.outcome === 'WIN') wins++;
+      if (updates.outcome === 'LOSS') losses++;
 
-      console.log(
-        `[Evaluator] ${decision.signal} ${decision.symbol}: ${outcome} (${pnlPercent > 0 ? '+' : ''}${pnlPercent}%)`
-      );
+      log.info(`${decision.signal} ${decision.symbol}: ${updates.outcome} (${updates.pnlPercent > 0 ? '+' : ''}${updates.pnlPercent}%)`);
+    } else {
+      // Record interim journey
+      if (ageMinutes >= 5 && decision.priceAfter5m === null) updates.priceAfter5m = currentPrice;
+      if (ageMinutes >= 15 && decision.priceAfter15m === null) updates.priceAfter15m = currentPrice;
     }
 
-    updateDecision(decision.id, updates);
+    if (Object.keys(updates).length > 0) {
+      updateDecision(decision.id, updates);
+    }
   }
 
   // Recalculate performance stats

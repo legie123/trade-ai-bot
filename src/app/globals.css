@@ -492,3 +492,155 @@ input::placeholder {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
 }
+
+/* ============================================================
+   Mobile Responsive — Phone + Tablet optimizations
+   ============================================================ */
+
+/* Tablet (≤ 768px) */
+@media (max-width: 768px) {
+  .dashboard-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .header-left h1 { font-size: 18px; }
+
+  .nav-toggle {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-label { font-size: 9px; }
+  .stat-value { font-size: 16px; }
+
+  .card { margin-bottom: 12px; }
+  .card-header {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  /* Strategy bar */
+  .strategy-bar {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .strategy-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .strategy-actions button {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+
+  /* Tables — horizontal scroll */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  th, td {
+    font-size: 10px;
+    padding: 6px 8px;
+    white-space: nowrap;
+  }
+
+  /* Two-column layout → single column */
+  .dashboard-grid,
+  .two-column {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* TradingView chart */
+  .tradingview-widget-container {
+    height: 300px !important;
+  }
+
+  /* Equity chart */
+  .equity-chart svg {
+    height: 200px;
+  }
+}
+
+/* Phone (≤ 480px) */
+@media (max-width: 480px) {
+  body { padding: 8px; }
+
+  .dashboard-header {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .header-left h1 { font-size: 16px; }
+  .header-left span { font-size: 10px; }
+
+  .nav-toggle-btn {
+    font-size: 11px;
+    padding: 6px 12px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .stat-card { padding: 10px; }
+  .stat-value { font-size: 14px; }
+
+  .card { padding: 12px; border-radius: 8px; }
+  .card-title { font-size: 12px; }
+
+  /* Filter bar compact */
+  .filter-bar {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .filter-bar input,
+  .filter-bar select {
+    width: 100%;
+    font-size: 12px;
+  }
+
+  /* Buttons touch-friendly */
+  button {
+    min-height: 36px;
+    min-width: 36px;
+  }
+
+  /* Badges */
+  .badge, .badge-buy, .badge-sell {
+    font-size: 9px;
+    padding: 2px 6px;
+  }
+
+  /* Hide less important columns on small screens */
+  .hide-mobile { display: none; }
+}
+
+/* Small phone (≤ 360px) */
+@media (max-width: 360px) {
+  body { padding: 4px; }
+  .dashboard-header { padding: 8px; }
+  .header-left h1 { font-size: 14px; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .stat-card { padding: 8px; }
+  .nav-toggle { gap: 2px; }
+  .nav-toggle-btn { padding: 4px 8px; font-size: 10px; }
+}

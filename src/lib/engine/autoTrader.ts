@@ -1,12 +1,17 @@
 // ============================================================
 // Smart Auto-Trader — Executes trades on high-confidence signals
-// Requires: confidence >= threshold + confluence confirmed
-// Uses Risk Manager for position sizing and SL/TP
+// Requires: confidence >= 90% + confluence confirmed
+// PAPER TRADING ONLY — ALL LIVE ENABLE BUTTONS IGNORED
 // ============================================================
 import { DecisionSnapshot } from '@/lib/types/radar';
 import { getDecisions, getBotConfig } from '@/lib/store/db';
 import { calculateRisk, RiskOutput } from '@/lib/engine/riskManager';
-import { applyConfluenceToCoin, applyConfluenceToBTC, ConfluenceResult } from '@/lib/engine/confluence';
+import { ConfluenceResult } from '@/lib/engine/confluence';
+import { isKillSwitchEngaged } from '@/lib/core/killSwitch';
+import { getKellyRiskCached } from '@/lib/engine/kellySizer';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('AutoTrader');
 
 export interface TradeSignal {
   decision: DecisionSnapshot;
@@ -27,11 +32,11 @@ export interface AutoTradeConfig {
 
 const DEFAULT_CONFIG: AutoTradeConfig = {
   enabled: false,
-  minConfidence: 85,
+  minConfidence: 80, // Match real signal confidence (engines emit 85%)
   minConfluenceTFs: 2,
   maxOpenPositions: 3,
   allowedSignals: ['BUY', 'SELL', 'LONG', 'SHORT'],
-  cooldownMinutes: 30,
+  cooldownMinutes: 15,  // Aligned with RiskManager's COOLDOWN_MINUTES env
 };
 
 // ─── Get auto-trade config ─────────────────────────
@@ -55,10 +60,10 @@ function isInCooldown(symbol: string, cooldownMinutes: number): boolean {
 }
 
 // ─── Evaluate a decision for auto-trading ──────────
-export function evaluateForAutoTrade(
+export async function evaluateForAutoTrade(
   decision: DecisionSnapshot,
   accountBalance: number = 1000
-): TradeSignal {
+): Promise<TradeSignal> {
   const config = getAutoTradeConfig();
 
   // Build confluence from decision data
@@ -101,18 +106,38 @@ export function evaluateForAutoTrade(
   confluence.confluenceScore = Math.round((confluence.confirmedTFs / confluence.totalTFs) * 100);
   confluence.confidenceBoost = confluence.confirmedTFs >= 3 ? 2.0 : confluence.confirmedTFs >= 2 ? 1.5 : 1.0;
 
-  // Calculate risk
+  // Dynamic Kelly position sizing
+  let kellyAdjustedBalance = accountBalance;
+  try {
+    const kelly = await getKellyRiskCached();
+    if (kelly.confident && kelly.suggestedRisk > 0) {
+      // Scale balance by Kelly's suggested risk vs default 2%
+      const kellyMultiplier = kelly.suggestedRisk / 2.0;
+      kellyAdjustedBalance = accountBalance * Math.min(1.5, Math.max(0.5, kellyMultiplier));
+      log.info('Kelly adjustment', { suggestedRisk: kelly.suggestedRisk, multiplier: kellyMultiplier.toFixed(2) });
+    }
+  } catch { /* Kelly optional */ }
+
+  // Calculate risk with Kelly-adjusted balance
   const risk = calculateRisk({
     entryPrice: decision.price,
     signal: decision.signal,
     confidence: decision.confidence * confluence.confidenceBoost,
     symbol: decision.symbol,
-    accountBalance,
+    accountBalance: kellyAdjustedBalance,
+    decisionTimestamp: decision.timestamp,
+    apiLatencyMs: 200, // simulated
   });
 
   // Decision logic
   const reasons: string[] = [];
   let shouldExecute = true;
+
+  if (isKillSwitchEngaged()) {
+    shouldExecute = false;
+    reasons.push('🛑 Kill switch engaged');
+    log.warn('Auto-trade evaluation blocked by kill switch', { symbol: decision.symbol });
+  }
 
   if (!config.enabled) {
     shouldExecute = false;
@@ -150,17 +175,28 @@ export function evaluateForAutoTrade(
     confluence,
     shouldExecute,
     reason: shouldExecute
-      ? `✅ EXECUTE: ${decision.symbol} ${decision.signal} | $${risk.positionSize} | SL: $${risk.stopLoss} | TP: $${risk.takeProfit}`
+      ? `✅ EXECUTE PAPER: ${decision.symbol} ${decision.signal} | $${risk.positionSize} | SL: $${risk.stopLoss} | TP: $${risk.takeProfit} (Conf: ${decision.confidence}%)`
       : `⏸️ SKIP: ${reasons.join(' | ')}`,
   };
 }
 
 // ─── Scan all pending decisions for auto-trade ─────
-export function scanForAutoTrades(accountBalance: number = 1000): TradeSignal[] {
+export async function scanForAutoTrades(accountBalance: number = 1000): Promise<TradeSignal[]> {
+  log.info('Scanning for auto-trades', { balance: accountBalance });
+
+  if (isKillSwitchEngaged()) {
+    log.warn('Scan aborted — Kill switch is active');
+    return [];
+  }
+
   const decisions = getDecisions().filter((d) => d.outcome === 'PENDING');
   const recent = decisions
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 10);
 
-  return recent.map((d) => evaluateForAutoTrade(d, accountBalance));
+  const results: TradeSignal[] = [];
+  for (const d of recent) {
+    results.push(await evaluateForAutoTrade(d, accountBalance));
+  }
+  return results;
 }

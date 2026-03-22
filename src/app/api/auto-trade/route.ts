@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const config = getAutoTradeConfig();
-    const trades = scanForAutoTrades();
+    const trades = await scanForAutoTrades();
     const mlScores = scoreRecentSignals(5);
 
     return NextResponse.json({

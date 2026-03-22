@@ -1,37 +1,54 @@
 // ============================================================
-// Push Notifications — Desktop alerts for high-confidence signals
-// Uses the browser Notification API (no external service needed)
-// Exposed via API endpoint for server-side triggering
+// Push Notifications — Server-Sent Events (SSE) stream
+// Instantly pushes high-confidence signals to connected clients
 // ============================================================
 import { NextResponse } from 'next/server';
-import { getDecisions } from '@/lib/store/db';
+import { signalStore } from '@/lib/store/signalStore';
+import { RoutedSignal } from '@/lib/router/signalRouter';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/notifications — get pending high-confidence signals for notification
-export async function GET() {
-  try {
-    const decisions = getDecisions();
-    const recent = decisions.filter((d) => {
-      const age = Date.now() - new Date(d.timestamp).getTime();
-      return age < 5 * 60_000 && d.confidence >= 85; // last 5 min, >85% confidence
-    });
+export async function GET(req: Request) {
+  let interval: NodeJS.Timeout;
+  
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue('event: connected\ndata: ok\n\n');
 
-    return NextResponse.json({
-      status: 'ok',
-      alerts: recent.map((d) => ({
-        id: d.id,
-        symbol: d.symbol,
-        signal: d.signal,
-        direction: d.direction,
-        confidence: d.confidence,
-        price: d.price,
-        timestamp: d.timestamp,
-        source: d.source,
-      })),
-      count: recent.length,
-    });
-  } catch (err) {
-    return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });
-  }
+      let lastChecked = Date.now();
+
+      interval = setInterval(() => {
+        try {
+          // Check signal store for new signals > 85%
+          const signals = signalStore.getSignals(20);
+          const newSignals = signals.filter(s => {
+            const time = new Date(s.timestamp).getTime();
+            return time > lastChecked && (s as RoutedSignal).confidence >= 85; 
+          });
+
+          if (newSignals.length > 0) {
+            lastChecked = Date.now();
+            controller.enqueue(`event: signal\ndata: ${JSON.stringify({ alerts: newSignals })}\n\n`);
+          }
+        } catch {
+          // mute
+        }
+      }, 2000);
+
+      req.signal.addEventListener('abort', () => {
+        clearInterval(interval);
+      });
+    },
+    cancel() {
+      if (interval) clearInterval(interval);
+    }
+  });
+
+  return new NextResponse(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+    },
+  });
 }

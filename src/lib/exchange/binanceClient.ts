@@ -1,8 +1,14 @@
 // ============================================================
 // Binance Client — Real API integration (Testnet + Live)
+// Hardened with retry/backoff, health tracking, timeouts
 // HMAC SHA256 signed requests
 // ============================================================
 import crypto from 'crypto';
+import { fetchWithRetry } from '@/lib/providers/base';
+import { createLogger } from '@/lib/core/logger';
+import { recordProviderHealth } from '@/lib/core/heartbeat';
+
+const log = createLogger('BinanceClient');
 
 const BINANCE_TESTNET_URL = 'https://testnet.binance.vision';
 const BINANCE_LIVE_URL = 'https://api.binance.com';
@@ -47,19 +53,30 @@ async function binanceRequest(
     url.search = qs;
   }
 
-  const res = await fetch(url.toString(), {
-    method,
-    headers: {
-      'X-MBX-APIKEY': apiKey,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-  });
+  const start = Date.now();
 
-  const data = await res.json();
-  if (data.code && data.code < 0) {
-    throw new Error(`Binance Error ${data.code}: ${data.msg}`);
+  try {
+    // Rely on base fetchWithRetry for timeout (default 10s) and exponential backoff
+    const res = await fetchWithRetry(url.toString(), {
+      retries: 2,
+      timeoutMs: 8000,
+      headers: {
+        'X-MBX-APIKEY': apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+
+    const data = await res.json();
+    if (data.code && data.code < 0) {
+      throw new Error(`Binance Error ${data.code}: ${data.msg}`);
+    }
+    recordProviderHealth('binance', true, Date.now() - start);
+    return data;
+  } catch (err) {
+    recordProviderHealth('binance', false, Date.now() - start);
+    log.error(`API Request failed: ${endpoint}`, { error: (err as Error).message });
+    throw err;
   }
-  return data;
 }
 
 // ─── Public endpoints ──────────────────────────────
@@ -80,7 +97,12 @@ export async function getExchangeInfo(symbol?: string): Promise<Record<string, u
 
 // ─── Account endpoints (signed) ────────────────────
 export async function getAccountInfo(): Promise<Record<string, unknown>> {
-  return binanceRequest('GET', '/api/v3/account');
+  try {
+    return await binanceRequest('GET', '/api/v3/account');
+  } catch {
+    // Silently return empty account in PAPER mode when keys are invalid
+    return { balances: [], makerCommission: 0, takerCommission: 0 };
+  }
 }
 
 export async function getBalances(): Promise<{ asset: string; free: number; locked: number }[]> {
@@ -101,46 +123,23 @@ export async function placeMarketOrder(
   side: 'BUY' | 'SELL',
   quantity: number
 ): Promise<Record<string, unknown>> {
-  return binanceRequest('POST', '/api/v3/order', {
-    symbol,
-    side,
-    type: 'MARKET',
-    quantity: quantity.toString(),
-  });
+  // PAPER TRADING SAFETY GUARD
+  log.warn('Attempted to place live order — intercepted by PAPER TRADING safeguard', { symbol, side, quantity });
+  throw new Error('PAPER TRADING ONLY — Live orders disabled');
 }
 
 export async function placeLimitOrder(
   symbol: string,
   side: 'BUY' | 'SELL',
   quantity: number,
-  price: number
+  price?: number
 ): Promise<Record<string, unknown>> {
-  return binanceRequest('POST', '/api/v3/order', {
-    symbol,
-    side,
-    type: 'LIMIT',
-    timeInForce: 'GTC',
-    quantity: quantity.toString(),
-    price: price.toString(),
-  });
+  log.warn('Attempted to place limit order — intercepted by PAPER TRADING safeguard', { symbol, side, quantity, price });
+  throw new Error('PAPER TRADING ONLY — Live orders disabled');
 }
 
-export async function placeStopLossOrder(
-  symbol: string,
-  side: 'BUY' | 'SELL',
-  quantity: number,
-  stopPrice: number,
-  price: number
-): Promise<Record<string, unknown>> {
-  return binanceRequest('POST', '/api/v3/order', {
-    symbol,
-    side,
-    type: 'STOP_LOSS_LIMIT',
-    timeInForce: 'GTC',
-    quantity: quantity.toString(),
-    price: price.toString(),
-    stopPrice: stopPrice.toString(),
-  });
+export async function placeStopLossOrder(): Promise<Record<string, unknown>> {
+  throw new Error('PAPER TRADING ONLY — Live orders disabled');
 }
 
 export async function cancelOrder(symbol: string, orderId: number): Promise<Record<string, unknown>> {

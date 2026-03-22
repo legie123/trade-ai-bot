@@ -4,7 +4,6 @@
 import { NormalizedToken } from '@/lib/types';
 import { calculateDealScore } from './dealScore';
 import { calculateRiskScore } from './riskScore';
-import { calculateConvictionScore } from './convictionScore';
 
 /**
  * Score a single token with all three calculators.
@@ -13,7 +12,9 @@ export function scoreToken(token: NormalizedToken): NormalizedToken {
   const dealScore = calculateDealScore(token);
   const riskScore = calculateRiskScore(token);
   const scored = { ...token, dealScore, riskScore };
-  const convictionScore = calculateConvictionScore(scored);
+
+  // Conviction score from deal/risk combo (conviction engine used separately in trading pipeline)
+  const convictionScore = Math.max(0, Math.min(100, Math.round(dealScore - riskScore + 50)));
 
   // Set risk level
   let rugRisk = token.rugRisk;

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { Signal, DashboardStats, RadarFilters } from '@/lib/types/radar';
 
 // ============================================================
@@ -19,7 +20,15 @@ interface TokenRow {
   exchange: string;
 }
 
-const POLL_INTERVAL = 10_000; // 10 seconds
+interface LogDecision {
+  id: string;
+  timestamp: string;
+  symbol: string;
+  signal: string;
+  outcome?: string;
+}
+
+const POLL_INTERVAL = 30_000; // 30 seconds (cost-optimized)
 
 interface BTCData {
   price: number;
@@ -63,6 +72,11 @@ export default function CryptoRadarPage() {
     minMarketCap: '',
     minChange: '',
   });
+  const [decisions, setDecisions] = useState<LogDecision[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [indicators, setIndicators] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [equity, setEquity] = useState<any>(null);
 
   // ---- Fetch signals from webhook endpoint ----
   const fetchSignals = useCallback(async () => {
@@ -71,11 +85,21 @@ export default function CryptoRadarPage() {
       if (res.ok) {
         const data = await res.json();
         setSignals(data.signals || []);
-        setStats(data.stats || stats);
+        setStats(s => data.stats || s);
       }
     } catch (e) {
       console.warn('Signal fetch error:', e);
     }
+  }, []);
+
+  const fetchDecisions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/bot');
+      if (res.ok) {
+        const data = await res.json();
+        setDecisions(data.decisions?.slice(0, 5) || []);
+      }
+    } catch {}
   }, []);
 
   // ---- Fetch BTC engine analysis ----
@@ -135,14 +159,27 @@ export default function CryptoRadarPage() {
     }
   }, []);
 
+  const fetchIndicators = useCallback(async () => {
+    try {
+      const res = await fetch('/api/indicators');
+      if (res.ok) setIndicators(await res.json());
+    } catch { /* optional */ }
+  }, []);
+
+  const fetchEquity = useCallback(async () => {
+    try {
+      const res = await fetch('/api/equity');
+      if (res.ok) setEquity(await res.json());
+    } catch { /* optional */ }
+  }, []);
+
   // ---- Initial + polling ----
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      // BTC engine first (pushes signals to store), then fetch them
-      await Promise.all([fetchBTC(), fetchTokens()]);
+      await Promise.all([fetchBTC(), fetchTokens(), fetchIndicators(), fetchEquity()]);
       await fetchSignals();
-      // Solana engine (delayed to avoid CoinGecko rate limit)
+      await fetchDecisions();
       setTimeout(() => fetchSolana(), 3000);
       setLastSync(new Date().toLocaleTimeString());
       setLoading(false);
@@ -151,13 +188,16 @@ export default function CryptoRadarPage() {
     const interval = setInterval(() => {
       fetchSignals();
       fetchTokens();
+      fetchDecisions();
+      fetchIndicators();
+      fetchEquity();
       setLastSync(new Date().toLocaleTimeString());
     }, POLL_INTERVAL);
     // BTC engine every 60s, Solana engine every 90s (offset to respect rate limits)
     const btcInterval = setInterval(() => { fetchBTC(); }, 60_000);
     const solInterval = setInterval(() => { fetchSolana(); }, 180_000);
     return () => { clearInterval(interval); clearInterval(btcInterval); clearInterval(solInterval); };
-  }, [fetchSignals, fetchTokens, fetchBTC, fetchSolana]);
+  }, [fetchSignals, fetchTokens, fetchBTC, fetchSolana, fetchDecisions, fetchIndicators, fetchEquity]);
 
   // ---- Filter tokens ----
   const filtered = tokens.filter((t) => {
@@ -191,16 +231,16 @@ export default function CryptoRadarPage() {
         </div>
         <div className="top-bar-right">
           <nav className="nav-toggle">
-            <a href="/bot-center" className="nav-toggle-item">
+            <Link href="/bot-center" className="nav-toggle-item">
               <span className="nav-dot" />
               <span className="nav-toggle-icon">🤖</span>
               <span className="nav-toggle-label">Bot</span>
-            </a>
-            <a href="/crypto-radar" className="nav-toggle-item active">
+            </Link>
+            <Link href="/crypto-radar" className="nav-toggle-item active">
               <span className="nav-dot" />
               <span className="nav-toggle-icon">📡</span>
               <span className="nav-toggle-label">Radar</span>
-            </a>
+            </Link>
           </nav>
           <button className="btn" onClick={handleRefresh}>↻</button>
         </div>
@@ -232,6 +272,122 @@ export default function CryptoRadarPage() {
         </div>
       </div>
 
+      {/* ---- Market Intelligence Panel ---- */}
+      {indicators && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <span className="card-title">🧠 Market Intelligence</span>
+            <span className={`badge ${indicators.regime === 'BULL_TREND' ? 'badge-green' : indicators.regime === 'BEAR_TREND' ? 'badge-red' : 'badge-amber'}`}>
+              {indicators.regime?.replace('_', ' ')}
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+            <div className="stat-card">
+              <span className="stat-label">Fear & Greed</span>
+              <span className={`stat-value ${indicators.fearGreed?.value <= 25 ? 'text-red' : indicators.fearGreed?.value >= 75 ? 'text-green' : 'text-amber'}`} style={{ fontSize: 22 }}>
+                {indicators.fearGreed?.value}
+              </span>
+              <span className="stat-sub" style={{ fontSize: 10 }}>{indicators.fearGreed?.label}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">RSI (14)</span>
+              <span className={`stat-value ${indicators.rsi?.value <= 30 ? 'text-red' : indicators.rsi?.value >= 70 ? 'text-green' : 'text-blue'}`} style={{ fontSize: 22 }}>
+                {indicators.rsi?.value}
+              </span>
+              <span className="stat-sub" style={{ fontSize: 10 }}>{indicators.rsi?.zone}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">VWAP</span>
+              <span className="stat-sub text-blue">${indicators.vwap?.value?.toLocaleString()}</span>
+              <span className="stat-sub" style={{ fontSize: 10 }}>
+                Vol {indicators.vwap?.volumeRatio}x {indicators.vwap?.volumeSurge ? '🔥' : ''}
+              </span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">BB Upper</span>
+              <span className="stat-sub text-green">${indicators.bollingerBands?.upper?.toLocaleString()}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">BB Middle</span>
+              <span className="stat-sub">${indicators.bollingerBands?.middle?.toLocaleString()}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">BB Lower</span>
+              <span className="stat-sub text-red">${indicators.bollingerBands?.lower?.toLocaleString()}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">%B Position</span>
+              <span className="stat-sub">{(indicators.bollingerBands?.percentB * 100)?.toFixed(1)}%</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Kelly Risk</span>
+              <span className="stat-sub text-amber">{indicators.kelly?.suggestedRisk}%</span>
+              <span className="stat-sub" style={{ fontSize: 10 }}>{indicators.kelly?.confident ? 'Confident' : `${indicators.kelly?.sampleSize} trades`}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Equity Curve Card ---- */}
+      {equity && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <span className="card-title">💰 Portfolio & Equity Curve</span>
+            <span className={`badge ${equity.totalReturn >= 0 ? 'badge-green' : 'badge-red'}`}>
+              {equity.totalReturn >= 0 ? '+' : ''}{equity.totalReturn}%
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+            <div className="stat-card">
+              <span className="stat-label">Balance</span>
+              <span className="stat-value text-green" style={{ fontSize: 20 }}>${equity.currentBalance?.toLocaleString()}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Peak</span>
+              <span className="stat-sub text-blue">${equity.peakBalance?.toLocaleString()}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Max Drawdown</span>
+              <span className="stat-sub text-red">{equity.maxDrawdown}%</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Win Rate</span>
+              <span className="stat-sub text-amber">{equity.winRate}%</span>
+              <span className="stat-sub" style={{ fontSize: 10 }}>{equity.wins}W / {equity.losses}L</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Profit Factor</span>
+              <span className="stat-sub">{equity.profitFactor || '—'}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Best Streak</span>
+              <span className="stat-sub text-green">{equity.maxWinStreak}W</span>
+              <span className="stat-sub text-red" style={{ fontSize: 10 }}>{equity.maxLossStreak}L worst</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Total Trades</span>
+              <span className="stat-sub">{equity.totalTrades}</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Pending</span>
+              <span className="stat-sub text-amber">{equity.pendingTrades}</span>
+            </div>
+          </div>
+          {/* Mini equity bar chart */}
+          {equity.curve && equity.curve.length > 1 && (
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-end', gap: 2, height: 60, padding: '0 4px' }}>
+              {equity.curve.slice(-30).map((point: { date: string; balance: number }, i: number) => {
+                const min = Math.min(...equity.curve.slice(-30).map((p: { balance: number }) => p.balance));
+                const max = Math.max(...equity.curve.slice(-30).map((p: { balance: number }) => p.balance));
+                const range = max - min || 1;
+                const height = Math.max(4, ((point.balance - min) / range) * 56);
+                const color = point.balance >= 1000 ? 'var(--color-green)' : 'var(--color-red)';
+                return <div key={i} title={`${point.date}: $${point.balance}`} style={{ flex: 1, height, background: color, borderRadius: 2, opacity: 0.8, minWidth: 4 }} />;
+              })}
+            </div>
+          )}
+        </div>
+      )}
       {/* ---- BTC Engine Card ---- */}
       {btcData && (
         <div className="card" style={{ marginBottom: 16 }}>
@@ -544,17 +700,42 @@ export default function CryptoRadarPage() {
         <div className="card">
           <div className="card-header">
             <span className="card-title">📒 Trade Log</span>
-            <span className="badge badge-info">Bot: Standby</span>
+            <span className="badge badge-info">{decisions.length > 0 ? 'Active' : 'Standby'}</span>
           </div>
           <div className="table-wrap">
-            <div className="empty-state">
-              <div className="empty-state-icon">🤖</div>
-              Bot infrastructure ready — trading not activated
-              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
-                Entry/exit rules, SL/TP, and position sizing schemas are prepared.
-                <br />Activate when ready.
+            {decisions.length > 0 ? (
+              <table>
+                <thead>
+                  <tr><th>Time</th><th>Symbol</th><th>Signal</th><th>Outcome</th></tr>
+                </thead>
+                <tbody>
+                  {decisions.map(d => (
+                    <tr key={d.id}>
+                      <td>{formatTime(d.timestamp)}</td>
+                      <td style={{fontWeight: 600}}>{d.symbol}</td>
+                      <td><span className={`badge ${getSignalBadge(d.signal)}`}>{d.signal}</span></td>
+                      <td>
+                        <span style={{ 
+                          color: d.outcome === 'WIN' ? 'var(--accent-green)' : 
+                                 d.outcome === 'LOSS' ? 'var(--accent-red)' : 'var(--text-muted)'
+                        }}>
+                          {d.outcome || 'PENDING'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-state-icon">🤖</div>
+                Bot infrastructure ready — trading not activated
+                <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                  Entry/exit rules, SL/TP, and position sizing schemas are prepared.
+                  <br />Activate when ready.
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -570,7 +751,8 @@ export default function CryptoRadarPage() {
       }}>
         CryptoRadar v1.0 — Webhook: <code style={{ color: 'var(--accent-cyan)' }}>/api/tradingview</code> •
         Health: <code style={{ color: 'var(--accent-cyan)' }}>/api/health</code> •
-        Tokens: <code style={{ color: 'var(--accent-cyan)' }}>/api/tokens</code>
+        Tokens: <code style={{ color: 'var(--accent-cyan)' }}>/api/tokens</code> •
+        Last Sync: {lastSync}
       </footer>
     </div>
   );

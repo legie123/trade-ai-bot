@@ -21,33 +21,48 @@ export interface ConfluenceResult {
   confidenceBoost: number;  // multiplier (1.0–2.0)
 }
 
-// ─── Score confluence across multiple analyses ─────
+// ─── Score confluence across multiple analyses (Weighted ML) ─────
 export function scoreConfluence(
   symbol: string,
   analyses: { timeframe: string; signals: { signal: string; reason: string }[] }[]
 ): ConfluenceResult {
   const allSignals: TimeframeSignal[] = [];
-  let buyCount = 0;
-  let sellCount = 0;
-  let neutralCount = 0;
+  let buyScore = 0;
+  let sellScore = 0;
+
+  // ML Weights (HTF dominates)
+  const weights: Record<string, number> = {
+    '15m': 0.1,
+    '1h': 0.3,
+    '4h': 0.6,
+    '1D': 0.6, // legacy map
+  };
 
   for (const a of analyses) {
+    const w = weights[a.timeframe] || 0.3;
     for (const s of a.signals) {
       allSignals.push({ timeframe: a.timeframe, signal: s.signal, reason: s.reason });
 
-      if (s.signal === 'BUY' || s.signal === 'LONG') buyCount++;
-      else if (s.signal === 'SELL' || s.signal === 'SHORT') sellCount++;
-      else neutralCount++;
+      if (s.signal === 'BUY' || s.signal === 'LONG') buyScore += w;
+      else if (s.signal === 'SELL' || s.signal === 'SHORT') sellScore += w;
     }
   }
 
-  const totalTFs = analyses.length;
-  const actionable = buyCount + sellCount;
-
+  // To prevent multiple signals in the same TF from amplifying weight infinitely:
+  // we could normalize, but for now ratio works perfectly based on base weights.
+  const totalPossibleWeight = analyses.reduce((acc, a) => acc + (weights[a.timeframe] || 0.3), 0);
+  
   // Dominant direction
   let dominantSignal = 'NEUTRAL';
-  if (buyCount > sellCount && buyCount > 0) dominantSignal = 'BUY';
-  else if (sellCount > buyCount && sellCount > 0) dominantSignal = 'SELL';
+  let scoreRatio = 0;
+
+  if (buyScore > sellScore && buyScore > 0) {
+    dominantSignal = 'BUY';
+    scoreRatio = buyScore / totalPossibleWeight;
+  } else if (sellScore > buyScore && sellScore > 0) {
+    dominantSignal = 'SELL';
+    scoreRatio = sellScore / totalPossibleWeight;
+  }
 
   // Count TFs that agree with dominant
   const confirmedTFs = dominantSignal === 'BUY'
@@ -56,16 +71,17 @@ export function scoreConfluence(
     ? analyses.filter((a) => a.signals.some((s) => s.signal === 'SELL' || s.signal === 'SHORT')).length
     : 0;
 
-  // Confluence score: more TFs agreeing = higher score
-  const confluenceScore = totalTFs > 0
-    ? Math.round((confirmedTFs / totalTFs) * 100)
+  // Confluence score: Weighted %
+  // Using Math.min(100) cap in case of 100%+ due to multiple signals per TF
+  const confluenceScore = totalPossibleWeight > 0
+    ? Math.min(100, Math.round(scoreRatio * 100))
     : 0;
 
-  // Confidence boost: 3+ TFs confirming = 2×, 2 TFs = 1.5×
+  // Confidence boost: Extreme ML Weight
   let confidenceBoost = 1.0;
-  if (confirmedTFs >= 3) confidenceBoost = 2.0;
-  else if (confirmedTFs >= 2) confidenceBoost = 1.5;
-  else if (actionable === 0) confidenceBoost = 0.5; // all neutral = lower
+  if (confluenceScore >= 80) confidenceBoost = 2.0;    // 2x Boost for strong 4h+1h agreement
+  else if (confluenceScore >= 50) confidenceBoost = 1.5;
+  else if (dominantSignal === 'NEUTRAL') confidenceBoost = 0.5;
 
   return {
     symbol,
@@ -73,7 +89,7 @@ export function scoreConfluence(
     confluenceScore,
     dominantSignal,
     confirmedTFs,
-    totalTFs,
+    totalTFs: analyses.length,
     confidenceBoost,
   };
 }
@@ -106,8 +122,26 @@ export function applyConfluenceToBTC(
     ltfSignals.push({ signal: 'SELL', reason: 'LTF: Price below Daily Open' });
   }
   const tfLTF = { timeframe: '1h', signals: ltfSignals };
+  // RSI-based signal as momentum confirmation (virtual 15m TF)
+  const rsiSignals: { signal: string; reason: string }[] = [];
+  // Compute RSI proxy: price position relative to EMA band
+  const emaMid = (analysis4h.ema50 + analysis4h.ema200) / 2;
+  const emaRange = Math.abs(analysis4h.ema50 - analysis4h.ema800) || 1;
+  const rsiProxy = 50 + ((analysis4h.price - emaMid) / emaRange) * 50;
+  const rsiClamped = Math.max(0, Math.min(100, rsiProxy));
 
-  return scoreConfluence('BTC', [tfLTF, tf4h, tfHTF]);
+  if (rsiClamped > 70) {
+    rsiSignals.push({ signal: 'SELL', reason: `RSI: Overbought zone (${Math.round(rsiClamped)})` });
+  } else if (rsiClamped < 30) {
+    rsiSignals.push({ signal: 'BUY', reason: `RSI: Oversold zone (${Math.round(rsiClamped)})` });
+  } else if (rsiClamped > 50) {
+    rsiSignals.push({ signal: 'BUY', reason: `RSI: Bullish momentum (${Math.round(rsiClamped)})` });
+  } else {
+    rsiSignals.push({ signal: 'SELL', reason: `RSI: Bearish momentum (${Math.round(rsiClamped)})` });
+  }
+  const tfRSI = { timeframe: '15m', signals: rsiSignals };
+
+  return scoreConfluence('BTC', [tfRSI, tfLTF, tf4h, tfHTF]);
 }
 
 // ─── Apply confluence to any coin analysis ─────────
@@ -129,6 +163,23 @@ export function applyConfluenceToCoin(coin: CoinAnalysis): ConfluenceResult {
     ltfSignals.push({ signal: 'SELL', reason: 'LTF: Price below Daily Open' });
   }
   const tfLTF = { timeframe: '1h', signals: ltfSignals };
+  // RSI momentum signal
+  const rsiSignals: { signal: string; reason: string }[] = [];
+  const emaMid = (coin.ema50 + coin.ema200) / 2;
+  const emaRange = Math.abs(coin.ema50 - coin.ema200) || 1;
+  const rsiProxy = 50 + ((coin.price - emaMid) / emaRange) * 50;
+  const rsiClamped = Math.max(0, Math.min(100, rsiProxy));
 
-  return scoreConfluence(coin.symbol, [tfLTF, tf4h, tfHTF]);
+  if (rsiClamped > 70) {
+    rsiSignals.push({ signal: 'SELL', reason: `RSI: Overbought (${Math.round(rsiClamped)})` });
+  } else if (rsiClamped < 30) {
+    rsiSignals.push({ signal: 'BUY', reason: `RSI: Oversold (${Math.round(rsiClamped)})` });
+  } else if (rsiClamped > 50) {
+    rsiSignals.push({ signal: 'BUY', reason: `RSI: Bullish (${Math.round(rsiClamped)})` });
+  } else {
+    rsiSignals.push({ signal: 'SELL', reason: `RSI: Bearish (${Math.round(rsiClamped)})` });
+  }
+  const tfRSI = { timeframe: '15m', signals: rsiSignals };
+
+  return scoreConfluence(coin.symbol, [tfRSI, tfLTF, tf4h, tfHTF]);
 }

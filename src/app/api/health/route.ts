@@ -1,50 +1,84 @@
-// GET /api/health — comprehensive system health check
+// GET /api/health — production-resilient health check
 import { NextResponse } from 'next/server';
-import { getAllProviderHealth } from '@/lib/providers/providerManager';
+import { getWatchdogState } from '@/lib/core/watchdog';
+import { getHealthSnapshot } from '@/lib/core/heartbeat';
+import { isKillSwitchEngaged, getKillSwitchState } from '@/lib/core/killSwitch';
+import { startAutoScan } from '@/lib/engine/autoScan';
+import { getAggregatorStats } from '@/lib/engine/signalAggregator';
+import { getExecutionLog } from '@/lib/engine/executor';
 import { getDecisions } from '@/lib/store/db';
 import { testConnection } from '@/lib/exchange/binanceClient';
-import { getExecutionLog } from '@/lib/engine/executor';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const providers = await getAllProviderHealth();
-    const allHealthy = providers.every((p) => p.status === 'healthy');
-    const decisions = getDecisions();
-    const execLog = getExecutionLog();
+    // Auto-start scanning loop on first health check if dead
+    const watchdog = getWatchdogState();
+    if (!watchdog.alive && watchdog.status !== 'HEALTHY') {
+      startAutoScan();
+    }
 
-    // Binance status
+    const heartbeat = getHealthSnapshot();
+    const hs = heartbeat?.status || 'YELLOW';
+    
+    // Test Binance Connection
     let binanceOk = false;
     let binanceMode = 'UNKNOWN';
+    let binanceLatency = 0;
     try {
+      const start = Date.now();
       const conn = await testConnection();
+      binanceLatency = Date.now() - start;
       binanceOk = conn.ok;
       binanceMode = conn.mode;
     } catch { /* */ }
 
-    // System metrics
-    const uptime = process.uptime();
-    const mem = process.memoryUsage();
-    const pending = decisions.filter(d => d.outcome === 'PENDING').length;
+    // Aggregate stats
+    const agg = getAggregatorStats();
+    const execLog = getExecutionLog();
+    const decisions = getDecisions();
     const today = new Date().toISOString().slice(0, 10);
     const todayDecisions = decisions.filter(d => d.timestamp.startsWith(today)).length;
-    const executedToday = execLog.filter(r => r.executed).length;
+    const executedToday = execLog.filter(r => r.executed && r.timestamp?.startsWith(today)).length;
+
+    // Overall Status
+    const killSwitch = getKillSwitchState();
+    const isRed = hs === 'RED' || !binanceOk || isKillSwitchEngaged();
+    const isYellow = hs === 'YELLOW' || watchdog.status === 'WARNING';
+    const overallStatus = isRed ? 'DEGRADED' : isYellow ? 'WARNING' : 'HEALTHY';
 
     return NextResponse.json({
-      status: allHealthy && binanceOk ? 'healthy' : 'degraded',
-      version: '5.0.0',
-      uptime: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`,
-      autoTrading: process.env.AUTO_TRADE_ENABLED === 'true',
-      binance: { ok: binanceOk, mode: binanceMode },
-      telegram: { configured: !!process.env.TELEGRAM_BOT_TOKEN },
-      decisions: { total: decisions.length, pending, today: todayDecisions },
-      execution: { totalOrders: execLog.filter(r => r.executed).length, todayOrders: executedToday, errors: execLog.filter(r => r.error).length },
-      memory: { rss: `${Math.round(mem.rss / 1048576)}MB`, heap: `${Math.round(mem.heapUsed / 1048576)}MB` },
-      providers,
+      status: overallStatus,
+      version: '6.0.0 (Hardened)',
+      systemMode: 'PAPER_ONLY', // New standard for execution
+      uptimeSecs: process.uptime(),
+      
+      coreMonitor: {
+        heartbeat: heartbeat?.status || 'UNKNOWN',
+        watchdog: watchdog.status,
+        killSwitch: killSwitch.engaged ? `LOCKED: ${killSwitch.reason}` : 'SAFE',
+      },
+
+      trading: {
+        autoSelectEnabled: process.env.AUTO_TRADE_ENABLED === 'true',
+        totalSignalsReady: agg.total,
+        decisionsToday: todayDecisions,
+        paperFillsToday: executedToday,
+        openPositions: agg.pendingCount,
+      },
+
+      api: {
+        binance: { ok: binanceOk, mode: binanceMode, latencyMs: binanceLatency },
+        dexScreener: heartbeat?.providers['dexscreener'] || { ok: false },
+        coinGecko: heartbeat?.providers['coingecko'] || { ok: false }, // implicitly part of engine fallback
+      },
+
+      memoryTracker: heartbeat?.memory || {},
+      
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });
+    return NextResponse.json({ status: 'ERROR', error: (err as Error).message }, { status: 500 });
   }
 }

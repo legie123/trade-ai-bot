@@ -3,6 +3,30 @@
 // ============================================================
 import { getDecisions, getBotConfig } from '@/lib/store/db';
 
+
+// Price cache: avoid hammering APIs — 30s TTL per symbol
+const gp = globalThis as unknown as { __priceCache?: Map<string, { price: number; at: number }> };
+if (!gp.__priceCache) gp.__priceCache = new Map();
+const priceCache = gp.__priceCache;
+const PRICE_CACHE_TTL = 30_000;
+
+async function getLivePrice(symbol: string): Promise<number | null> {
+  // Check cache first
+  const cached = priceCache.get(symbol);
+  if (cached && Date.now() - cached.at < PRICE_CACHE_TTL) {
+    return cached.price;
+  }
+
+  try {
+    const { getResilientPrice } = await import('@/lib/core/apiFallback');
+    const result = await getResilientPrice(symbol);
+    priceCache.set(symbol, { price: result.price, at: Date.now() });
+    return result.price;
+  } catch {
+    return null;
+  }
+}
+
 export interface PortfolioPosition {
   symbol: string;
   side: string;
@@ -44,7 +68,7 @@ function getDuration(ts: string): string {
   return `${Math.floor(ms / 86400_000)}d`;
 }
 
-export function getPortfolio(): PortfolioSummary {
+export async function getPortfolio(): Promise<PortfolioSummary> {
   const config = getBotConfig();
   const paperBalance = (config as { paperBalance?: number }).paperBalance || 1000;
   const decisions = getDecisions();
@@ -63,12 +87,21 @@ export function getPortfolio(): PortfolioSummary {
   const riskPerTrade = (config as { riskPerTrade?: number }).riskPerTrade || 2;
   const tradeSize = paperBalance * (riskPerTrade / 100);
 
+  // Fetch live prices for top 5 positions (limit API calls)
+  const symbols = Object.keys(posMap).slice(0, 5);
+  const livePrices: Record<string, number> = {};
+  await Promise.allSettled(
+    symbols.map(async (sym) => {
+      const price = await getLivePrice(sym);
+      if (price && price > 0) livePrices[sym] = price;
+    })
+  );
+
   const positions: PortfolioPosition[] = Object.entries(posMap).map(([symbol, { entries }]) => {
     const latest = entries[entries.length - 1];
     const entryPrice = latest.price;
-    // Estimate current based on slight movement
-    const drift = (Math.random() - 0.5) * 0.02;
-    const currentEstimate = entryPrice * (1 + drift);
+    // Use live price if available, fallback to entry price
+    const currentEstimate = livePrices[symbol] || entryPrice;
     const qty = tradeSize / entryPrice;
     const pnl = (currentEstimate - entryPrice) * qty * (latest.signal === 'SELL' || latest.signal === 'SHORT' ? -1 : 1);
     const pnlPct = ((currentEstimate / entryPrice) - 1) * 100 * (latest.signal === 'SELL' || latest.signal === 'SHORT' ? -1 : 1);
@@ -108,8 +141,8 @@ export function getPortfolio(): PortfolioSummary {
   const weeklyDecisions = evaluated.filter(d => new Date(d.timestamp).getTime() > weekAgo);
   const weeklyPnl = weeklyDecisions.reduce((s, d) => s + (d.pnlPercent || 0), 0);
 
-  const best = positions.sort((a, b) => b.unrealizedPnlPercent - a.unrealizedPnlPercent)[0];
-  const worst = positions.sort((a, b) => a.unrealizedPnlPercent - b.unrealizedPnlPercent)[0];
+  const best = [...positions].sort((a, b) => b.unrealizedPnlPercent - a.unrealizedPnlPercent)[0];
+  const worst = [...positions].sort((a, b) => a.unrealizedPnlPercent - b.unrealizedPnlPercent)[0];
 
   return {
     totalBalance: Math.round((paperBalance + unrealizedPnl + realizedPnl) * 100) / 100,

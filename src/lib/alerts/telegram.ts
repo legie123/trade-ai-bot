@@ -17,6 +17,12 @@ export interface TelegramAlert {
   stopLoss?: number;
   takeProfit?: number;
   source: string;
+  rsiValue?: number;
+  rsiZone?: string;
+  fearGreed?: number;
+  fearGreedLabel?: string;
+  regime?: string;
+  bbSignal?: string;
 }
 
 // ─── Send message with inline keyboard ─────────────
@@ -28,13 +34,18 @@ export async function sendAlert(alert: TelegramAlert): Promise<boolean> {
 
   const emoji = alert.signal === 'BUY' || alert.signal === 'LONG' ? '🟢' : '🔴';
   const mlBadge = alert.mlVerdict ? `\n🤖 ML: ${alert.mlVerdict} (${alert.mlScore}%)` : '';
+  const rsiBadge = alert.rsiValue ? `\n📈 RSI: ${alert.rsiValue} (${alert.rsiZone || ''})` : '';
+  const fgBadge = alert.fearGreed !== undefined ? `\n😱 Fear/Greed: ${alert.fearGreed} (${alert.fearGreedLabel || ''})` : '';
+  const regimeBadge = alert.regime ? `\n🌊 Regime: ${alert.regime}` : '';
+  const bbBadge = alert.bbSignal && alert.bbSignal !== 'NONE' ? `\n📊 BB: ${alert.bbSignal}` : '';
 
   const text = [
     `${emoji} *${alert.signal}* — ${alert.symbol}`,
     `💰 Price: \`$${alert.price}\``,
-    `📊 Confidence: ${alert.confidence}%${mlBadge}`,
+    `📊 Confidence: ${alert.confidence}%${mlBadge}${rsiBadge}`,
     alert.stopLoss ? `🛑 SL: \`$${alert.stopLoss}\`` : '',
     alert.takeProfit ? `🎯 TP: \`$${alert.takeProfit}\`` : '',
+    `${fgBadge}${regimeBadge}${bbBadge}`,
     `📡 Source: ${alert.source}`,
     `⏰ ${new Date().toLocaleTimeString()}`,
   ].filter(Boolean).join('\n');

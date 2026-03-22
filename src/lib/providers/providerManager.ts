@@ -5,9 +5,13 @@ import { NormalizedToken, ProviderHealth } from '@/lib/types';
 import { cache } from '@/lib/cache';
 import { normalizeDexScreenerPair, normalizePumpToken, deduplicateTokens } from '@/lib/normalizers';
 import { scoreTokens } from '@/lib/scoring';
+import { recordProviderHealth } from '@/lib/core/heartbeat';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('ProviderManager');
 
 // Providers
-import { getLatestBoosts, getTopBoosts, searchPairs, getTokenPairs, getOrders, dexScreenerHealthCheck, DexScreenerPair } from '@/lib/providers/dexScreenerProvider';
+import { getLatestBoosts, getTopBoosts, searchPairs, getTokenPairs, getOrders, dexScreenerHealthCheck } from '@/lib/providers/dexScreenerProvider';
 import { birdeyeHealthCheck, getTokenOverview } from '@/lib/providers/birdeyeProvider';
 import { jupiterHealthCheck, getPrice } from '@/lib/providers/jupiterProvider';
 import { rugcheckHealthCheck, getTokenReport, getNewTokens } from '@/lib/providers/rugcheckProvider';
@@ -248,6 +252,8 @@ export async function getAllProviderHealth(): Promise<ProviderHealth[]> {
   const cached = cache.get<ProviderHealth[]>(CACHE_KEY_HEALTH);
   if (cached) return cached.data;
 
+  const names: ProviderHealth['name'][] = ['dexscreener', 'birdeye', 'jupiter', 'rugcheck', 'geckoterminal', 'pump'];
+  
   const results = await Promise.allSettled([
     dexScreenerHealthCheck(),
     birdeyeHealthCheck(),
@@ -258,15 +264,32 @@ export async function getAllProviderHealth(): Promise<ProviderHealth[]> {
   ]);
 
   const healths: ProviderHealth[] = results.map((r, i) => {
-    const names: ProviderHealth['name'][] = ['dexscreener', 'birdeye', 'jupiter', 'rugcheck', 'geckoterminal', 'pump'];
-    if (r.status === 'fulfilled') return r.value;
-    return {
-      name: names[i],
-      status: 'down' as const,
-      lastCheck: new Date().toISOString(),
-      latencyMs: null,
-      message: 'Health check threw exception',
-    };
+    let health: ProviderHealth;
+
+    if (r.status === 'fulfilled') {
+      health = r.value;
+    } else {
+      health = {
+        name: names[i] as ProviderHealth['name'],
+        status: 'down' as const,
+        lastCheck: new Date().toISOString(),
+        latencyMs: null,
+        message: `Exception: ${(r.reason as Error).message}`,
+      };
+    }
+
+    // Record to core heartbeat system
+    recordProviderHealth(
+      health.name,
+      health.status === 'healthy' || health.status === 'degraded',
+      health.latencyMs
+    );
+
+    if (health.status !== 'healthy') {
+      log.warn(`Provider ${health.name} is ${health.status}`, { latencyMs: health.latencyMs, message: health.message });
+    }
+
+    return health;
   });
 
   cache.set(CACHE_KEY_HEALTH, healths);

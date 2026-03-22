@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { TradingViewPanel } from '@/components/TradingViewChart';
 
 // ============================================================
@@ -104,47 +105,62 @@ export default function BotCenterPage() {
     }
   }, []);
 
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      const [exRes, anRes, atRes, portRes, sigRes, telRes, binRes] = await Promise.allSettled([
+        fetch('/api/exchanges').then(r => r.ok ? r.json() : null),
+        fetch('/api/analytics').then(r => r.ok ? r.json() : null),
+        fetch('/api/auto-trade').then(r => r.ok ? r.json() : null),
+        fetch('/api/portfolio').then(r => r.ok ? r.json() : null),
+        fetch('/api/signals').then(r => r.ok ? r.json() : null),
+        fetch('/api/telegram').then(r => r.ok ? r.json() : null),
+        fetch('/api/auto-trade', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'test-binance'}) }).then(r => r.ok ? r.json() : null)
+      ]);
+
+      if (exRes.status === 'fulfilled' && exRes.value) setExchange(exRes.value);
+      if (anRes.status === 'fulfilled' && anRes.value) setAnalytics(anRes.value);
+      if (atRes.status === 'fulfilled' && atRes.value) setAutoTrade(atRes.value);
+      if (portRes.status === 'fulfilled' && portRes.value) setPortfolio(portRes.value);
+      if (sigRes.status === 'fulfilled' && sigRes.value) setSignals(sigRes.value);
+      if (telRes.status === 'fulfilled' && telRes.value) setTelegramOk(telRes.value.ok);
+      if (binRes.status === 'fulfilled' && binRes.value?.connection) {
+        setBinanceStatus(binRes.value.connection.ok ? `✅ ${binRes.value.connection.mode}` : `❌ ${binRes.value.connection.error}`);
+      }
+    } catch (e) {
+      console.warn('Dashboard fetch error:', e);
+    }
+  }, []);
+
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30_000);
+    fetchDashboardData();
+    const interval = setInterval(() => {
+      fetchData();
+      fetchDashboardData();
+    }, 30_000);
 
-    // Notification polling
-    const notifInterval = setInterval(async () => {
-      if (!notifEnabled) return;
-      try {
-        const res = await fetch('/api/notifications');
-        if (res.ok) {
-          const json = await res.json();
+    // Notification SSE (Push)
+    let evtSource: EventSource | null = null;
+    if (notifEnabled) {
+      evtSource = new EventSource('/api/notifications');
+      evtSource.addEventListener('signal', (e) => {
+        try {
+          const json = JSON.parse(e.data);
           for (const alert of json.alerts || []) {
             new Notification(`🚨 ${alert.symbol} ${alert.signal}`, {
               body: `${alert.direction} | Confidence: ${alert.confidence}% | Price: $${alert.price}`,
               icon: '/favicon.ico',
             });
           }
-        }
-      } catch { /* silent */ }
-    }, 60_000);
+        } catch { /* parse err */ }
+      });
+    }
 
-    // Fetch exchange info
-    fetch('/api/exchange').then(r => r.ok ? r.json() : null).then(d => d && setExchange(d)).catch(() => {});
-    // Fetch analytics
-    fetch('/api/analytics').then(r => r.ok ? r.json() : null).then(d => d && setAnalytics(d)).catch(() => {});
-    // Fetch auto-trade candidates + ML scores
-    fetch('/api/auto-trade').then(r => r.ok ? r.json() : null).then(d => d && setAutoTrade(d)).catch(() => {});
-    // Test Binance connection
-    fetch('/api/auto-trade', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'test-binance'}) })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if(d?.connection) setBinanceStatus(d.connection.ok ? `✅ ${d.connection.mode}` : `❌ ${d.connection.error}`); })
-      .catch(() => {});
-    // Fetch portfolio
-    fetch('/api/portfolio').then(r => r.ok ? r.json() : null).then(d => d && setPortfolio(d)).catch(() => {});
-    // Fetch ranked signals
-    fetch('/api/signals').then(r => r.ok ? r.json() : null).then(d => d && setSignals(d)).catch(() => {});
-    // Test Telegram
-    fetch('/api/telegram').then(r => r.ok ? r.json() : null).then(d => d && setTelegramOk(d.ok)).catch(() => {});
-
-    return () => { clearInterval(interval); clearInterval(notifInterval); };
-  }, [fetchData, notifEnabled]);
+    return () => { 
+      clearInterval(interval); 
+      if (evtSource) evtSource.close();
+    };
+  }, [fetchData, fetchDashboardData, notifEnabled]);
 
   const botAction = async (action: string) => {
     setActionStatus(`Running ${action}...`);
@@ -181,18 +197,18 @@ export default function BotCenterPage() {
         </div>
         <div className="top-bar-right">
           <nav className="nav-toggle">
-            <a href="/bot-center" className="nav-toggle-item active">
+            <Link href="/bot-center" className="nav-toggle-item active">
               <span className="nav-dot" />
               <span className="nav-toggle-icon">🤖</span>
               <span className="nav-toggle-label">Bot</span>
-            </a>
-            <a href="/crypto-radar" className="nav-toggle-item">
+            </Link>
+            <Link href="/crypto-radar" className="nav-toggle-item">
               <span className="nav-dot" />
               <span className="nav-toggle-icon">📡</span>
               <span className="nav-toggle-label">Radar</span>
-            </a>
+            </Link>
           </nav>
-          <button className="btn" onClick={() => fetchData()}>↻</button>
+          <button className="btn" onClick={() => { fetchData(); fetchDashboardData(); }}>↻</button>
         </div>
       </header>
 
@@ -306,6 +322,9 @@ export default function BotCenterPage() {
             </div>
             <EquityChart data={data.equityCurve || []} startBalance={data.config.paperBalance || 1000} />
           </div>
+
+          {/* ---- TRADE REASONING PANEL ---- */}
+          <TradeReasoningPanel />
 
           {/* ---- Performance by Signal Type ---- */}
           <div className="grid-2" style={{ marginBottom: 16 }}>
@@ -794,6 +813,174 @@ export default function BotCenterPage() {
             Mode: <span style={{ color: healthColor }}>{s?.mode}</span>
           </footer>
         </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Trade Reasoning Panel — Full transparency for every decision
+// ============================================================
+interface TradeReasoningData {
+  id: string;
+  timestamp: string;
+  symbol: string;
+  signal: string;
+  price: number;
+  confidence: number;
+  strategy: string;
+  entryReason: string;
+  marketContext: { emaAlignment: string; priceVsDailyOpen: string; trendDirection: string; volatility: string };
+  confirmations: { mlScore: number; mlVerdict: string; mlReasons: string[]; confluenceConfirmed: number; confluenceTotal: number; sourceReliability: string };
+  riskLogic: { positionSize: number; positionSizePercent: number; kellyFraction: number; dailyLossUsed: number; dailyLossLimit: number; maxDrawdown: number; drawdownCurrent: number; correlationCheck: string };
+  slTpLogic: { stopLoss: number; stopLossPercent: number; takeProfit: number; takeProfitPercent: number; riskRewardRatio: number; method: string };
+  reasoningSteps: string[];
+  decision: 'EXECUTE' | 'SKIP' | 'PENDING';
+  decisionReason: string;
+  outcome?: string;
+  pnlPercent?: number;
+}
+
+function TradeReasoningPanel() {
+  const [trades, setTrades] = useState<TradeReasoningData[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/trade-reasoning?limit=15')
+      .then(r => r.json())
+      .then(d => setTrades(d.trades || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const decColor = (d: string) => d === 'EXECUTE' ? '#10b981' : d === 'SKIP' ? '#ef4444' : '#f59e0b';
+  const mlColor = (s: number) => s >= 75 ? '#10b981' : s >= 55 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header">
+        <span className="card-title">🧠 Trade Reasoning — Full Transparency</span>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {trades.length} decisions analyzed
+        </span>
+      </div>
+      {loading ? (
+        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Loading reasoning data…</div>
+      ) : trades.length === 0 ? (
+        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>No trade decisions yet</div>
+      ) : (
+        <div style={{ maxHeight: 600, overflowY: 'auto' }}>
+          {trades.map(t => (
+            <div key={t.id} style={{
+              borderBottom: '1px solid var(--border)',
+              padding: '12px 16px',
+              cursor: 'pointer',
+              transition: 'background 0.15s',
+            }}
+              onClick={() => setExpanded(expanded === t.id ? null : t.id)}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              {/* Summary row */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{
+                    background: decColor(t.decision), color: '#000', fontSize: 10,
+                    fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+                  }}>{t.decision}</span>
+                  <span style={{ fontWeight: 600 }}>{t.symbol}</span>
+                  <span style={{ color: t.signal.includes('BUY') || t.signal.includes('LONG') ? '#10b981' : '#ef4444', fontSize: 13 }}>
+                    {t.signal}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>${t.price.toLocaleString()}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 11, color: mlColor(t.confirmations.mlScore) }}>
+                    ML: {t.confirmations.mlScore}%
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {t.strategy}
+                  </span>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                    {expanded === t.id ? '▲' : '▼'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Expanded reasoning */}
+              {expanded === t.id && (
+                <div style={{ marginTop: 12, fontSize: 12, lineHeight: 1.7 }}>
+                  {/* Step-by-step reasoning */}
+                  <div style={{
+                    background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: 12, marginBottom: 12,
+                    border: '1px solid var(--border)',
+                  }}>
+                    <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 13, color: 'var(--accent)' }}>
+                      Step-by-Step Reasoning
+                    </div>
+                    {t.reasoningSteps.map((step, i) => (
+                      <div key={i} style={{ padding: '3px 0', color: 'var(--text-primary)' }}>{step}</div>
+                    ))}
+                  </div>
+
+                  {/* 4-column detail grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                    {/* Market Context */}
+                    <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 6, padding: 10 }}>
+                      <div style={{ fontWeight: 600, color: '#818cf8', marginBottom: 4 }}>🌍 Market Context</div>
+                      <div>EMA: {t.marketContext.emaAlignment}</div>
+                      <div>Daily Open: {t.marketContext.priceVsDailyOpen}</div>
+                      <div>Trend: {t.marketContext.trendDirection}</div>
+                      <div>Volatility: {t.marketContext.volatility}</div>
+                    </div>
+
+                    {/* Confirmations */}
+                    <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 6, padding: 10 }}>
+                      <div style={{ fontWeight: 600, color: '#34d399', marginBottom: 4 }}>✅ Confirmations</div>
+                      <div>ML Score: <span style={{ color: mlColor(t.confirmations.mlScore), fontWeight: 700 }}>
+                        {t.confirmations.mlScore}% ({t.confirmations.mlVerdict})
+                      </span></div>
+                      <div>Confluence: {t.confirmations.confluenceConfirmed}/{t.confirmations.confluenceTotal} TFs</div>
+                      <div>Source: {t.confirmations.sourceReliability}</div>
+                      {t.confirmations.mlReasons.map((r, i) => (
+                        <div key={i} style={{ fontSize: 11, color: 'var(--text-muted)' }}>• {r}</div>
+                      ))}
+                    </div>
+
+                    {/* Risk Logic */}
+                    <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 6, padding: 10 }}>
+                      <div style={{ fontWeight: 600, color: '#f59e0b', marginBottom: 4 }}>⚖️ Risk Logic</div>
+                      <div>Position: ${t.riskLogic.positionSize} ({t.riskLogic.positionSizePercent}%)</div>
+                      <div>Kelly: {(t.riskLogic.kellyFraction * 100).toFixed(1)}%</div>
+                      <div>Daily Loss: {t.riskLogic.dailyLossUsed.toFixed(1)}% / {t.riskLogic.dailyLossLimit}%</div>
+                      <div>Drawdown: {t.riskLogic.drawdownCurrent.toFixed(1)}% / {t.riskLogic.maxDrawdown}%</div>
+                      <div>Correlation: {t.riskLogic.correlationCheck}</div>
+                    </div>
+
+                    {/* SL/TP */}
+                    <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 6, padding: 10 }}>
+                      <div style={{ fontWeight: 600, color: '#ef4444', marginBottom: 4 }}>🎯 SL/TP Logic</div>
+                      <div>Stop Loss: <span style={{ color: '#ef4444' }}>${t.slTpLogic.stopLoss.toLocaleString()} (-{t.slTpLogic.stopLossPercent}%)</span></div>
+                      <div>Take Profit: <span style={{ color: '#10b981' }}>${t.slTpLogic.takeProfit.toLocaleString()} (+{t.slTpLogic.takeProfitPercent}%)</span></div>
+                      <div>Risk/Reward: {t.slTpLogic.riskRewardRatio}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Method: {t.slTpLogic.method}</div>
+                    </div>
+                  </div>
+
+                  {/* Outcome */}
+                  {t.outcome && (
+                    <div style={{ marginTop: 8, padding: '6px 12px', borderRadius: 6, background: t.outcome === 'WIN' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)' }}>
+                      Outcome: <strong style={{ color: t.outcome === 'WIN' ? '#10b981' : '#ef4444' }}>
+                        {t.outcome} {t.pnlPercent != null ? `(${t.pnlPercent > 0 ? '+' : ''}${t.pnlPercent.toFixed(2)}%)` : ''}
+                      </strong>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

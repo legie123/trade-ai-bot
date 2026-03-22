@@ -9,6 +9,9 @@ import {
   recalculatePerformance,
 } from '@/lib/store/db';
 import { DecisionSnapshot, OptimizationState } from '@/lib/types/radar';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('Optimizer');
 
 const MIN_DECISIONS = 10; // Need at least this many evaluated decisions
 const MAX_WEIGHT_CHANGE = 0.05; // Max 5% adjustment per cycle
@@ -174,7 +177,7 @@ export function runOptimizer(): {
       ],
     };
     saveOptimizerState(newState);
-    console.log(`[Optimizer] v${newState.version}: Updated ${Object.keys(changes).length} weights`);
+    log.info(`Optimizer v${newState.version}: Updated ${Object.keys(changes).length} weights`);
   }
 
   // Refresh performance stats

@@ -35,7 +35,7 @@ const WEIGHTS = {
   streakScore: 0.10,
   volumeContext: 0.10,
 };
-const BIAS = 0.3; // baseline score
+const BIAS = 0.05; // Low baseline — score earned from features, not given for free
 
 // ─── Feature extraction ───────────────────────────
 function extractFeatures(decision: DecisionSnapshot): FeatureSet {

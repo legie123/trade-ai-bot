@@ -1,13 +1,15 @@
 // GET /api/backtest — run backtest with query params
 // POST /api/backtest — run backtest with custom config
+// GET /api/backtest?mode=walkforward — walk-forward analysis
 import { NextResponse } from 'next/server';
-import { runBacktest } from '@/lib/engine/backtester';
+import { runBacktest, runWalkForwardBacktest } from '@/lib/engine/backtester';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
+    const mode = url.searchParams.get('mode');
     const config = {
       startBalance: Number(url.searchParams.get('balance')) || 1000,
       riskPerTrade: Number(url.searchParams.get('risk')) || 2,
@@ -16,8 +18,13 @@ export async function GET(request: Request) {
       minConfidence: Number(url.searchParams.get('minConf')) || 70,
     };
 
+    if (mode === 'walkforward') {
+      const result = runWalkForwardBacktest(config);
+      return NextResponse.json({ status: 'ok', mode: 'walk-forward', ...result });
+    }
+
     const result = runBacktest(config);
-    return NextResponse.json({ status: 'ok', ...result });
+    return NextResponse.json({ status: 'ok', mode: 'standard', ...result });
   } catch (err) {
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });
   }
@@ -26,8 +33,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const mode = body.mode || 'standard';
+
+    if (mode === 'walkforward') {
+      const result = runWalkForwardBacktest(body.config || {});
+      return NextResponse.json({ status: 'ok', mode: 'walk-forward', ...result });
+    }
+
     const result = runBacktest(body.config || {});
-    return NextResponse.json({ status: 'ok', ...result });
+    return NextResponse.json({ status: 'ok', mode: 'standard', ...result });
   } catch (err) {
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });
   }

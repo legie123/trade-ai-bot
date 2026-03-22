@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { signalStore } from '@/lib/store/signalStore';
 import { Signal, TradingViewWebhook } from '@/lib/types/radar';
 import { routeSignal, normalizeSignalType } from '@/lib/router/signalRouter';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('TradingViewRoute');
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +15,7 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!body.symbol) {
-      console.warn('[Webhook] Rejected: missing symbol');
+      log.warn('Rejected: missing symbol');
       return NextResponse.json({ error: 'Missing symbol' }, { status: 400 });
     }
 
@@ -38,11 +41,11 @@ export async function POST(request: NextRequest) {
     const result = signalStore.addSignal(routed);
 
     if (!result.added) {
-      console.log(`[Webhook] Skipped duplicate: ${routed.symbol} ${routed.signal}`);
+      log.info(`Skipped duplicate: ${routed.symbol} ${routed.signal}`);
       return NextResponse.json({ status: 'skipped', reason: result.reason }, { status: 200 });
     }
 
-    console.log(`[Webhook] ✓ Routed: ${routed.direction} ${routed.action} | ${routed.symbol} ${routed.signal} @ ${routed.price} | conf:${routed.confidence}%`);
+    log.info(`Routed: ${routed.direction} ${routed.action} | ${routed.symbol} ${routed.signal} @ ${routed.price} | conf:${routed.confidence}%`);
 
     return NextResponse.json({
       status: 'received',
@@ -57,7 +60,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err) {
-    console.error('[Webhook] Error:', err);
+    log.error('Webhook processing error', { error: (err as Error).message });
     return NextResponse.json(
       { error: 'Invalid webhook payload', detail: (err as Error).message },
       { status: 400 }

@@ -1,6 +1,9 @@
 // GET /api/tokens/[address] — single token detail
 import { NextRequest, NextResponse } from 'next/server';
 import { getTokenDetail } from '@/lib/providers/providerManager';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('TokenDetailRoute');
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +27,7 @@ export async function GET(
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    console.error('Token detail error:', err);
+    log.error('Token detail error', { error: (err as Error).message });
     return NextResponse.json(
       { error: 'Failed to fetch token detail', detail: (err as Error).message },
       { status: 500 }

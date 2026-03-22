@@ -127,10 +127,6 @@ export function routeSignal(signal: Signal): RoutedSignal {
     routed: true,
   };
 
-  console.log(
-    `[Router] ${signal.signal} → ${normalized} | dir:${direction} act:${action} conf:${confidence}% | ${signal.symbol} @ ${signal.price}`
-  );
-
   return routed;
 }
 

@@ -1,8 +1,13 @@
 // ============================================================
 // Risk Manager — Dynamic SL/TP, Kelly Criterion, Daily Limits
-// Controls position sizing and risk per trade
+// Max Drawdown Circuit Breaker, Persistent Daily Loss
+// + Kill Switch, Duplicate Protection, Stale Data Guard
 // ============================================================
 import { getDecisions } from '@/lib/store/db';
+import { isKillSwitchEngaged, checkDailyLossLimit } from '@/lib/core/killSwitch';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('RiskManager');
 
 export interface RiskParams {
   entryPrice: number;
@@ -10,21 +15,46 @@ export interface RiskParams {
   confidence: number;     // 0-100
   symbol: string;
   accountBalance: number;
+  decisionTimestamp?: string; // ISO timestamp of the signal
+  apiLatencyMs?: number;     // last API response time
 }
 
 export interface RiskOutput {
-  positionSize: number;      // in USD
+  positionSize: number;
   positionSizePercent: number;
-  stopLoss: number;          // price
+  stopLoss: number;
   stopLossPercent: number;
-  takeProfit: number;        // price
+  takeProfit: number;
   takeProfitPercent: number;
   riskRewardRatio: number;
   kellyFraction: number;
-  dailyLossUsed: number;     // how much of daily loss limit used
+  dailyLossUsed: number;
   dailyLossLimit: number;
-  canTrade: boolean;         // false if daily limit hit
+  maxDrawdown: number;
+  drawdownCurrent: number;
+  canTrade: boolean;
   reason: string;
+}
+
+// ─── Persistent daily loss (survives hot reload via globalThis) ──
+const gRisk = globalThis as unknown as {
+  __dailyLossMap?: Record<string, number>;
+  __peakBalance?: number;
+};
+if (!gRisk.__dailyLossMap) gRisk.__dailyLossMap = {};
+if (!gRisk.__peakBalance) gRisk.__peakBalance = 1000;
+
+function getDailyKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function recordDailyLoss(lossPercent: number): void {
+  const key = getDailyKey();
+  gRisk.__dailyLossMap![key] = (gRisk.__dailyLossMap![key] || 0) + Math.abs(lossPercent);
+}
+
+export function resetDailyLoss(): void {
+  gRisk.__dailyLossMap![getDailyKey()] = 0;
 }
 
 // ─── ATR Approximation from recent decisions ───────
@@ -43,21 +73,50 @@ function estimateATR(symbol: string): number {
 // ─── Kelly Criterion ───────────────────────────────
 function kellyFraction(winRate: number, avgWin: number, avgLoss: number): number {
   if (avgLoss === 0 || winRate === 0) return 0;
-  const b = avgWin / avgLoss; // win/loss ratio
+  const b = avgWin / avgLoss;
   const p = winRate;
   const q = 1 - p;
   const kelly = (b * p - q) / b;
-  // Half-Kelly for safety
-  return Math.max(0, Math.min(kelly * 0.5, 0.25)); // cap at 25%
+  return Math.max(0, Math.min(kelly * 0.5, 0.25)); // Half-Kelly, cap 25%
 }
 
-// ─── Calculate daily loss used ─────────────────────
+// ─── Calculate daily loss used (persistent) ────────
 function getDailyLossUsed(): number {
-  const today = new Date().toISOString().slice(0, 10);
+  const persistedLoss = gRisk.__dailyLossMap![getDailyKey()] || 0;
+
+  // Also check from decisions as backup
+  const today = getDailyKey();
   const decisions = getDecisions().filter((d) => {
     return d.timestamp.startsWith(today) && d.outcome !== 'PENDING' && (d.pnlPercent || 0) < 0;
   });
-  return Math.abs(decisions.reduce((s, d) => s + (d.pnlPercent || 0), 0));
+  const decisionLoss = Math.abs(decisions.reduce((s, d) => s + (d.pnlPercent || 0), 0));
+
+  return Math.max(persistedLoss, decisionLoss);
+}
+
+// ─── Max Drawdown Calculator ───────────────────────
+function calculateDrawdown(currentBalance: number): { peak: number; drawdownPercent: number } {
+  if (currentBalance > (gRisk.__peakBalance || 0)) {
+    gRisk.__peakBalance = currentBalance;
+  }
+  const peak = gRisk.__peakBalance || currentBalance;
+  const drawdownPercent = peak > 0 ? ((peak - currentBalance) / peak) * 100 : 0;
+  return { peak, drawdownPercent };
+}
+
+// ─── Correlation Check (avoid overconcentration) ───
+function getOpenSymbolCount(symbol: string): number {
+  const ecosystem: Record<string, string[]> = {
+    SOL: ['SOL', 'BONK', 'WIF', 'JUP', 'RAY', 'JTO', 'PYTH', 'RNDR'],
+    BTC: ['BTC'],
+    ETH: ['ETH'],
+  };
+
+  const family = Object.values(ecosystem).find((group) => group.includes(symbol));
+  if (!family) return 0;
+
+  const pending = getDecisions().filter((d) => d.outcome === 'PENDING' && family.includes(d.symbol));
+  return pending.length;
 }
 
 // ─── Get historical win rate ───────────────────────
@@ -78,33 +137,119 @@ function getWinStats(): { winRate: number; avgWin: number; avgLoss: number } {
   return { winRate, avgWin, avgLoss };
 }
 
+// ─── Duplicate Trade Protection ────────────────────
+function isDuplicateTrade(symbol: string, signal: string, cooldownMinutes: number): boolean {
+  const direction = (signal === 'BUY' || signal === 'LONG') ? 'BULLISH' : 'BEARISH';
+  const recent = getDecisions()
+    .filter(d => {
+      if (d.symbol !== symbol) return false;
+      const dDirection = (d.signal === 'BUY' || d.signal === 'LONG') ? 'BULLISH' : 'BEARISH';
+      if (dDirection !== direction) return false;
+      const age = Date.now() - new Date(d.timestamp).getTime();
+      return age < cooldownMinutes * 60_000;
+    });
+  return recent.length > 0;
+}
+
+// ─── Stale Data Guard ──────────────────────────────
+function isStaleData(decisionTimestamp: string | undefined, maxAgeMs: number = 10 * 60_000): boolean {
+  if (!decisionTimestamp) return false; // no timestamp = can't check, allow
+  const age = Date.now() - new Date(decisionTimestamp).getTime();
+  return age > maxAgeMs;
+}
+
+// ─── Helper: build rejection output ────────────────
+function rejectOutput(
+  entryPrice: number,
+  dailyLossUsed: number,
+  maxDailyLoss: number,
+  maxDrawdownLimit: number,
+  drawdownPercent: number,
+  reason: string,
+): RiskOutput {
+  return {
+    positionSize: 0, positionSizePercent: 0,
+    stopLoss: entryPrice, stopLossPercent: 0,
+    takeProfit: entryPrice, takeProfitPercent: 0,
+    riskRewardRatio: 0, kellyFraction: 0,
+    dailyLossUsed, dailyLossLimit: maxDailyLoss,
+    maxDrawdown: maxDrawdownLimit,
+    drawdownCurrent: Math.round(drawdownPercent * 100) / 100,
+    canTrade: false,
+    reason,
+  };
+}
+
 // ─── Main Risk Calculator ──────────────────────────
 export function calculateRisk(params: RiskParams): RiskOutput {
-  const { entryPrice, signal, confidence, symbol, accountBalance } = params;
+  const { entryPrice, signal, confidence, symbol, accountBalance, decisionTimestamp, apiLatencyMs } = params;
 
   const maxDailyLoss = parseFloat(process.env.MAX_DAILY_LOSS_PERCENT || '5');
+  const maxDrawdownLimit = parseFloat(process.env.MAX_DRAWDOWN_PERCENT || '15');
   const baseRisk = parseFloat(process.env.RISK_PER_TRADE_PERCENT || '2');
+  const maxCorrelatedPositions = parseInt(process.env.MAX_CORRELATED_POSITIONS || '4');
+  const cooldownMinutes = parseInt(process.env.COOLDOWN_MINUTES || '15');
+  const maxLatencyMs = parseInt(process.env.MAX_LATENCY_MS || '2000');
+
   const dailyLossUsed = getDailyLossUsed();
   const dailyLossRemaining = maxDailyLoss - dailyLossUsed;
+  const { drawdownPercent } = calculateDrawdown(accountBalance);
 
-  // Can't trade if daily limit exceeded
+  // ── Kill switch check (FIRST — overrides everything) ──
+  if (isKillSwitchEngaged()) {
+    log.warn('Trade blocked by kill switch', { symbol, signal });
+    return rejectOutput(entryPrice, dailyLossUsed, maxDailyLoss, maxDrawdownLimit, drawdownPercent,
+      '🛑 KILL SWITCH ENGAGED — all trading halted');
+  }
+
+  // ── Stale data guard ──
+  if (isStaleData(decisionTimestamp)) {
+    log.warn('Trade blocked — stale data', { symbol, signal, timestamp: decisionTimestamp });
+    return rejectOutput(entryPrice, dailyLossUsed, maxDailyLoss, maxDrawdownLimit, drawdownPercent,
+      '⏰ Data too stale (>10 min old) — rejecting for safety');
+  }
+
+  // ── Latency check ──
+  if (apiLatencyMs !== undefined && apiLatencyMs > maxLatencyMs) {
+    log.warn('Trade blocked — high latency', { symbol, latencyMs: apiLatencyMs, maxLatencyMs });
+    return rejectOutput(entryPrice, dailyLossUsed, maxDailyLoss, maxDrawdownLimit, drawdownPercent,
+      `⚡ API latency too high (${apiLatencyMs}ms > ${maxLatencyMs}ms max)`);
+  }
+
+  // ── Duplicate trade protection ──
+  if (isDuplicateTrade(symbol, signal, cooldownMinutes)) {
+    log.info('Trade blocked — duplicate', { symbol, signal, cooldownMinutes });
+    return rejectOutput(entryPrice, dailyLossUsed, maxDailyLoss, maxDrawdownLimit, drawdownPercent,
+      `🔄 Duplicate trade: ${symbol} ${signal} already active within ${cooldownMinutes}min cooldown`);
+  }
+
+  // ── Circuit breaker: max drawdown ──
+  if (drawdownPercent >= maxDrawdownLimit) {
+    log.warn('Circuit breaker — max drawdown', { drawdownPercent, maxDrawdownLimit });
+    return rejectOutput(entryPrice, dailyLossUsed, maxDailyLoss, maxDrawdownLimit, drawdownPercent,
+      `🛑 CIRCUIT BREAKER: Drawdown ${drawdownPercent.toFixed(1)}% >= ${maxDrawdownLimit}% limit`);
+  }
+
+  // ── Daily loss limit ──
   if (dailyLossRemaining <= 0) {
-    return {
-      positionSize: 0, positionSizePercent: 0,
-      stopLoss: entryPrice, stopLossPercent: 0,
-      takeProfit: entryPrice, takeProfitPercent: 0,
-      riskRewardRatio: 0, kellyFraction: 0,
-      dailyLossUsed, dailyLossLimit: maxDailyLoss,
-      canTrade: false,
-      reason: `Daily loss limit reached (${dailyLossUsed.toFixed(1)}% / ${maxDailyLoss}%)`,
-    };
+    // Auto-engage kill switch on daily loss breach
+    checkDailyLossLimit(dailyLossUsed, maxDailyLoss);
+    return rejectOutput(entryPrice, dailyLossUsed, maxDailyLoss, maxDrawdownLimit, drawdownPercent,
+      `Daily loss limit reached (${dailyLossUsed.toFixed(1)}% / ${maxDailyLoss}%)`);
+  }
+
+  // ── Correlation check ──
+  const correlatedCount = getOpenSymbolCount(symbol);
+  if (correlatedCount >= maxCorrelatedPositions) {
+    return rejectOutput(entryPrice, dailyLossUsed, maxDailyLoss, maxDrawdownLimit, drawdownPercent,
+      `Too many correlated positions (${correlatedCount}/${maxCorrelatedPositions} in same ecosystem)`);
   }
 
   // ATR-based SL/TP
   const atr = estimateATR(symbol);
   const isBullish = signal === 'BUY' || signal === 'LONG';
-  const slMultiplier = 1.5;  // 1.5× ATR for stop loss
-  const tpMultiplier = 3.0;  // 3× ATR for take profit (2:1 RR)
+  const slMultiplier = 1.5;
+  const tpMultiplier = 3.0;
 
   const slPercent = atr * slMultiplier * 100;
   const tpPercent = atr * tpMultiplier * 100;
@@ -121,16 +266,27 @@ export function calculateRisk(params: RiskParams): RiskOutput {
   const { winRate, avgWin, avgLoss } = getWinStats();
   const kelly = kellyFraction(winRate, avgWin, avgLoss);
 
-  // Confidence-adjusted risk: higher confidence = more of base risk
+  // Confidence-adjusted risk
   const confidenceMultiplier = confidence >= 90 ? 1.5 : confidence >= 80 ? 1.2 : confidence >= 70 ? 1.0 : 0.5;
+
+  // Scale down risk if drawdown is high
+  const drawdownScale = drawdownPercent > 10 ? 0.5 : drawdownPercent > 5 ? 0.75 : 1.0;
+
   const riskPercent = Math.min(
-    baseRisk * confidenceMultiplier,
+    baseRisk * confidenceMultiplier * drawdownScale,
     kelly > 0 ? kelly * 100 : baseRisk,
     dailyLossRemaining
   );
 
   const positionSize = accountBalance * (riskPercent / 100);
   const rr = slPercent > 0 ? tpPercent / slPercent : 0;
+
+  log.debug('Risk calculated', {
+    symbol, signal, confidence,
+    positionSize: Math.round(positionSize * 100) / 100,
+    riskPercent: Math.round(riskPercent * 100) / 100,
+    rr: Math.round(rr * 100) / 100,
+  });
 
   return {
     positionSize: Math.round(positionSize * 100) / 100,
@@ -143,7 +299,9 @@ export function calculateRisk(params: RiskParams): RiskOutput {
     kellyFraction: Math.round(kelly * 1000) / 1000,
     dailyLossUsed: Math.round(dailyLossUsed * 100) / 100,
     dailyLossLimit: maxDailyLoss,
+    maxDrawdown: maxDrawdownLimit,
+    drawdownCurrent: Math.round(drawdownPercent * 100) / 100,
     canTrade: true,
-    reason: `Risk: ${riskPercent.toFixed(1)}% | RR: ${rr.toFixed(1)} | Kelly: ${(kelly * 100).toFixed(1)}%`,
+    reason: `Risk: ${riskPercent.toFixed(1)}% | RR: ${rr.toFixed(1)} | Kelly: ${(kelly * 100).toFixed(1)}% | DD: ${drawdownPercent.toFixed(1)}%`,
   };
 }

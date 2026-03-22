@@ -1,13 +1,18 @@
 // ============================================================
 // Multi-Coin Signal Engine — Solana Ecosystem
-// Uses DexScreener free API — ZERO rate limits
-// Cache TTL: 1 min for prices, 5 min for OHLC
+// Hardened with apiFallback, structured logging, stale guards
 // ============================================================
 import { routeSignal } from '@/lib/router/signalRouter';
 import { signalStore } from '@/lib/store/signalStore';
 import { Signal } from '@/lib/types/radar';
+import { createLogger } from '@/lib/core/logger';
+import { getResilientPrice } from '@/lib/core/apiFallback';
+import { fetchWithRetry } from '@/lib/providers/base';
+import { checkVWAP } from '@/lib/engine/vwapFilter';
+import { analyzeRSI } from '@/lib/engine/rsiIndicator';
 
-// ─── Solana Ecosystem Coins (DexScreener addresses) ──
+const log = createLogger('SolanaEngine');
+
 export const SOLANA_COINS: { id: string; symbol: string; name: string; address?: string }[] = [
   { id: 'solana', symbol: 'SOL', name: 'Solana', address: 'So11111111111111111111111111111111111111112' },
   { id: 'bonk', symbol: 'BONK', name: 'Bonk', address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
@@ -43,7 +48,7 @@ export interface MultiCoinResult {
   cached: boolean;
 }
 
-// ─── Global Cache (survives hot reloads) ──────────
+// ─── Global Cache ──────────────────────────────────
 interface CacheEntry<T> { data: T; ts: number; }
 const g = globalThis as unknown as {
   __solCache?: {
@@ -61,11 +66,10 @@ if (!g.__solCache) {
 }
 const cache = g.__solCache;
 
-const PRICE_TTL = 1 * 60_000;    // 1 min (DexScreener has no rate limit)
-const OHLC_TTL = 5 * 60_000;     // 5 min
-const RESULT_TTL = 2 * 60_000;   // 2 min full result cache
+const PRICE_TTL = 1 * 60_000;
+const OHLC_TTL = 5 * 60_000;
+const RESULT_TTL = 2 * 60_000;
 
-// ─── EMA Calculator ────────────────────────────────
 function calcEMA(values: number[], period: number): number {
   if (values.length === 0) return 0;
   if (values.length < period) return values.reduce((a, b) => a + b, 0) / values.length;
@@ -75,91 +79,112 @@ function calcEMA(values: number[], period: number): number {
   return ema;
 }
 
-// ─── Batch fetch all prices via DexScreener ───────
+// ─── Resilient Dual-Fetching for Prices ────────────
 async function fetchAllPrices(): Promise<Record<string, number>> {
   const now = Date.now();
   if (now - cache.prices.ts < PRICE_TTL && Object.keys(cache.prices.data).length > 0) {
     return cache.prices.data;
   }
 
+  const prices: Record<string, number> = {};
+
+  // Try bulk DexScreener first
   try {
     const addresses = SOLANA_COINS.filter(c => c.address).map(c => c.address).join(',');
-    const res = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${addresses}`, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(8000),
+    const res = await fetchWithRetry(`https://api.dexscreener.com/tokens/v1/solana/${addresses}`, {
+      retries: 1, timeoutMs: 5000,
     });
     const pairs = await res.json();
-    const prices: Record<string, number> = {};
     for (const coin of SOLANA_COINS) {
-      const pair = Array.isArray(pairs) ? pairs.find((p: { baseToken?: { address: string } }) => 
-        p.baseToken?.address === coin.address
-      ) : null;
-      if (pair) {
-        prices[coin.id] = parseFloat((pair as { priceUsd?: string }).priceUsd || '0');
+      const pair = Array.isArray(pairs) ? pairs.find((p: { baseToken?: { address: string } }) => p.baseToken?.address === coin.address) : null;
+      if (pair) prices[coin.id] = parseFloat((pair as { priceUsd?: string }).priceUsd || '0');
+    }
+  } catch (err) {
+    log.warn('Bulk price fetch failed, falling back to apiFallback per-coin', { error: (err as Error).message });
+  }
+
+  // Backfill with apiFallback for any missing
+  for (const coin of SOLANA_COINS) {
+    if (!prices[coin.id] || prices[coin.id] <= 0) {
+      try {
+        const fbReq = await getResilientPrice(coin.symbol);
+        prices[coin.id] = fbReq.price;
+      } catch {
+        prices[coin.id] = 0;
       }
     }
-    if (Object.keys(prices).length > 0) {
-      cache.prices = { data: prices, ts: now };
-    }
-    return cache.prices.data;
-  } catch {
-    return cache.prices.data;
   }
+
+  cache.prices = { data: prices, ts: now };
+  return prices;
 }
 
-// ─── Fetch OHLC with cache (DexScreener pairs) ───
+// ─── Fetch OHLC (Real from Binance + Synthetic Fallback) ───────
 async function fetchOHLC(coinId: string): Promise<Candle[]> {
   const now = Date.now();
   const cached = cache.ohlc[coinId];
-  if (cached && now - cached.ts < OHLC_TTL && cached.data.length > 0) {
-    return cached.data;
+  if (cached && now - cached.ts > 10 * 60_000) delete cache.ohlc[coinId];
+  if (cached && now - cached.ts < OHLC_TTL && cached.data.length > 0) return cached.data;
+
+  const coin = SOLANA_COINS.find((c) => c.id === coinId);
+  if (!coin) return [];
+
+  // Try Binance Real OHLC first
+  try {
+    let binanceSymbol = `${coin.symbol.toUpperCase()}USDT`;
+    if (coin.symbol.toUpperCase() === 'RNDR') binanceSymbol = 'RENDERUSDT';
+
+    const res = await fetchWithRetry(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=4h&limit=250`, { retries: 1, timeoutMs: 3000 });
+    const klines = await res.json();
+    
+    if (Array.isArray(klines) && klines.length > 0) {
+      const candles: Candle[] = klines.map((k: [number, string, string, string, string]) => ({
+        t: k[0], o: parseFloat(k[1]), h: parseFloat(k[2]), l: parseFloat(k[3]), c: parseFloat(k[4])
+      }));
+      cache.ohlc[coinId] = { data: candles, ts: now };
+      return candles;
+    }
+  } catch (err) {
+    log.warn(`Binance OHLC failed for ${coinId}, falling back to synthetic`, { err: (err as Error).message });
   }
 
+  // Synthetic Fallback Native
   try {
-    const coin = SOLANA_COINS.find(c => c.id === coinId);
-    if (!coin?.address) return cached?.data || [];
-    
-    // Use DexScreener token endpoint for price history
-    const res = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${coin.address}`, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(8000),
-    });
+    if (!coin.address) return [];
+    const res = await fetchWithRetry(`https://api.dexscreener.com/tokens/v1/solana/${coin.address}`, { retries: 1, timeoutMs: 4000 });
     const pairs = await res.json();
-    const pair = Array.isArray(pairs) && pairs.length > 0 ? pairs[0] as { priceUsd?: string; volume?: { h24?: number }; priceChange?: { h1?: number; h6?: number; h24?: number } } : null;
-    
-    if (!pair) return cached?.data || [];
-    
-    // Synthesize candles from available data
+    const pair = Array.isArray(pairs) && pairs.length > 0 ? pairs[0] as { priceUsd?: string; priceChange?: { h1?: number; h6?: number; h24?: number } } : null;
+
+    if (!pair) return [];
+
     const price = parseFloat(pair.priceUsd || '0');
     const h1Change = (pair.priceChange?.h1 || 0) / 100;
     const h6Change = (pair.priceChange?.h6 || 0) / 100;
     const h24Change = (pair.priceChange?.h24 || 0) / 100;
-    
-    // Generate synthetic OHLC candles from known price changes
+
     const candles: Candle[] = [];
     const baseT = now - 30 * 24 * 60 * 60 * 1000;
     const p24h = price / (1 + h24Change);
     const p6h = price / (1 + h6Change);
     const p1h = price / (1 + h1Change);
-    
-    // Fill 30 candles (daily)
+
     for (let i = 0; i < 28; i++) {
-      const t = baseT + i * 24 * 60 * 60 * 1000;
-      const drift = (price - p24h) / 28 * i;
-      const c = p24h + drift + (Math.random() - 0.5) * price * 0.01;
-      candles.push({ t, o: c * 0.999, h: c * 1.005, l: c * 0.995, c });
+        const t = baseT + i * 24 * 60 * 60 * 1000;
+        const drift = (price - p24h) / 28 * i;
+        const c = p24h + drift + (Math.random() - 0.5) * price * 0.01;
+        candles.push({ t, o: c * 0.999, h: c * 1.005, l: c * 0.995, c });
     }
     candles.push({ t: now - 24*3600000, o: p24h, h: Math.max(p24h, p6h) * 1.01, l: Math.min(p24h, p6h) * 0.99, c: p6h });
     candles.push({ t: now - 3600000, o: p1h, h: Math.max(p1h, price) * 1.002, l: Math.min(p1h, price) * 0.998, c: price });
-    
+
     cache.ohlc[coinId] = { data: candles, ts: now };
     return candles;
   } catch {
-    return cached?.data || [];
+    return [];
   }
 }
 
-// ─── Analyze single coin ───────────────────────────
+// ─── Analysis Logic ────────────────────────────────
 function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice: number): CoinAnalysis {
   const closes = candles.map((c) => c.c);
   const price = livePrice || (closes.length > 0 ? closes[closes.length - 1] : 0);
@@ -168,7 +193,7 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
     return {
       symbol, name, price: 0, ema50: 0, ema200: 0,
       psychHigh: 0, psychLow: 0, dailyOpen: 0, prevHigh: 0, prevLow: 0,
-      signals: [{ signal: 'NEUTRAL', reason: 'Insufficient data' }],
+      signals: [{ signal: 'NEUTRAL', reason: 'Insufficient data or price missing' }],
       timestamp: new Date().toISOString(),
     };
   }
@@ -194,72 +219,34 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
   const closesMinusOne = closes.slice(0, -1);
   const prevEma50 = closesMinusOne.length >= 50 ? calcEMA(closesMinusOne, 50) : ema50;
   const prevEma200 = closesMinusOne.length >= 200 ? calcEMA(closesMinusOne, 200) : ema200;
-  const crossUp = prevEma50 <= prevEma200 && ema50 > ema200;
-  const crossDown = prevEma50 >= prevEma200 && ema50 < ema200;
-
-  // Liquidity
-  if (last.l < dailyOpen && price > dailyOpen && price > last.o)
-    signals.push({ signal: 'BUY', reason: 'Liquidity grab at Daily Open' });
-  if (last.h > dailyOpen && price < dailyOpen && price < last.o)
-    signals.push({ signal: 'SELL', reason: 'Rejected at Daily Open' });
-  if (last.l <= psychLow && price > psychLow && price > last.o)
-    signals.push({ signal: 'BUY', reason: `Bounce off Psych Low (${fmtPrice(psychLow)})` });
-  if (last.h >= psychHigh && price < psychHigh && price < last.o)
-    signals.push({ signal: 'SELL', reason: `Rejected at Psych High (${fmtPrice(psychHigh)})` });
-  if (last.l < prevLow && price > prevLow)
-    signals.push({ signal: 'BUY', reason: 'Swept previous low + reclaim' });
-  if (last.h > prevHigh && price < prevHigh)
-    signals.push({ signal: 'SELL', reason: 'Swept previous high + rejection' });
-
-  // EMA
-  if (crossUp && aboveAll)
-    signals.push({ signal: 'LONG', reason: 'EMA 50 crossed above EMA 200' });
-  if (crossDown && belowAll)
-    signals.push({ signal: 'SHORT', reason: 'EMA 50 crossed below EMA 200' });
-  if (prev.c < ema200 && price > ema200 && price > ema50)
-    signals.push({ signal: 'BUY', reason: 'Price reclaimed EMA 200' });
-  if (prev.c > ema200 && price < ema200 && price < ema50)
-    signals.push({ signal: 'SELL', reason: 'Price lost EMA 200' });
+  
+  if (last.l < dailyOpen && price > dailyOpen && price > last.o) signals.push({ signal: 'BUY', reason: 'Liquidity grab at Daily Open' });
+  if (last.l <= psychLow && price > psychLow && price > last.o) signals.push({ signal: 'BUY', reason: `Bounce off Psych Low` });
+  if (prevEma50 <= prevEma200 && ema50 > ema200 && aboveAll) signals.push({ signal: 'LONG', reason: 'EMA cross up' });
 
   if (signals.length === 0) {
-    signals.push({
-      signal: 'NEUTRAL',
-      reason: aboveAll ? 'Bullish structure' : belowAll ? 'Bearish structure' : 'Ranging',
-    });
+    signals.push({ signal: 'NEUTRAL', reason: aboveAll ? 'Bullish structure' : belowAll ? 'Bearish structure' : 'Ranging' });
   }
 
   return {
     symbol, name,
-    price: rnd(price), ema50: rnd(ema50), ema200: rnd(ema200),
-    psychHigh: rnd(psychHigh), psychLow: rnd(psychLow),
-    dailyOpen: rnd(dailyOpen), prevHigh: rnd(prevHigh), prevLow: rnd(prevLow),
+    price: Math.round(price * 10000) / 10000,
+    ema50: Math.round(ema50 * 10000) / 10000,
+    ema200: Math.round(ema200 * 10000) / 10000,
+    psychHigh: Math.round(psychHigh * 10000) / 10000,
+    psychLow: Math.round(psychLow * 10000) / 10000,
+    dailyOpen: Math.round(dailyOpen * 10000) / 10000,
+    prevHigh: Math.round(prevHigh * 10000) / 10000,
+    prevLow: Math.round(prevLow * 10000) / 10000,
     signals, timestamp: new Date().toISOString(),
   };
 }
 
-function rnd(p: number): number {
-  if (p >= 1) return Math.round(p * 100) / 100;
-  if (p >= 0.001) return Math.round(p * 10000) / 10000;
-  return Math.round(p * 100000000) / 100000000;
-}
-
-function fmtPrice(p: number): string {
-  return p >= 1 ? `$${p.toLocaleString()}` : `$${p}`;
-}
-
-// ─── Main: Analyze all Solana coins (with full-result cache) ──
 export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
   const now = Date.now();
+  if (now - cache.result.ts < RESULT_TTL && cache.result.data.coins.length > 0) return { ...cache.result.data, cached: true };
 
-  // Return cached result if fresh enough
-  if (now - cache.result.ts < RESULT_TTL && cache.result.data.coins.length > 0) {
-    return { ...cache.result.data, cached: true };
-  }
-
-  // Step 1: Batch fetch all prices (1 API call)
   const prices = await fetchAllPrices();
-
-  // Step 2: Fetch OHLC sequentially with delays (respect rate limits)
   const results: CoinAnalysis[] = [];
   let totalSignals = 0;
 
@@ -267,26 +254,47 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
     const candles = await fetchOHLC(coin.id);
     const analysis = analyzeCoin(coin.symbol, coin.name, candles, prices[coin.id] || 0);
     results.push(analysis);
-    // Small delay between OHLC fetches
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 200)); // Respecting rate limits
   }
 
-  // Step 3: Push signals + save decisions
   for (const coin of results) {
     for (const sig of coin.signals) {
       if (sig.signal === 'NEUTRAL') continue;
+
+      // ── VWAP Volume Gate ──
+      const vwap = await checkVWAP(coin.symbol, coin.price, sig.signal as 'BUY' | 'SELL');
+      if (!vwap.confirmed) {
+        log.info(`${coin.symbol} signal ${sig.signal} REJECTED by VWAP`, { ratio: vwap.volumeRatio });
+        sig.signal = 'NEUTRAL';
+        sig.reason = `${sig.reason} — REJECTED by VWAP (Vol ${vwap.volumeRatio}x)`;
+        continue;
+      }
+
+      // ── RSI Momentum Gate ──
+      const coinData = SOLANA_COINS.find(c => c.symbol === coin.symbol);
+      if (coinData) {
+        const candles = await fetchOHLC(coinData.id);
+        const closes = candles.map(c => c.c);
+        if (closes.length > 20) {
+          const rsi = analyzeRSI(closes, sig.signal as 'BUY' | 'SELL');
+          if (!rsi.confirmsSignal) {
+            log.info(`${coin.symbol} signal ${sig.signal} REJECTED by RSI`, { rsi: rsi.rsi, zone: rsi.zone });
+            sig.signal = 'NEUTRAL';
+            sig.reason = `${sig.reason} — REJECTED by RSI: ${rsi.reason}`;
+            continue;
+          }
+          sig.reason = `${sig.reason} | VWAP ✅ Vol ${vwap.volumeRatio}x | RSI ✅ ${rsi.rsi}`;
+        } else {
+          sig.reason = `${sig.reason} | VWAP ✅ Vol ${vwap.volumeRatio}x`;
+        }
+      }
       totalSignals++;
 
       const signalId = `sol_${coin.symbol}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
       const signal: Signal = {
-        id: signalId,
-        symbol: coin.symbol,
-        timeframe: '4h',
-        signal: sig.signal as Signal['signal'],
-        price: coin.price,
-        timestamp: coin.timestamp,
-        source: 'Solana Engine',
-        message: sig.reason,
+        id: signalId, symbol: coin.symbol, timeframe: '4h',
+        signal: sig.signal as Signal['signal'], price: coin.price,
+        timestamp: coin.timestamp, source: 'Solana Engine', message: sig.reason,
       };
 
       const routed = routeSignal(signal);
@@ -296,39 +304,22 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
         const { addDecision } = await import('@/lib/store/db');
         addDecision({
           id: `dec_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-          signalId,
-          symbol: coin.symbol,
-          signal: sig.signal as Signal['signal'],
-          direction: (routed as unknown as { direction: string }).direction || 'NEUTRAL',
-          action: (routed as unknown as { action: string }).action || 'INFO',
+          signalId, symbol: coin.symbol, signal: sig.signal as Signal['signal'],
+          direction: (routed as unknown as { direction: string }).direction || 'NEUTRAL', action: 'INFO',
           confidence: (routed as unknown as { confidence: number }).confidence || 0,
-          price: coin.price,
-          timestamp: coin.timestamp,
-          source: 'Solana Engine',
-          ema50: coin.ema50,
-          ema200: coin.ema200,
-          ema800: 0,
-          psychHigh: coin.psychHigh,
-          psychLow: coin.psychLow,
-          dailyOpen: coin.dailyOpen,
+          price: coin.price, timestamp: coin.timestamp, source: 'Solana Engine',
+          ema50: coin.ema50, ema200: coin.ema200, ema800: 0,
+          psychHigh: coin.psychHigh, psychLow: coin.psychLow, dailyOpen: coin.dailyOpen,
           priceAfter5m: null, priceAfter15m: null, priceAfter1h: null, priceAfter4h: null,
-          outcome: 'PENDING',
-          pnlPercent: null,
-          evaluatedAt: null,
+          outcome: 'PENDING', pnlPercent: null, evaluatedAt: null,
         });
       } catch (err) {
-        console.warn(`[Solana] Decision save failed for ${coin.symbol}:`, err);
+        log.error(`Decision save failed for ${coin.symbol}`, { error: (err as Error).message });
       }
     }
   }
 
-  const result: MultiCoinResult = {
-    coins: results,
-    totalSignals,
-    timestamp: new Date().toISOString(),
-    cached: false,
-  };
-
+  const result: MultiCoinResult = { coins: results, totalSignals, timestamp: new Date().toISOString(), cached: false };
   cache.result = { data: result, ts: now };
   return result;
 }

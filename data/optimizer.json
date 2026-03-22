@@ -1,14 +1,14 @@
 {
-  "version": 1,
+  "version": 2,
   "weights": {
-    "volumeWeight": 0.26,
-    "liquidityWeight": 0.21,
-    "momentumWeight": 0.21,
-    "holderWeight": 0.16,
-    "socialWeight": 0.11,
-    "emaWeight": 0.05
+    "volumeWeight": 0.24,
+    "liquidityWeight": 0.19,
+    "momentumWeight": 0.24,
+    "holderWeight": 0.15,
+    "socialWeight": 0.1,
+    "emaWeight": 0.09
   },
-  "lastOptimizedAt": "2026-03-14T16:41:22.476Z",
+  "lastOptimizedAt": "2026-03-17T23:30:29.590Z",
   "improvementPercent": 0,
   "history": [
     {
@@ -41,6 +41,37 @@
       },
       "winRateBefore": 0,
       "winRateAfter": 0
+    },
+    {
+      "date": "2026-03-17T23:30:29.590Z",
+      "weightChanges": {
+        "volumeWeight": {
+          "from": 0.26,
+          "to": 0.24
+        },
+        "liquidityWeight": {
+          "from": 0.21,
+          "to": 0.19
+        },
+        "momentumWeight": {
+          "from": 0.21,
+          "to": 0.24
+        },
+        "holderWeight": {
+          "from": 0.16,
+          "to": 0.15
+        },
+        "socialWeight": {
+          "from": 0.11,
+          "to": 0.1
+        },
+        "emaWeight": {
+          "from": 0.05,
+          "to": 0.09
+        }
+      },
+      "winRateBefore": 62,
+      "winRateAfter": 62
     }
   ]
 }
