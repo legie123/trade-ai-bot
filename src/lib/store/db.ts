@@ -4,6 +4,7 @@
 // Stores decision snapshots, performance, and optimizer state
 // ============================================================
 import { createClient } from '@supabase/supabase-js';
+import { INITIAL_STRATEGIES } from '@/lib/store/seedStrategies';
 import {
   DecisionSnapshot,
   PerformanceRecord,
@@ -60,22 +61,34 @@ let dbInitialized = false;
 // ─── INIT DB (Called at boot or Cron start) ────
 export async function initDB() {
   if (dbInitialized) return;
-  if (!supabaseUrl) return;
+
+  // Always seed strategies from defaults if cache is empty
+  if (cache.strategies.length === 0) {
+    cache.strategies = INITIAL_STRATEGIES;
+  }
+
+  if (!supabaseUrl) {
+    dbInitialized = true;
+    log.info('DB initialized in memory-only mode (no Supabase URL)');
+    return;
+  }
 
   try {
     const { data, error } = await supabase.from('json_store').select('*');
     if (error) {
       log.error('Supabase init fetch error', { error: error.message });
+      dbInitialized = true;
       return;
     }
-      if (data && data.length > 0) {
-        for (const row of data) {
-          if (row.id === 'decisions') cache.decisions = row.data || [];
-          if (row.id === 'performance') cache.performance = row.data || [];
-          if (row.id === 'optimizer') cache.optimizer = row.data || cache.optimizer;
-          if (row.id === 'config') cache.config = row.data || cache.config;
-          if (row.id === 'strategies') {
-            const strats = row.data as TradingStrategy[] || [];
+    if (data && data.length > 0) {
+      for (const row of data) {
+        if (row.id === 'decisions') cache.decisions = row.data || [];
+        if (row.id === 'performance') cache.performance = row.data || [];
+        if (row.id === 'optimizer') cache.optimizer = row.data || cache.optimizer;
+        if (row.id === 'config') cache.config = row.data || cache.config;
+        if (row.id === 'strategies') {
+          const strats = row.data as TradingStrategy[] || [];
+          if (strats.length > 0) {
             cache.strategies = strats.map((s: TradingStrategy) => ({
               ...s,
               entryConditions: decryptConditions(s.entryConditions),
@@ -83,21 +96,14 @@ export async function initDB() {
             }));
           }
         }
-        log.info('Supabase database initialized from cloud state');
       }
+      log.info('Supabase database initialized from cloud state');
+    }
 
-      // Seed initial strategies if empty
-      if (cache.strategies.length === 0) {
-        log.info('Strategies DB empty, seeding from hardcoded defaults...');
-        import('@/lib/store/seedStrategies').then(({ INITIAL_STRATEGIES }) => {
-          cache.strategies = INITIAL_STRATEGIES;
-          syncToCloud('strategies', cache.strategies);
-        });
-      }
-      
-      dbInitialized = true;
+    dbInitialized = true;
   } catch (err) {
     log.error('Supabase init execution error', { error: String(err) });
+    dbInitialized = true;
   }
 }
 
