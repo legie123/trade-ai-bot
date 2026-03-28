@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import BottomNav from "@/components/BottomNav";
 
 export const metadata: Metadata = {
   title: "TRADE AI — Command Center",
@@ -27,7 +28,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased dark">{children}</body>
+      <body className="antialiased dark">
+        {children}
+        <BottomNav />
+      </body>
     </html>
   );
 }

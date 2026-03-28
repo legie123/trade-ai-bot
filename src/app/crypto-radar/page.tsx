@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Signal, DashboardStats, RadarFilters } from '@/lib/types/radar';
 import InstallPwaButton from '@/components/InstallPwaButton';
+import KpiBar from '@/components/KpiBar';
 
 // ============================================================
 // Crypto Radar — Main Dashboard Page
@@ -250,6 +251,16 @@ export default function CryptoRadarPage() {
           </button>
         </div>
       </header>
+
+      {/* ---- KPI Metrics Bar ---- */}
+      <KpiBar
+        equity={1000}
+        pnl24h={0}
+        maxDrawdown={0}
+        riskMode="PAPER"
+        lastSync={lastSync || null}
+        systemHealth={loading ? 'SYNCING' : 'GOOD'}
+      />
 
       {/* ---- Premium Filters Bar ---- */}
       <div className="glass-card" style={{ padding: '12px 20px', marginBottom: 24, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>

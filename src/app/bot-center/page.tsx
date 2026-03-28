@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { TradingViewPanel } from '@/components/TradingViewChart';
+import KpiBar from '@/components/KpiBar';
+import PipelineStatus from '@/components/PipelineStatus';
+import InstallPwaButton from '@/components/InstallPwaButton';
 
 // ============================================================
 // Bot Command Center — Intelligence Dashboard
@@ -218,6 +221,7 @@ export default function BotCenterPage() {
         </nav>
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <InstallPwaButton />
           <button className="btn" onClick={() => botAction('evaluate')} style={{ border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)' }}>
             ▶ Evaluate
           </button>
@@ -226,6 +230,21 @@ export default function BotCenterPage() {
           </button>
         </div>
       </header>
+
+      {/* ---- KPI Metrics Bar ---- */}
+      <KpiBar
+        equity={data?.config?.paperBalance || 1000}
+        pnl24h={data?.stats?.todayPnlPercent || 0}
+        maxDrawdown={data?.stats?.maxDrawdown || 0}
+        riskMode={data?.stats?.mode || 'OFFLINE'}
+        lastSync={null}
+        systemHealth={data?.stats?.strategyHealth || 'OFFLINE'}
+      />
+
+      {/* ---- Decision Pipeline Status ---- */}
+      <div style={{ marginBottom: 16 }}>
+        <PipelineStatus signalCount={data?.stats?.todayDecisions || 0} />
+      </div>
 
       {loading ? (
         <div className="empty-state glass-card"><div className="empty-state-icon pulse">💠</div>Initializing Core Protocols...</div>
