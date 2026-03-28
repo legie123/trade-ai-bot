@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import BottomNav from "@/components/BottomNav";
+import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "TRADE AI — Command Center",
@@ -29,8 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased dark">
-        {children}
-        <BottomNav />
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
