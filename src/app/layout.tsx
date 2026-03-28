@@ -4,14 +4,14 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "TRADE AI — Command Center",
   description: "Bento Grid Dashboard for Algorithmic Trading",
-  manifest: "/manifest.json",
+  manifest: "/manifest.json?v=4",
   icons: {
     icon: [
-      { url: "/icon-192.png?v=3", type: "image/png" },
+      { url: "/app-icon-gold.png", type: "image/png" },
     ],
-    shortcut: ["/icon-192.png?v=3"],
+    shortcut: ["/app-icon-gold.png"],
     apple: [
-      { url: "/apple-touch-icon.png?v=3", sizes: "180x180", type: "image/png" },
+      { url: "/apple-icon-gold.png", sizes: "180x180", type: "image/png" },
     ],
   },
   appleWebApp: {
