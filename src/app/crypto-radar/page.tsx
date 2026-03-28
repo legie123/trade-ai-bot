@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Signal, DashboardStats, RadarFilters } from '@/lib/types/radar';
 import InstallPwaButton from '@/components/InstallPwaButton';
 import KpiBar from '@/components/KpiBar';
+import Sparkline, { generateSparkData } from '@/components/Sparkline';
 
 // ============================================================
 // Crypto Radar — Main Dashboard Page
@@ -293,26 +294,37 @@ export default function CryptoRadarPage() {
                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, padding: 20 }}>
                  <div>
                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fear & Greed</div>
-                   <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)', color: indicators.fearGreed?.value <= 30 ? 'var(--accent-red)' : indicators.fearGreed?.value >= 70 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>{indicators.fearGreed?.value}</div>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                     <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)', color: indicators.fearGreed?.value <= 30 ? 'var(--accent-red)' : indicators.fearGreed?.value >= 70 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>{indicators.fearGreed?.value}</div>
+                     <Sparkline data={generateSparkData(indicators.fearGreed?.value || 50, 14, 0.08)} color={indicators.fearGreed?.value <= 30 ? '#ef4444' : indicators.fearGreed?.value >= 70 ? '#10b981' : '#f59e0b'} width={70} height={24} />
+                   </div>
                    <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>{indicators.fearGreed?.label}</div>
                  </div>
                  <div>
                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>RSI (14)</div>
-                   <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)', color: indicators.rsi?.value <= 30 ? 'var(--accent-red)' : indicators.rsi?.value >= 70 ? 'var(--accent-green)' : 'var(--accent-blue)' }}>{indicators.rsi?.value}</div>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                     <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)', color: indicators.rsi?.value <= 30 ? 'var(--accent-red)' : indicators.rsi?.value >= 70 ? 'var(--accent-green)' : 'var(--accent-blue)' }}>{indicators.rsi?.value}</div>
+                     <Sparkline data={generateSparkData(indicators.rsi?.value || 50, 14, 0.06)} color={indicators.rsi?.value <= 30 ? '#ef4444' : indicators.rsi?.value >= 70 ? '#10b981' : '#3b82f6'} width={70} height={24} />
+                   </div>
                    <div className="badge badge-info" style={{ marginTop: 4 }}>{indicators.rsi?.zone}</div>
                  </div>
                  <div>
                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>VWAP Metric</div>
-                   <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-blue)', marginTop: 4 }}>${indicators.vwap?.value?.toLocaleString()}</div>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                     <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-blue)', marginTop: 4 }}>${indicators.vwap?.value?.toLocaleString()}</div>
+                     <Sparkline data={generateSparkData(indicators.vwap?.value || 0, 12, 0.02)} color="#3b82f6" width={60} height={22} />
+                   </div>
                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>Vol {indicators.vwap?.volumeRatio}x {indicators.vwap?.volumeSurge ? '🔥' : ''}</div>
                  </div>
                  <div>
-                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>BB Upper</div>
-                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-green)', marginTop: 4 }}>${indicators.bollingerBands?.upper?.toLocaleString()}</div>
-                 </div>
-                 <div>
-                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>BB Lower</div>
-                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-red)', marginTop: 4 }}>${indicators.bollingerBands?.lower?.toLocaleString()}</div>
+                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>BB Band</div>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                     <Sparkline data={generateSparkData(indicators.bollingerBands?.upper || 0, 12, 0.015)} color="#10b981" width={50} height={20} showDot={false} />
+                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                       <div style={{ fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--accent-green)' }}>${indicators.bollingerBands?.upper?.toLocaleString()}</div>
+                       <div style={{ fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--accent-red)' }}>${indicators.bollingerBands?.lower?.toLocaleString()}</div>
+                     </div>
+                   </div>
                  </div>
                </div>
              </div>
@@ -404,6 +416,11 @@ export default function CryptoRadarPage() {
                        <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.symbol}</span>
                        <span className={`badge ${getSignalBadge(s.signal)}`} style={{ fontSize: 10 }}>{s.signal} {s.direction === 'BULLISH' ? '▲' : '▼'}</span>
                        <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(s.confidence) }}>{s.confidence}%</span>
+                       {/* Actionable CTAs */}
+                       <div className="signal-cta-group">
+                         <button className="signal-cta" title="Watch" onClick={() => {/* TODO: watchlist */}}>👁</button>
+                         <button className="signal-cta" title="Mute" onClick={() => {/* TODO: mute */}} style={{ opacity: 0.5 }}>🔇</button>
+                       </div>
                      </div>
                    ))}
                  </div>

@@ -862,3 +862,42 @@ input::placeholder {
   .pipeline-node span { font-size: 12px !important; }
   .pipeline-connector { top: 15px; left: calc(50% + 17px); width: calc(100% - 34px); }
 }
+
+/* ============================================================
+   Signal CTAs — Actionable buttons on signal items
+   ============================================================ */
+.signal-cta-group {
+  display: flex;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.signal-cta {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.signal-cta:hover {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.3);
+  transform: scale(1.1);
+}
+
+.signal-cta:active {
+  transform: scale(0.95);
+}
+
+@media (max-width: 480px) {
+  .signal-cta-group { display: none; }
+}
