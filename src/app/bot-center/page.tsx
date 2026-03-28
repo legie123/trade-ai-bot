@@ -76,6 +76,14 @@ interface BotData {
     signal: string;
     symbol: string;
   }>;
+  strategies: Array<{
+    id: string;
+    name: string;
+    description: string;
+    status: string;
+    targetAssets: string[];
+    risk: { stopLossPercent: number; takeProfitPercent: number; trailingStopEnabled: boolean };
+  }>;
 }
 
 export default function BotCenterPage() {
@@ -284,6 +292,35 @@ export default function BotCenterPage() {
                           </div>
                         </div>
                       </div>
+                  ))
+                ) : data.strategies && data.strategies.length > 0 ? (
+                  data.strategies.map((strat, i) => (
+                    <div key={strat.id} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      background: i === 0 ? 'rgba(6, 182, 212, 0.08)' : 'rgba(0,0,0,0.2)',
+                      border: i === 0 ? '1px solid rgba(6, 182, 212, 0.25)' : '1px solid var(--border)',
+                      padding: '12px', borderRadius: 12, position: 'relative', overflow: 'hidden'
+                    }}>
+                      {i === 0 && <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: 'var(--accent-cyan)', boxShadow: 'var(--neon-cyan)' }} />}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 16 }}>{['⚡','🔄','📊','📈','🎯','🔀','💰','🧱','🚀'][i] || '🔹'}</span>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{strat.name}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{strat.targetAssets.join(', ')} · {strat.description.slice(0, 35)}</div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{
+                          fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6,
+                          background: strat.status === 'active' ? 'rgba(16,185,129,0.15)' : strat.status === 'probation' ? 'rgba(245,158,11,0.15)' : 'rgba(100,116,139,0.15)',
+                          color: strat.status === 'active' ? 'var(--accent-green)' : strat.status === 'probation' ? 'var(--accent-amber)' : 'var(--text-muted)',
+                          textTransform: 'uppercase'
+                        }}>{strat.status}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                          SL {strat.risk.stopLossPercent}% · TP {strat.risk.takeProfitPercent}%
+                        </div>
+                      </div>
+                    </div>
                   ))
                 ) : (
                   <div className="empty-state pulse" style={{ padding: '20px 0' }}>Arena is waiting...</div>

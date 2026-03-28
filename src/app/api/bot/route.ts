@@ -4,6 +4,7 @@
 // ============================================================
 import { NextResponse } from 'next/server';
 import {
+  initDB,
   getDecisions,
   getDecisionsToday,
   getPerformance,
@@ -12,6 +13,7 @@ import {
   saveBotConfig,
   recalculatePerformance,
   getEquityCurve,
+  getStrategies,
 } from '@/lib/store/db';
 import { evaluatePendingDecisions } from '@/lib/engine/tradeEvaluator';
 import { runOptimizer } from '@/lib/engine/optimizer';
@@ -21,6 +23,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    await initDB();
     const config = getBotConfig();
     const allDecisions = getDecisions();
     const todayDecisions = getDecisionsToday();
@@ -95,6 +98,7 @@ export async function GET() {
       stats,
       decisions: allDecisions.slice(0, 50),
       performance,
+      strategies: getStrategies(),
       optimizer,
       config,
       equityCurve: getEquityCurve(),
