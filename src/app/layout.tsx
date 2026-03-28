@@ -5,6 +5,11 @@ export const metadata: Metadata = {
   title: "TRADE AI — Command Center",
   description: "Bento Grid Dashboard for Algorithmic Trading",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon-192.png",
+    shortcut: "/icon-192.png",
+    apple: "/icon-192.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
