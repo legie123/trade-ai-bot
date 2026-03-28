@@ -6,9 +6,9 @@ export const metadata: Metadata = {
   description: "Bento Grid Dashboard for Algorithmic Trading",
   manifest: "/manifest.json",
   icons: {
-    icon: "/icon-192.png",
-    shortcut: "/icon-192.png",
-    apple: "/icon-192.png",
+    icon: "/favicon.ico?v=2",
+    shortcut: "/favicon.ico?v=2",
+    apple: "/apple-touch-icon.png?v=2",
   },
   appleWebApp: {
     capable: true,
