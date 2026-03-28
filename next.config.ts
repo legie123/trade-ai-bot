@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Vercel handles builds natively
+  output: "standalone",
+  // Vercel handles builds natively, but Cloud Run needs standalone output
 };
 
 export default nextConfig;
