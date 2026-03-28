@@ -219,543 +219,264 @@ export default function CryptoRadarPage() {
   };
 
   return (
-    <div className="page-container">
-      {/* ---- Top Bar ---- */}
-      <header className="top-bar">
-        <div className="top-bar-left">
-          <div className="logo">⚡ CryptoRadar <span>v1.0</span></div>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            <span className={`status-dot ${loading ? 'dot-amber' : 'dot-green'}`} />
-            {loading ? 'Syncing...' : 'Live'}
-          </span>
+    <div className="page-container" style={{ maxWidth: 1600 }}>
+      {/* ---- Premium Navigation & Top Bar ---- */}
+      <header className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', marginBottom: 24, borderRadius: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div className="logo" style={{ fontSize: 20, letterSpacing: '0.05em' }}>
+             <span style={{ color: '#fff', textShadow: '0 0 10px rgba(255,255,255,0.3)' }}>OPTICAL</span>
+             <span style={{ color: 'var(--accent-red)', textShadow: '0 0 10px rgba(239, 68, 68, 0.4)' }}> RADAR</span>
+          </div>
+          <div style={{ padding: '4px 12px', background: 'rgba(0,0,0,0.3)', borderRadius: 20, fontSize: 11, border: '1px solid var(--border)' }}>
+             <span className={`status-dot ${loading ? 'dot-amber' : 'dot-green'}`} />
+             <span style={{ fontWeight: 600, letterSpacing: '0.05em' }}>{loading ? 'SYNCING...' : 'LIVE FEED'}</span>
+          </div>
         </div>
-        <div className="top-bar-right">
-          <nav className="nav-toggle">
-            <Link href="/bot-center" className="nav-toggle-item">
-              <span className="nav-dot" />
-              <span className="nav-toggle-icon">🤖</span>
-              <span className="nav-toggle-label">Bot</span>
-            </Link>
-            <Link href="/crypto-radar" className="nav-toggle-item active">
-              <span className="nav-dot" />
-              <span className="nav-toggle-icon">📡</span>
-              <span className="nav-toggle-label">Radar</span>
-            </Link>
-          </nav>
-          <button className="btn" onClick={handleRefresh}>↻</button>
+
+        <nav className="nav-toggle">
+          <Link href="/bot-center" className="nav-toggle-item">
+            <span className="nav-dot" /> <span className="nav-toggle-icon">🏆</span> <span className="nav-toggle-label" style={{marginLeft: 4}}>Arena</span>
+          </Link>
+          <Link href="/crypto-radar" className="nav-toggle-item active">
+            <span className="nav-dot" /> <span className="nav-toggle-icon">🛰️</span> <span className="nav-toggle-label" style={{marginLeft: 4}}>Radar view</span>
+          </Link>
+        </nav>
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <button className="btn" onClick={handleRefresh} style={{ background: 'transparent', borderColor: 'var(--border)' }}>
+            ↻ Matrix Sync
+          </button>
         </div>
       </header>
 
-      {/* ---- Stat Cards ---- */}
-      <div className="grid-4" style={{ marginBottom: 16 }}>
-        <div className="stat-card">
-          <span className="stat-label">Signals Today</span>
-          <span className="stat-value">{stats.totalSignalsToday}</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Active Alerts</span>
-          <span className="stat-value text-amber">{stats.activeAlerts}</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Strongest Mover</span>
-          <span className="stat-value" style={{ fontSize: 18 }}>
-            {stats.strongestMover
-              ? `${stats.strongestMover.symbol} (${stats.strongestMover.change}×)`
-              : '—'}
-          </span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Last Webhook</span>
-          <span className="stat-sub">
-            {stats.lastWebhookAt ? formatTime(stats.lastWebhookAt) : 'No webhooks yet'}
-          </span>
-        </div>
-      </div>
-
-      {/* ---- Market Intelligence Panel ---- */}
-      {indicators && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header">
-            <span className="card-title">🧠 Market Intelligence</span>
-            <span className={`badge ${indicators.regime === 'BULL_TREND' ? 'badge-green' : indicators.regime === 'BEAR_TREND' ? 'badge-red' : 'badge-amber'}`}>
-              {indicators.regime?.replace('_', ' ')}
-            </span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
-            <div className="stat-card">
-              <span className="stat-label">Fear & Greed</span>
-              <span className={`stat-value ${indicators.fearGreed?.value <= 25 ? 'text-red' : indicators.fearGreed?.value >= 75 ? 'text-green' : 'text-amber'}`} style={{ fontSize: 22 }}>
-                {indicators.fearGreed?.value}
-              </span>
-              <span className="stat-sub" style={{ fontSize: 10 }}>{indicators.fearGreed?.label}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">RSI (14)</span>
-              <span className={`stat-value ${indicators.rsi?.value <= 30 ? 'text-red' : indicators.rsi?.value >= 70 ? 'text-green' : 'text-blue'}`} style={{ fontSize: 22 }}>
-                {indicators.rsi?.value}
-              </span>
-              <span className="stat-sub" style={{ fontSize: 10 }}>{indicators.rsi?.zone}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">VWAP</span>
-              <span className="stat-sub text-blue">${indicators.vwap?.value?.toLocaleString()}</span>
-              <span className="stat-sub" style={{ fontSize: 10 }}>
-                Vol {indicators.vwap?.volumeRatio}x {indicators.vwap?.volumeSurge ? '🔥' : ''}
-              </span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">BB Upper</span>
-              <span className="stat-sub text-green">${indicators.bollingerBands?.upper?.toLocaleString()}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">BB Middle</span>
-              <span className="stat-sub">${indicators.bollingerBands?.middle?.toLocaleString()}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">BB Lower</span>
-              <span className="stat-sub text-red">${indicators.bollingerBands?.lower?.toLocaleString()}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">%B Position</span>
-              <span className="stat-sub">{(indicators.bollingerBands?.percentB * 100)?.toFixed(1)}%</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Kelly Risk</span>
-              <span className="stat-sub text-amber">{indicators.kelly?.suggestedRisk}%</span>
-              <span className="stat-sub" style={{ fontSize: 10 }}>{indicators.kelly?.confident ? 'Confident' : `${indicators.kelly?.sampleSize} trades`}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---- Equity Curve Card ---- */}
-      {equity && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header">
-            <span className="card-title">💰 Portfolio & Equity Curve</span>
-            <span className={`badge ${equity.totalReturn >= 0 ? 'badge-green' : 'badge-red'}`}>
-              {equity.totalReturn >= 0 ? '+' : ''}{equity.totalReturn}%
-            </span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
-            <div className="stat-card">
-              <span className="stat-label">Balance</span>
-              <span className="stat-value text-green" style={{ fontSize: 20 }}>${equity.currentBalance?.toLocaleString()}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Peak</span>
-              <span className="stat-sub text-blue">${equity.peakBalance?.toLocaleString()}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Max Drawdown</span>
-              <span className="stat-sub text-red">{equity.maxDrawdown}%</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Win Rate</span>
-              <span className="stat-sub text-amber">{equity.winRate}%</span>
-              <span className="stat-sub" style={{ fontSize: 10 }}>{equity.wins}W / {equity.losses}L</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Profit Factor</span>
-              <span className="stat-sub">{equity.profitFactor || '—'}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Best Streak</span>
-              <span className="stat-sub text-green">{equity.maxWinStreak}W</span>
-              <span className="stat-sub text-red" style={{ fontSize: 10 }}>{equity.maxLossStreak}L worst</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Total Trades</span>
-              <span className="stat-sub">{equity.totalTrades}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Pending</span>
-              <span className="stat-sub text-amber">{equity.pendingTrades}</span>
-            </div>
-          </div>
-          {/* Mini equity bar chart */}
-          {equity.curve && equity.curve.length > 1 && (
-            <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-end', gap: 2, height: 60, padding: '0 4px' }}>
-              {equity.curve.slice(-30).map((point: { date: string; balance: number }, i: number) => {
-                const min = Math.min(...equity.curve.slice(-30).map((p: { balance: number }) => p.balance));
-                const max = Math.max(...equity.curve.slice(-30).map((p: { balance: number }) => p.balance));
-                const range = max - min || 1;
-                const height = Math.max(4, ((point.balance - min) / range) * 56);
-                const color = point.balance >= 1000 ? 'var(--color-green)' : 'var(--color-red)';
-                return <div key={i} title={`${point.date}: $${point.balance}`} style={{ flex: 1, height, background: color, borderRadius: 2, opacity: 0.8, minWidth: 4 }} />;
-              })}
-            </div>
-          )}
-        </div>
-      )}
-      {/* ---- BTC Engine Card ---- */}
-      {btcData && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header">
-            <span className="card-title">₿ BTC Engine — Traders Reality</span>
-            <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', fontWeight: 700 }}>
-              ${btcData.price > 0 ? btcData.price.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—'}
-            </span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
-            <div className="stat-card">
-              <span className="stat-label">EMA 50</span>
-              <span className="stat-sub text-blue">${btcData.ema50 > 0 ? btcData.ema50.toLocaleString() : '—'}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">EMA 200</span>
-              <span className="stat-sub text-amber">${btcData.ema200 > 0 ? btcData.ema200.toLocaleString() : '—'}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">EMA 800</span>
-              <span className="stat-sub text-red">${btcData.ema800 > 0 ? btcData.ema800.toLocaleString() : '—'}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Daily Open</span>
-              <span className="stat-sub">${btcData.dailyOpen > 0 ? btcData.dailyOpen.toLocaleString() : '—'}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Psych High</span>
-              <span className="stat-sub text-green">${btcData.psychHigh.toLocaleString()}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Psych Low</span>
-              <span className="stat-sub text-red">${btcData.psychLow.toLocaleString()}</span>
-            </div>
-            {btcData.signals.map((sig, i) => (
-              <div key={i} className="stat-card" style={{ gridColumn: 'span 2' }}>
-                <span className="stat-label">Signal</span>
-                <div>
-                  <span className={`badge ${getSignalBadge(sig.signal)}`} style={{ marginRight: 6 }}>
-                    {sig.signal}
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{sig.reason}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ---- Solana Ecosystem Card ---- */}
-      {solCoins.length > 0 && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header">
-            <span className="card-title">◎ Solana Ecosystem Engine</span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {solCoins.filter(c => c.price > 0).length}/{solCoins.length} active
-            </span>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Token</th>
-                  <th>Price</th>
-                  <th>EMA 50</th>
-                  <th>EMA 200</th>
-                  <th>Signal</th>
-                  <th>Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {solCoins.filter(c => c.price > 0).map((coin) => (
-                  <tr key={coin.symbol}>
-                    <td style={{ fontWeight: 600 }}>{coin.symbol}</td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>
-                      ${coin.price < 1 ? coin.price.toFixed(6) : coin.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ fontSize: 10, color: 'var(--accent-blue)' }}>
-                      ${coin.ema50 < 1 ? coin.ema50.toFixed(6) : coin.ema50.toLocaleString()}
-                    </td>
-                    <td style={{ fontSize: 10, color: 'var(--accent-amber)' }}>
-                      ${coin.ema200 < 1 ? coin.ema200.toFixed(6) : coin.ema200.toLocaleString()}
-                    </td>
-                    <td>
-                      {coin.signals.map((s, i) => (
-                        <span key={i} className={`badge ${getSignalBadge(s.signal)}`} style={{ marginRight: 4 }}>
-                          {s.signal}
-                        </span>
-                      ))}
-                    </td>
-                    <td style={{ fontSize: 10, color: 'var(--text-secondary)', maxWidth: 200 }}>
-                      {coin.signals.map(s => s.reason).join(' | ')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ---- Filters Bar ---- */}
-      <div className="filters-bar">
-        <input
-          placeholder="🔍 Search symbol or name..."
-          value={filters.search}
-          onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-        />
-        <select value={filters.chain} onChange={(e) => setFilters({ ...filters, chain: e.target.value })}>
-          <option value="">All Chains</option>
-          <option value="solana">Solana</option>
-          <option value="ethereum">Ethereum</option>
-          <option value="bsc">BSC</option>
+      {/* ---- Premium Filters Bar ---- */}
+      <div className="glass-card" style={{ padding: '12px 20px', marginBottom: 24, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input placeholder="🔍 Search symbol..." value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }} />
+        <select value={filters.chain} onChange={(e) => setFilters({ ...filters, chain: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }}>
+          <option value="">All Chains</option><option value="solana">Solana</option><option value="ethereum">Ethereum</option>
         </select>
-        <select value={filters.exchange} onChange={(e) => setFilters({ ...filters, exchange: e.target.value })}>
-          <option value="">All Exchanges</option>
-          <option value="raydium">Raydium</option>
-          <option value="jupiter">Jupiter</option>
-          <option value="orca">Orca</option>
-          <option value="pumpfun">Pump.fun</option>
+        <select value={filters.exchange} onChange={(e) => setFilters({ ...filters, exchange: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }}>
+          <option value="">All Exchanges</option><option value="raydium">Raydium</option><option value="pumpfun">Pump.fun</option>
         </select>
-        <input
-          placeholder="Min Volume"
-          type="number"
-          style={{ width: 100 }}
-          value={filters.minVolume}
-          onChange={(e) => setFilters({ ...filters, minVolume: e.target.value })}
-        />
-        <input
-          placeholder="Min MCap"
-          type="number"
-          style={{ width: 100 }}
-          value={filters.minMarketCap}
-          onChange={(e) => setFilters({ ...filters, minMarketCap: e.target.value })}
-        />
-        <input
-          placeholder="Min % Change"
-          type="number"
-          style={{ width: 90 }}
-          value={filters.minChange}
-          onChange={(e) => setFilters({ ...filters, minChange: e.target.value })}
-        />
+        <input placeholder="Min Vol" type="number" style={{ width: 100, background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }} value={filters.minVolume} onChange={(e) => setFilters({ ...filters, minVolume: e.target.value })} />
+        <input placeholder="Min % Change" type="number" style={{ width: 100, background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }} value={filters.minChange} onChange={(e) => setFilters({ ...filters, minChange: e.target.value })} />
       </div>
 
-      {/* ---- Main Grid: Watchlist + Signals ---- */}
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        {/* Watchlist */}
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">📋 Watchlist</span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{filtered.length} tokens</span>
-          </div>
-          <div className="table-wrap">
-            {filtered.length > 0 ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th>Price</th>
-                    <th>24h %</th>
-                    <th>Volume</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((t, i) => (
-                    <tr key={`${t.symbol}-${i}`}>
-                      <td style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                        {t.symbol}
-                        <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 6, fontSize: 10 }}>
-                          {t.chain}
-                        </span>
-                      </td>
-                      <td>{t.price !== null ? `$${formatNum(t.price)}` : '—'}</td>
-                      <td className={t.change24h !== null ? (t.change24h >= 0 ? 'text-green' : 'text-red') : ''}>
-                        {t.change24h !== null ? `${t.change24h >= 0 ? '+' : ''}${t.change24h.toFixed(2)}%` : '—'}
-                      </td>
-                      <td>{t.volume24h !== null ? `$${formatCompact(t.volume24h)}` : '—'}</td>
-                      <td>
-                        <span className={`badge badge-${t.status}`}>
-                          {t.status === 'bullish' ? '▲' : t.status === 'bearish' ? '▼' : '●'} {t.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="empty-state">
-                <div className="empty-state-icon">📊</div>
-                {loading ? 'Loading tokens...' : 'No tokens match filters'}
-              </div>
-            )}
-          </div>
-        </div>
+      <div className="bento-grid">
+        
+        {/* ================= COLUMN 1 (Span 8) ================= */}
+        <div className="bento-col-8" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+           
+           {/* Market Intelligence Panel */}
+           {indicators && (
+             <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+               <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)' }}>
+                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '0.05em' }}>🧠 GLOBAL MARKET CONTEXT</span>
+                 <span className={`badge ${indicators.regime === 'BULL_TREND' ? 'badge-bullish' : indicators.regime === 'BEAR_TREND' ? 'badge-bearish' : 'badge-neutral'}`}>
+                    {indicators.regime?.replace('_', ' ')}
+                 </span>
+               </div>
+               
+               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, padding: 20 }}>
+                 <div>
+                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fear & Greed</div>
+                   <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)', color: indicators.fearGreed?.value <= 30 ? 'var(--accent-red)' : indicators.fearGreed?.value >= 70 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>{indicators.fearGreed?.value}</div>
+                   <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>{indicators.fearGreed?.label}</div>
+                 </div>
+                 <div>
+                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>RSI (14)</div>
+                   <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)', color: indicators.rsi?.value <= 30 ? 'var(--accent-red)' : indicators.rsi?.value >= 70 ? 'var(--accent-green)' : 'var(--accent-blue)' }}>{indicators.rsi?.value}</div>
+                   <div className="badge badge-info" style={{ marginTop: 4 }}>{indicators.rsi?.zone}</div>
+                 </div>
+                 <div>
+                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>VWAP Metric</div>
+                   <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-blue)', marginTop: 4 }}>${indicators.vwap?.value?.toLocaleString()}</div>
+                   <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>Vol {indicators.vwap?.volumeRatio}x {indicators.vwap?.volumeSurge ? '🔥' : ''}</div>
+                 </div>
+                 <div>
+                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>BB Upper</div>
+                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-green)', marginTop: 4 }}>${indicators.bollingerBands?.upper?.toLocaleString()}</div>
+                 </div>
+                 <div>
+                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>BB Lower</div>
+                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-red)', marginTop: 4 }}>${indicators.bollingerBands?.lower?.toLocaleString()}</div>
+                 </div>
+               </div>
+             </div>
+           )}
 
-        {/* Live Signals */}
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">
-              <span className="pulse" style={{ color: 'var(--accent-red)' }}>●</span>{' '}
-              Live Signals
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{signals.length} total</span>
-          </div>
-          <div className="table-wrap">
-            {signals.length > 0 ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Symbol</th>
-                    <th>Signal</th>
-                    <th>Dir</th>
-                    <th>Action</th>
-                    <th>Conf</th>
-                    <th>Price</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {signals.map((s: any) => (
-                    <tr key={s.id}>
-                      <td>{formatTime(s.timestamp)}</td>
-                      <td style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{s.symbol}</td>
-                      <td>
-                        <span className={`badge ${getSignalBadge(s.signal)}`}>
-                          {s.signal}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`badge ${getDirectionBadge(s.direction)}`}>
-                          {s.direction === 'BULLISH' ? '▲' : s.direction === 'BEARISH' ? '▼' : '●'}{' '}
-                          {s.direction || '—'}
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{ fontSize: 10, color: s.action === 'ENTRY' ? 'var(--accent-green)' : s.action === 'EXIT' ? 'var(--accent-red)' : 'var(--text-muted)' }}>
-                          {s.action || '—'}
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{ fontSize: 11, color: getConfColor(s.confidence) }}>
-                          {s.confidence ? `${s.confidence}%` : '—'}
-                        </span>
-                      </td>
-                      <td>{s.price > 0 ? `$${formatNum(s.price)}` : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="empty-state">
-                <div className="empty-state-icon">📡</div>
-                Waiting for TradingView signals...
-                <div style={{ marginTop: 8, fontSize: 11 }}>
-                  Send POST to <code style={{ color: 'var(--accent-cyan)' }}>/api/tradingview</code>
+           {/* Watchlist & Top Movers (Split Grid) */}
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+              {/* Top Movers */}
+              <div className="glass-card" style={{ padding: 0 }}>
+                <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-amber)', letterSpacing: '0.05em' }}>🔥 TOP MOVERS</span>
+                </div>
+                <div className="table-wrap" style={{ maxHeight: 300, padding: '0 8px 8px' }}>
+                  {topMovers.length > 0 ? (
+                    <table>
+                      <thead><tr><th>Token</th><th>Price</th><th>24h %</th><th>MCap</th></tr></thead>
+                      <tbody>
+                        {topMovers.slice(0, 10).map((t, i) => (
+                           <tr key={i}>
+                             <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.symbol}</td>
+                             <td style={{ fontFamily: 'var(--font-mono)' }}>{t.price !== null ? `$${formatNum(t.price)}` : '—'}</td>
+                             <td style={{ fontFamily: 'var(--font-mono)', color: t.change24h !== null && t.change24h >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight: 600 }}>
+                               {t.change24h !== null ? `${t.change24h >= 0 ? '+' : ''}${t.change24h.toFixed(2)}%` : '—'}
+                             </td>
+                             <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.marketCap !== null ? `$${formatCompact(t.marketCap)}` : '—'}</td>
+                           </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (<div style={{ padding: 20, textAlign:'center', color: 'var(--text-muted)' }}>Scan loading...</div>)}
                 </div>
               </div>
-            )}
-          </div>
-        </div>
-      </div>
 
-      {/* ---- Bottom Grid: Top Movers + Trade Log ---- */}
-      <div className="grid-2">
-        {/* Top Movers */}
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">🔥 Top Movers</span>
-          </div>
-          <div className="table-wrap">
-            {topMovers.length > 0 ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Symbol</th>
-                    <th>Price</th>
-                    <th>Change</th>
-                    <th>Volume</th>
-                    <th>MCap</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topMovers.map((t, i) => (
-                    <tr key={`mover-${t.symbol}-${i}`}>
-                      <td style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
-                      <td style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{t.symbol}</td>
-                      <td>{t.price !== null ? `$${formatNum(t.price)}` : '—'}</td>
-                      <td className={t.change24h !== null ? (t.change24h >= 0 ? 'text-green' : 'text-red') : ''}>
-                        {t.change24h !== null ? `${t.change24h >= 0 ? '+' : ''}${t.change24h.toFixed(2)}%` : '—'}
-                      </td>
-                      <td>{t.volume24h !== null ? `$${formatCompact(t.volume24h)}` : '—'}</td>
-                      <td>{t.marketCap !== null ? `$${formatCompact(t.marketCap)}` : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="empty-state">
-                <div className="empty-state-icon">🚀</div>
-                Loading top movers...
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Trade Log */}
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">📒 Trade Log</span>
-            <span className="badge badge-info">{decisions.length > 0 ? 'Active' : 'Standby'}</span>
-          </div>
-          <div className="table-wrap">
-            {decisions.length > 0 ? (
-              <table>
-                <thead>
-                  <tr><th>Time</th><th>Symbol</th><th>Signal</th><th>Outcome</th></tr>
-                </thead>
-                <tbody>
-                  {decisions.map(d => (
-                    <tr key={d.id}>
-                      <td>{formatTime(d.timestamp)}</td>
-                      <td style={{fontWeight: 600}}>{d.symbol}</td>
-                      <td><span className={`badge ${getSignalBadge(d.signal)}`}>{d.signal}</span></td>
-                      <td>
-                        <span style={{ 
-                          color: d.outcome === 'WIN' ? 'var(--accent-green)' : 
-                                 d.outcome === 'LOSS' ? 'var(--accent-red)' : 'var(--text-muted)'
-                        }}>
-                          {d.outcome || 'PENDING'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="empty-state">
-                <div className="empty-state-icon">🤖</div>
-                Bot infrastructure ready — trading not activated
-                <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
-                  Entry/exit rules, SL/TP, and position sizing schemas are prepared.
-                  <br />Activate when ready.
+              {/* Watchlist Filtered */}
+              <div className="glass-card" style={{ padding: 0 }}>
+                <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-cyan)', letterSpacing: '0.05em' }}>📋 WATCHLIST ({filtered.length})</span>
+                </div>
+                <div className="table-wrap" style={{ maxHeight: 300, padding: '0 8px 8px' }}>
+                  {filtered.length > 0 ? (
+                    <table>
+                      <thead><tr><th>Token</th><th>DEX</th><th>Change</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {filtered.slice(0, 20).map((t, i) => (
+                           <tr key={i}>
+                             <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.symbol}</td>
+                             <td style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t.exchange}</td>
+                             <td style={{ fontFamily: 'var(--font-mono)', color: t.change24h !== null && t.change24h >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                               {t.change24h !== null ? `${t.change24h >= 0 ? '+' : ''}${t.change24h.toFixed(2)}%` : '—'}
+                             </td>
+                             <td><span className={`badge badge-${t.status}`} style={{ fontSize: 9 }}>{t.status}</span></td>
+                           </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (<div style={{ padding: 20, textAlign:'center', color: 'var(--text-muted)' }}>No tokens match filters</div>)}
                 </div>
               </div>
-            )}
-          </div>
+           </div>
         </div>
+
+        {/* ================= COLUMN 2 (Span 4) ================= */}
+        <div className="bento-col-4" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+           
+           {/* Radar Pulse Identity */}
+           <div className="glass-card" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(145deg, rgba(6, 182, 212, 0.1), rgba(15, 23, 42, 0.6))' }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--accent-cyan)', fontWeight: 600, letterSpacing: '0.05em' }}>TODAY'S ACTIVITY</div>
+                <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#fff' }}>{stats.totalSignalsToday} <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>SIGNALS</span></div>
+              </div>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(6, 182, 212, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--accent-cyan)' }} className="pulse">
+                 🛰️
+              </div>
+           </div>
+
+           {/* Live Signals Data Stream */}
+           <div className="glass-card" style={{ flex: 1, padding: 0, display: 'flex', flexDirection: 'column' }}>
+             <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '0.05em' }}>LIVE SIGNALS STREAM</span>
+                <span className="pulse" style={{ fontSize: 10, color: 'var(--accent-red)' }}>● {signals.length}</span>
+             </div>
+             
+             <div style={{ padding: 12, flex: 1, maxHeight: 450, overflowY: 'auto' }}>
+               {signals.length > 0 ? (
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                   {signals.slice(0, 15).map((s: any) => (
+                     <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${s.signal.includes('BUY') ? 'var(--accent-green)' : 'var(--accent-red)'}` }}>
+                       <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(s.timestamp)}</span>
+                       <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.symbol}</span>
+                       <span className={`badge ${getSignalBadge(s.signal)}`} style={{ fontSize: 10 }}>{s.signal} {s.direction === 'BULLISH' ? '▲' : '▼'}</span>
+                       <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(s.confidence) }}>{s.confidence}%</span>
+                     </div>
+                   ))}
+                 </div>
+               ) : (
+                 <div className="empty-state">Awaiting optical data...</div>
+               )}
+             </div>
+           </div>
+
+        </div>
+
+        {/* ================= COLUMN 3: ENGINE MODULES (Span 12) ================= */}
+        <div className="bento-col-12" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+           
+           {/* BTC Reality Engine */}
+           {btcData && (
+             <div className="glass-card" style={{ padding: 0 }}>
+               <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-amber)', letterSpacing: '0.05em' }}>₿ THE BITCOIN ENGINE</span>
+                 <span style={{ fontSize: 16, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#fff' }}>${btcData.price.toLocaleString()}</span>
+               </div>
+               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, padding: 20 }}>
+                 <div>
+                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>EMA 50 / 200</div>
+                   <div style={{ fontSize: 14, fontFamily: 'var(--font-mono)', color: 'var(--accent-blue)', fontWeight: 600 }}>${btcData.ema50?.toLocaleString()}</div>
+                   <div style={{ fontSize: 14, fontFamily: 'var(--font-mono)', color: 'var(--accent-amber)', fontWeight: 600 }}>${btcData.ema200?.toLocaleString()}</div>
+                 </div>
+                 <div>
+                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Daily Open</div>
+                   <div style={{ fontSize: 16, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', fontWeight: 600 }}>${btcData.dailyOpen?.toLocaleString()}</div>
+                 </div>
+                 <div style={{ gridColumn: 'span 2' }}>
+                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>Live Signals</div>
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                     {btcData.signals.slice(0, 3).map((sig, i) => (
+                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span className={`badge ${getSignalBadge(sig.signal)}`} style={{ fontSize: 9 }}>{sig.signal}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>{sig.reason}</span>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               </div>
+             </div>
+           )}
+
+           {/* Solana Matrix */}
+           {solCoins.length > 0 && (
+             <div className="glass-card" style={{ padding: 0 }}>
+               <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-purple)', letterSpacing: '0.05em' }}>◎ SOLANA MULTI-COIN ECOSYSTEM</span>
+                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{solCoins.filter(c => c.price > 0).length} ACTIVE TRACKERS</span>
+               </div>
+               <div className="table-wrap" style={{ maxHeight: 200, padding: '0 8px 8px' }}>
+                 <table>
+                   <thead><tr><th>Token</th><th>Price</th><th>Signal</th><th>Reason</th></tr></thead>
+                   <tbody>
+                     {solCoins.filter(c => c.price > 0).map((coin) => (
+                       <tr key={coin.symbol}>
+                         <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{coin.symbol}</td>
+                         <td style={{ fontFamily: 'var(--font-mono)' }}>${coin.price < 1 ? coin.price.toFixed(6) : coin.price.toLocaleString()}</td>
+                         <td>
+                           {coin.signals.slice(0, 1).map((s, i) => (
+                             <span key={i} className={`badge ${getSignalBadge(s.signal)}`} style={{ fontSize: 9 }}>{s.signal}</span>
+                           ))}
+                         </td>
+                         <td style={{ fontSize: 10, color: 'var(--text-secondary)' }}>{coin.signals[0]?.reason.slice(0, 40)}</td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+             </div>
+           )}
+
+        </div>
+
       </div>
 
       {/* ---- Footer ---- */}
-      <footer style={{
-        textAlign: 'center',
-        padding: '24px 0 12px',
-        fontSize: 11,
-        color: 'var(--text-muted)',
-        borderTop: '1px solid var(--border)',
-        marginTop: 24,
-      }}>
-        CryptoRadar v1.0 — Webhook: <code style={{ color: 'var(--accent-cyan)' }}>/api/tradingview</code> •
-        Health: <code style={{ color: 'var(--accent-cyan)' }}>/api/health</code> •
-        Tokens: <code style={{ color: 'var(--accent-cyan)' }}>/api/tokens</code> •
-        Last Sync: {lastSync}
+      <footer style={{ textAlign: 'center', padding: '24px 0 12px', fontSize: 11, color: 'var(--text-muted)', marginTop: 24 }}>
+        OPTICAL RADAR v2.0 | Matrix Last Sync: {lastSync} | Connected via <code style={{ color: 'var(--accent-cyan)' }}>/api/tradingview</code>
       </footer>
     </div>
   );
+
 }
 
 // ---- Helpers ----
