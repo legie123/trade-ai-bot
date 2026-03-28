@@ -1,0 +1,18 @@
+{
+  "name": "TRADE AI",
+  "short_name": "TRADE AI",
+  "description": "Cloud-Native Bot Commander Center",
+  "start_url": "/bot-center",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#0ea5e9",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "orientation": "portrait",
+  "scope": "/"
+}

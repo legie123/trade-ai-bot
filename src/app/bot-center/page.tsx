@@ -186,657 +186,210 @@ export default function BotCenterPage() {
     : 'var(--accent-red)';
 
   return (
-    <div className="page-container">
-      {/* ---- Header ---- */}
-      <header className="top-bar">
-        <div className="top-bar-left">
-          <div className="logo">🤖 Bot Center <span>v{data?.optimizer?.version || 0}</span></div>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+    <div className="page-container" style={{ maxWidth: 1600 }}>
+      {/* ---- Premium Navigation & Top Bar ---- */}
+      <header className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', marginBottom: 24, borderRadius: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div className="logo" style={{ fontSize: 20, letterSpacing: '0.05em' }}>
+            <span style={{ color: '#fff', textShadow: '0 0 10px rgba(255,255,255,0.3)' }}>TRADE</span>
+            <span style={{ color: 'var(--accent-cyan)', textShadow: 'var(--neon-cyan)' }}> AI</span>
+          </div>
+          <div style={{ padding: '4px 12px', background: 'rgba(0,0,0,0.3)', borderRadius: 20, fontSize: 11, border: '1px solid var(--border)' }}>
             <span className={`status-dot ${s?.mode === 'PAPER' ? 'dot-amber' : s?.mode === 'LIVE' ? 'dot-green' : 'dot-red'}`} />
-            Mode: {s?.mode || 'LOADING'}
-          </span>
+            <span style={{ fontWeight: 600, letterSpacing: '0.05em' }}>{s?.mode || 'OFFLINE'}</span>
+          </div>
         </div>
-        <div className="top-bar-right">
-          <nav className="nav-toggle">
-            <Link href="/bot-center" className="nav-toggle-item active">
-              <span className="nav-dot" />
-              <span className="nav-toggle-icon">🤖</span>
-              <span className="nav-toggle-label">Bot</span>
-            </Link>
-            <Link href="/crypto-radar" className="nav-toggle-item">
-              <span className="nav-dot" />
-              <span className="nav-toggle-icon">📡</span>
-              <span className="nav-toggle-label">Radar</span>
-            </Link>
-          </nav>
-          <button className="btn" onClick={() => { fetchData(); fetchDashboardData(); }}>↻</button>
+
+        <nav className="nav-toggle">
+          <Link href="/bot-center" className="nav-toggle-item active">
+            <span className="nav-dot" /> <span className="nav-toggle-icon">🏆</span> <span className="nav-toggle-label" style={{marginLeft: 4}}>Arena</span>
+          </Link>
+          <Link href="/crypto-radar" className="nav-toggle-item">
+            <span className="nav-dot" /> <span className="nav-toggle-icon">🛰️</span> <span className="nav-toggle-label" style={{marginLeft: 4}}>Radar</span>
+          </Link>
+        </nav>
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <button className="btn" onClick={() => botAction('evaluate')} style={{ border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)' }}>
+            ▶ Evaluate
+          </button>
+          <button className="btn" onClick={() => { fetchData(); fetchDashboardData(); }} style={{ background: 'transparent', borderColor: 'var(--border)' }}>
+            ↻ Sync
+          </button>
         </div>
       </header>
 
       {loading ? (
-        <div className="empty-state"><div className="empty-state-icon">⏳</div>Loading Bot Data...</div>
+        <div className="empty-state glass-card"><div className="empty-state-icon pulse">💠</div>Initializing Core Protocols...</div>
       ) : !data ? (
-        <div className="empty-state"><div className="empty-state-icon">🔌</div>Could not connect to Bot API</div>
+        <div className="empty-state glass-card"><div className="empty-state-icon">🔌</div>System Offline. API Unreachable.</div>
       ) : (
-        <>
-          {/* ---- AI Discovery Status Banner ---- */}
-          {data?.config?.aiStatus === 'NO_CREDIT' && (
-            <div className="card" style={{ marginBottom: 16, background: 'rgba(255, 50, 50, 0.1)', border: '1px solid var(--accent-red)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ fontSize: 28 }}>⚠️</span>
-                  <div>
-                    <div style={{ fontWeight: 700, color: 'var(--accent-red)', fontSize: 16 }}>AI Discovery Offline: OpenAI API Credit Depleted</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                      The AI cannot invent new strategies because your OpenAI account quota is Zero. Existing strategies will continue to backtest and trade normally.
-                    </div>
+        <div className="bento-grid">
+          
+          {/* ================= COLUMN 1 ================= */}
+          <div className="bento-col-4" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            
+            {/* System Health */}
+            <div className="glass-card" style={{ borderTop: `3px solid ${healthColor}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>System Health</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: healthColor, textShadow: `0 0 10px ${healthColor}` }}>
+                    {s?.strategyHealth}
                   </div>
                 </div>
-                <a href="https://platform.openai.com/account/billing" target="_blank" rel="noreferrer" style={{ background: 'var(--accent-red)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 6, fontSize: 13, textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                  Top Up API Credit 💳
-                </a>
-              </div>
-            </div>
-          )}
-
-          {/* ---- Strategy Health Banner ---- */}
-          <div className="card" style={{ marginBottom: 16, borderLeft: `3px solid ${healthColor}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <span style={{ fontSize: 13, fontWeight: 700, color: healthColor }}>
-                  {s?.strategyHealth === 'EXCELLENT' ? '🟢' : s?.strategyHealth === 'GOOD' ? '🔵' : s?.strategyHealth === 'CAUTION' ? '🟡' : '🔴'}
-                  {' '}Strategy Health: {s?.strategyHealth}
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 12 }}>
-                  Streak: {s?.currentStreak || 0} {s?.streakType === 'WIN' ? '🔥' : s?.streakType === 'LOSS' ? '💀' : '—'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn" onClick={() => botAction('evaluate')}>▶ Evaluate</button>
-                <button className="btn" onClick={() => botAction('optimize')}>⚡ Optimize</button>
-                <button className="btn" onClick={() => botAction('recalculate')}>📊 Recalc</button>
-                <button className="btn" onClick={async () => {
-                  setActionStatus('Running backtest...');
-                  try {
-                    const res = await fetch('/api/backtest');
-                    const json = await res.json();
-                    setBacktest(json);
-                    setActionStatus(`✅ Backtest: ${json.stats?.totalTrades || 0} trades, WR ${json.stats?.winRate || 0}%`);
-                  } catch { setActionStatus('❌ Backtest failed'); }
-                }}>🔬 Backtest</button>
-                <button className="btn" onClick={() => {
-                  if ('Notification' in window) {
-                    Notification.requestPermission().then(p => {
-                      setNotifEnabled(p === 'granted');
-                      setActionStatus(p === 'granted' ? '✅ Notifications enabled' : '❌ Notifications denied');
-                    });
-                  }
-                }}>🔔 {notifEnabled ? 'ON' : 'Notify'}</button>
-              </div>
-            </div>
-            {actionStatus && (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{actionStatus}</div>
-            )}
-          </div>
-
-          {/* ---- Core Stats ---- */}
-          <div className="grid-4" style={{ marginBottom: 16 }}>
-            <div className="stat-card">
-              <span className="stat-label">Win Rate (All)</span>
-              <span className="stat-value" style={{ color: (s?.overallWinRate || 0) >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                {s?.overallWinRate || 0}%
-              </span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Win Rate (Today)</span>
-              <span className="stat-value" style={{ color: (s?.todayWinRate || 0) >= 50 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
-                {s?.todayWinRate || 0}%
-              </span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Total PnL</span>
-              <span className={`stat-value ${(s?.totalPnlPercent || 0) >= 0 ? 'text-green' : 'text-red'}`}>
-                {(s?.totalPnlPercent || 0) >= 0 ? '+' : ''}{s?.totalPnlPercent || 0}%
-              </span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Max Drawdown</span>
-              <span className="stat-value text-red">-{s?.maxDrawdown || 0}%</span>
-            </div>
-          </div>
-
-          <div className="grid-4" style={{ marginBottom: 16 }}>
-            <div className="stat-card">
-              <span className="stat-label">Total Decisions</span>
-              <span className="stat-value">{s?.totalDecisions || 0}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Today</span>
-              <span className="stat-value">{s?.todayDecisions || 0}</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Optimizer v{data.optimizer.version}</span>
-              <span className="stat-sub">
-                {data.optimizer.lastOptimizedAt
-                  ? new Date(data.optimizer.lastOptimizedAt).toLocaleString()
-                  : 'Never'}
-              </span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Paper Balance</span>
-              <span className="stat-value" style={{ fontSize: 18 }}>
-                ${data.config.paperBalance?.toLocaleString() || '1,000'}
-              </span>
-            </div>
-          </div>
-
-          {/* ---- TradingView Live Chart ---- */}
-          <TradingViewPanel />
-
-          {/* ---- Equity Curve Chart ---- */}
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-header">
-              <span className="card-title">📈 Equity Curve</span>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                Paper Balance: ${data.config.paperBalance?.toLocaleString()}
-              </span>
-            </div>
-            <EquityChart data={data.equityCurve || []} startBalance={data.config.paperBalance || 1000} />
-          </div>
-
-          {/* ---- TRADE REASONING PANEL ---- */}
-          <TradeReasoningPanel />
-
-          {/* ---- Performance by Signal Type ---- */}
-          <div className="grid-2" style={{ marginBottom: 16 }}>
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">📊 Performance by Signal</span>
-              </div>
-              <div className="table-wrap">
-                {data.performance.length > 0 ? (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Signal</th>
-                        <th>Trades</th>
-                        <th>W</th>
-                        <th>L</th>
-                        <th>Win%</th>
-                        <th>Avg PnL</th>
-                        <th>Best</th>
-                        <th>Worst</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.performance.map((p, i) => (
-                        <tr key={i}>
-                          <td style={{ fontWeight: 600 }}>{p.signalType}</td>
-                          <td>{p.totalTrades}</td>
-                          <td className="text-green">{p.wins}</td>
-                          <td className="text-red">{p.losses}</td>
-                          <td style={{ color: p.winRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {p.winRate}%
-                          </td>
-                          <td className={p.avgPnlPercent >= 0 ? 'text-green' : 'text-red'}>
-                            {p.avgPnlPercent >= 0 ? '+' : ''}{p.avgPnlPercent}%
-                          </td>
-                          <td className="text-green">+{p.bestTrade}%</td>
-                          <td className="text-red">{p.worstTrade}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="empty-state">
-                    <div className="empty-state-icon">📈</div>
-                    No evaluated trades yet. Run ▶ Evaluate when decisions age past 1h.
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Current Streak</div>
+                  <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)' }}>
+                    {s?.currentStreak || 0} {s?.streakType === 'WIN' ? '��' : s?.streakType === 'LOSS' ? '💀' : '—'}
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* STRATEGY ARENA LEADERBOARD */}
+            <div className="glass-card" style={{ flex: 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.05em', color: 'var(--accent-cyan)' }}>⚔️ STRATEGY ARENA</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(0,0,0,0.3)', padding: '2px 8px', borderRadius: 10 }}>LIVE</span>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {data.performance.length > 0 ? (
+                  data.performance
+                    .sort((a, b) => b.winRate - a.winRate)
+                    .map((p, i) => (
+                      <div key={i} style={{ 
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                        background: i === 0 ? 'rgba(6, 182, 212, 0.1)' : 'rgba(0,0,0,0.2)', 
+                        border: i === 0 ? '1px solid rgba(6, 182, 212, 0.3)' : '1px solid var(--border)',
+                        padding: '12px', borderRadius: 12, position: 'relative', overflow: 'hidden'
+                      }}>
+                        {i === 0 && <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: 'var(--accent-cyan)', boxShadow: 'var(--neon-cyan)' }} />}
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{ fontSize: 18, opacity: i === 0 ? 1 : 0.5 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`}</span>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: i === 0 ? '#fff' : 'var(--text-primary)' }}>{p.signalType}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{p.totalTrades} battles</div>
+                          </div>
+                        </div>
+                        
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: p.winRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                            {p.winRate}% WR
+                          </div>
+                          <div style={{ fontSize: 10, color: p.avgPnlPercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                            {p.avgPnlPercent >= 0 ? '+' : ''}{p.avgPnlPercent}% PnL
+                          </div>
+                        </div>
+                      </div>
+                  ))
+                ) : (
+                  <div className="empty-state pulse" style={{ padding: '20px 0' }}>Arena is waiting...</div>
                 )}
               </div>
             </div>
 
-            {/* ---- Optimizer Weights ---- */}
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">⚙️ Optimizer Weights</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>v{data.optimizer.version}</span>
+            {/* Global Metrics Mini Bento */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div className="glass-card" style={{ padding: 16 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>Total PnL</div>
+                <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)', fontWeight: 700, color: (s?.totalPnlPercent || 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                  {(s?.totalPnlPercent || 0) >= 0 ? '+' : ''}{s?.totalPnlPercent || 0}%
+                </div>
               </div>
-              <div style={{ padding: '8px 0' }}>
-                {Object.entries(data.optimizer.weights).map(([key, val]) => (
-                  <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                    <span style={{ width: 120, fontSize: 11, color: 'var(--text-secondary)' }}>
-                      {key.replace('Weight', '')}
-                    </span>
-                    <div style={{
-                      flex: 1,
-                      height: 6,
-                      background: 'var(--bg-tertiary)',
-                      borderRadius: 3,
-                      overflow: 'hidden',
-                    }}>
-                      <div style={{
-                        width: `${(val as number) * 100}%`,
-                        height: '100%',
-                        background: 'var(--accent-cyan)',
-                        borderRadius: 3,
-                        transition: 'width 0.3s ease',
-                      }} />
-                    </div>
-                    <span style={{ width: 40, fontSize: 11, textAlign: 'right', color: 'var(--text-primary)' }}>
-                      {Math.round((val as number) * 100)}%
-                    </span>
-                  </div>
-                ))}
+              <div className="glass-card" style={{ padding: 16 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>Drawdown</div>
+                <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent-red)' }}>
+                  -{s?.maxDrawdown || 0}%
+                </div>
               </div>
-              {data.optimizer.history.length > 0 && (
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 8 }}>
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Recent Changes:</span>
-                  {data.optimizer.history.slice(-3).map((h, i) => (
-                    <div key={i} style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
-                      {new Date(h.date).toLocaleDateString()}: {Object.entries(h.weightChanges).map(([k, v]) =>
-                        `${k.replace('Weight', '')} ${Math.round(v.from * 100)}→${Math.round(v.to * 100)}%`
-                      ).join(', ')}
+            </div>
+            
+          </div>
+
+          {/* ================= COLUMN 2 ================= */}
+          <div className="bento-col-8" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            
+            {/* TradingView Chart */}
+            <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>OPTICAL RADAR VISION</span>
+                <span className="pulse" style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-red)', boxShadow: '0 0 8px var(--accent-red)' }}></span>
+              </div>
+              <TradingViewPanel />
+            </div>
+
+            {/* Equity Curve */}
+            <div className="glass-card" style={{ padding: 0 }}>
+              <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-blue)', letterSpacing: '0.05em' }}>EQUITY TRAJECTORY</span>
+                <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 700, background: 'rgba(59, 130, 246, 0.1)', padding: '2px 8px', borderRadius: 4, color: 'var(--accent-blue)' }}>
+                  BAL: ${data.config.paperBalance?.toLocaleString() || '1,000'}
+                </span>
+              </div>
+              <div style={{ padding: '16px 20px' }}>
+                <EquityChart data={data.equityCurve || []} startBalance={data.config.paperBalance || 1000} />
+              </div>
+            </div>
+
+          </div>
+
+          {/* ================= COLUMN 3 (Connections & Logs) ================= */}
+          <div className="bento-col-4" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="glass-card" style={{ padding: '16px 20px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: 16 }}>EXTERNAL LINKS</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: 8, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                  <span style={{ fontSize: 12 }}>🟡 Binance</span>
+                  <span style={{ fontSize: 12, color: binanceStatus.startsWith('✅') ? 'var(--accent-green)' : 'var(--accent-red)' }}>{binanceStatus}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: 8, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                  <span style={{ fontSize: 12 }}>✈️ Telegram</span>
+                  <span style={{ fontSize: 12, color: telegramOk ? 'var(--accent-green)' : 'var(--accent-amber)' }}>{telegramOk ? '✅ ONLINE' : '🟡 STANDBY'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: 8, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                  <span style={{ fontSize: 12 }}>🤖 Backtest</span>
+                  <span style={{ fontSize: 12, color: 'var(--accent-cyan)' }}>READY</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bento-col-8 glass-card" style={{ padding: '16px 20px' }}>
+             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: 12 }}>RECENT EXECUTIONS</div>
+             {data.decisions.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {data.decisions.slice(0, 5).map((d) => (
+                    <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '80px 100px 100px 1fr 100px', gap: 12, alignItems: 'center', background: 'rgba(0,0,0,0.15)', padding: '8px 12px', borderRadius: 6, borderLeft: d.outcome === 'WIN' ? '2px solid var(--accent-green)' : d.outcome === 'LOSS' ? '2px solid var(--accent-red)' : '2px solid var(--border)' }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(d.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{d.symbol}</span>
+                      <span className={`badge ${d.signal.includes('BUY') ? 'badge-signal-buy' : d.signal.includes('SELL') ? 'badge-signal-sell' : 'badge-info'}`} style={{ fontSize: 9 }}>
+                        {d.signal} {d.direction === 'BULLISH' ? '▲' : '▼'}
+                      </span>
+                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>${d.price?.toLocaleString()}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, textAlign: 'right', color: d.pnlPercent !== null ? (d.pnlPercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)') : 'var(--accent-amber)' }}>
+                        {d.pnlPercent !== null ? `${d.pnlPercent >= 0 ? '+' : ''}${d.pnlPercent}%` : 'PENDING'}
+                      </span>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+             ) : (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>No recent trades</div>
+             )}
           </div>
 
-          {/* ---- Backtest Results ---- */}
-          {backtest && (backtest as { stats?: Record<string, number> }).stats && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <span className="card-title">🔬 Backtest Results</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {(backtest as { stats?: { totalTrades: number } }).stats?.totalTrades || 0} trades simulated
-                </span>
-              </div>
-              {(() => {
-                const st = (backtest as { stats: Record<string, number> }).stats;
-                return (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
-                    <div className="stat-card">
-                      <span className="stat-label">Win Rate</span>
-                      <span className="stat-value" style={{ color: st.winRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        {st.winRate}%
-                      </span>
-                    </div>
-                    <div className="stat-card">
-                      <span className="stat-label">Total PnL</span>
-                      <span className={`stat-value ${st.totalPnlPercent >= 0 ? 'text-green' : 'text-red'}`}>
-                        {st.totalPnlPercent >= 0 ? '+' : ''}{st.totalPnlPercent}%
-                      </span>
-                    </div>
-                    <div className="stat-card">
-                      <span className="stat-label">Final Balance</span>
-                      <span className="stat-value" style={{ fontSize: 16 }}>
-                        ${st.finalBalance?.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="stat-card">
-                      <span className="stat-label">Max Drawdown</span>
-                      <span className="stat-value text-red">-{st.maxDrawdownPercent}%</span>
-                    </div>
-                    <div className="stat-card">
-                      <span className="stat-label">Profit Factor</span>
-                      <span className="stat-value">{st.profitFactor}</span>
-                    </div>
-                    <div className="stat-card">
-                      <span className="stat-label">Sharpe</span>
-                      <span className="stat-value">{st.sharpeApprox}</span>
-                    </div>
-                    <div className="stat-card">
-                      <span className="stat-label">Avg Win</span>
-                      <span className="stat-value text-green">+{st.avgWin}%</span>
-                    </div>
-                    <div className="stat-card">
-                      <span className="stat-label">Avg Loss</span>
-                      <span className="stat-value text-red">-{st.avgLoss}%</span>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* ---- Exchange Panel ---- */}
-          {exchange && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <span className="card-title">💱 Exchange</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {(exchange as { exchange?: { exchange: string } }).exchange?.exchange || 'simulation'}
-                </span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
-                <div className="stat-card">
-                  <span className="stat-label">Available</span>
-                  <span className="stat-value" style={{ fontSize: 16 }}>
-                    ${((exchange as { balance?: { available: number } }).balance?.available || 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">In Positions</span>
-                  <span className="stat-value" style={{ fontSize: 16 }}>
-                    ${((exchange as { balance?: { inPositions: number } }).balance?.inPositions || 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Open Positions</span>
-                  <span className="stat-value">{(exchange as { exchange?: { openPositions: number } }).exchange?.openPositions || 0}</span>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Total Orders</span>
-                  <span className="stat-value">{(exchange as { exchange?: { totalOrders: number } }).exchange?.totalOrders || 0}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ---- Binance Connection ---- */}
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-header">
-              <span className="card-title">🔗 Binance</span>
-              <span style={{ fontSize: 11, color: binanceStatus.startsWith('✅') ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                {binanceStatus}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 0' }}>
-              <button className="btn" onClick={async () => {
-                setBinanceStatus('Testing...');
-                try {
-                  const res = await fetch('/api/auto-trade', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'test-binance'}) });
-                  const d = await res.json();
-                  setBinanceStatus(d.connection?.ok ? `✅ ${d.connection.mode}` : `❌ ${d.connection?.error}`);
-                } catch { setBinanceStatus('❌ Failed'); }
-              }}>🔄 Test Connection</button>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>HMAC SHA256 signed</span>
-            </div>
+          {/* ================= COLUMN FULL (Reasoning Panel) ================= */}
+          <div className="bento-col-12" style={{ marginTop: 16 }}>
+             <TradeReasoningPanel />
           </div>
 
-          {/* ---- ML Signal Scores ---- */}
-          {autoTrade && (autoTrade as { mlScores?: Array<{ symbol: string; signal: string; score: number; verdict: string; reasons: string[] }> }).mlScores && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <span className="card-title">🤖 ML Signal Filter</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pattern-based scoring</span>
-              </div>
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Symbol</th><th>Signal</th><th>ML Score</th><th>Verdict</th><th>Reason</th></tr></thead>
-                  <tbody>
-                    {((autoTrade as { mlScores: Array<{ symbol: string; signal: string; score: number; verdict: string; reasons: string[] }> }).mlScores || []).map((m, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 600 }}>{m.symbol}</td>
-                        <td><span className={`badge ${m.signal === 'BUY' || m.signal === 'LONG' ? 'badge-buy' : 'badge-sell'}`}>{m.signal}</span></td>
-                        <td style={{ fontFamily: 'var(--font-mono)', color: m.score >= 70 ? 'var(--accent-green)' : m.score >= 40 ? 'var(--accent-amber)' : 'var(--accent-red)' }}>
-                          {m.score}%
-                        </td>
-                        <td><span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: m.verdict === 'STRONG' ? 'rgba(0,255,0,0.15)' : m.verdict === 'REJECT' ? 'rgba(255,0,0,0.15)' : 'rgba(255,255,0,0.1)', color: m.verdict === 'STRONG' ? 'var(--accent-green)' : m.verdict === 'REJECT' ? 'var(--accent-red)' : 'var(--accent-amber)' }}>{m.verdict}</span></td>
-                        <td style={{ fontSize: 10, color: 'var(--text-secondary)' }}>{m.reasons?.[0] || ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ---- Auto-Trade Candidates ---- */}
-          {autoTrade && (autoTrade as { candidates?: Array<{ symbol: string; signal: string; confidence: number; shouldExecute: boolean; reason: string }> }).candidates && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <span className="card-title">⚡ Auto-Trade</span>
-                <span style={{ fontSize: 11, color: (autoTrade as { autoTradeEnabled?: boolean }).autoTradeEnabled ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
-                  {(autoTrade as { autoTradeEnabled?: boolean }).autoTradeEnabled ? '🟢 ACTIVE' : '🟡 STANDBY'}
-                </span>
-              </div>
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Symbol</th><th>Signal</th><th>Conf</th><th>Execute</th><th>Reason</th></tr></thead>
-                  <tbody>
-                    {((autoTrade as { candidates: Array<{ symbol: string; signal: string; confidence: number; shouldExecute: boolean; reason: string }> }).candidates || []).map((c, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 600 }}>{c.symbol}</td>
-                        <td><span className={`badge ${c.signal === 'BUY' || c.signal === 'LONG' ? 'badge-buy' : 'badge-sell'}`}>{c.signal}</span></td>
-                        <td style={{ fontFamily: 'var(--font-mono)' }}>{c.confidence}%</td>
-                        <td>{c.shouldExecute ? '✅' : '⏸️'}</td>
-                        <td style={{ fontSize: 10, color: 'var(--text-secondary)', maxWidth: 250 }}>{c.reason.slice(0, 80)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ---- Hourly Heatmap ---- */}
-          {analytics && (analytics as { hourlyHeatmap?: Array<{ hour: number; trades: number; winRate: number; avgPnl: number }> }).hourlyHeatmap && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <span className="card-title">🗓️ Hourly Performance Heatmap</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  Best: {(analytics as { summary?: { bestHour: number } }).summary?.bestHour ?? '—'}h
-                </span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 4, padding: '8px 0' }}>
-                {((analytics as { hourlyHeatmap: Array<{ hour: number; trades: number; winRate: number; avgPnl: number }> }).hourlyHeatmap || []).map((h) => {
-                  const bg = h.trades === 0 ? 'rgba(255,255,255,0.03)'
-                    : h.avgPnl > 0 ? `rgba(0,255,100,${Math.min(h.avgPnl * 5, 0.4)})` 
-                    : `rgba(255,50,50,${Math.min(Math.abs(h.avgPnl) * 5, 0.4)})`;
-                  return (
-                    <div key={h.hour} style={{ background: bg, borderRadius: 4, padding: '4px 2px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{h.hour}h</div>
-                      <div style={{ fontSize: 11, fontWeight: 600 }}>{h.trades > 0 ? `${h.winRate}%` : '—'}</div>
-                      <div style={{ fontSize: 8, color: h.avgPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                        {h.trades > 0 ? `${h.avgPnl >= 0 ? '+' : ''}${h.avgPnl}%` : ''}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ---- Portfolio Tracker ---- */}
-          {portfolio && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <span className="card-title">💼 Portfolio</span>
-                <span style={{ fontSize: 11, color: (portfolio as { totalPnl?: number }).totalPnl! >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                  PnL: {(portfolio as { totalPnl?: number }).totalPnl! >= 0 ? '+' : ''}{(portfolio as { totalPnl?: number }).totalPnl}$
-                </span>
-              </div>
-              <div className="stats-grid">
-                <div className="stat-card">
-                  <span className="stat-label">Total Balance</span>
-                  <span className="stat-value">${(portfolio as { totalBalance?: number }).totalBalance?.toLocaleString()}</span>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Cash</span>
-                  <span className="stat-value">${(portfolio as { cashBalance?: number }).cashBalance?.toLocaleString()}</span>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Invested</span>
-                  <span className="stat-value">${(portfolio as { investedBalance?: number }).investedBalance?.toLocaleString()}</span>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Daily PnL</span>
-                  <span className={`stat-value ${(portfolio as { dailyPnl?: number }).dailyPnl! >= 0 ? 'text-green' : 'text-red'}`}>
-                    {(portfolio as { dailyPnl?: number }).dailyPnl! >= 0 ? '+' : ''}{(portfolio as { dailyPnl?: number }).dailyPnl}%
-                  </span>
-                </div>
-              </div>
-              {/* Allocation bar */}
-              {(portfolio as { allocation?: Array<{ symbol: string; percent: number }> }).allocation && (
-                <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', height: 20, marginTop: 8 }}>
-                  {(portfolio as { allocation: Array<{ symbol: string; percent: number }> }).allocation.map((a, i) => {
-                    const colors = ['rgba(100,100,255,0.4)', 'rgba(0,200,100,0.4)', 'rgba(255,180,0,0.4)', 'rgba(255,100,100,0.4)', 'rgba(180,100,255,0.4)', 'rgba(0,200,200,0.4)'];
-                    return (
-                      <div key={i} style={{ width: `${a.percent}%`, background: colors[i % colors.length], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600, color: 'white', minWidth: a.percent > 5 ? 30 : 0 }}>
-                        {a.percent > 5 ? `${a.symbol} ${a.percent}%` : ''}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {/* Positions table */}
-              {((portfolio as { positions?: Array<{ symbol: string; side: string; entryPrice: number; unrealizedPnlPercent: number; holdDuration: string }> }).positions || []).length > 0 && (
-                <div className="table-wrap" style={{ marginTop: 8 }}>
-                  <table>
-                    <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>PnL</th><th>Hold</th></tr></thead>
-                    <tbody>
-                      {(portfolio as { positions: Array<{ symbol: string; side: string; entryPrice: number; unrealizedPnlPercent: number; holdDuration: string }> }).positions.map((p, i) => (
-                        <tr key={i}>
-                          <td style={{ fontWeight: 600 }}>{p.symbol}</td>
-                          <td><span className={`badge ${p.side === 'BUY' || p.side === 'LONG' ? 'badge-buy' : 'badge-sell'}`}>{p.side}</span></td>
-                          <td style={{ fontFamily: 'var(--font-mono)' }}>${p.entryPrice}</td>
-                          <td style={{ fontFamily: 'var(--font-mono)', color: p.unrealizedPnlPercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {p.unrealizedPnlPercent >= 0 ? '+' : ''}{p.unrealizedPnlPercent}%
-                          </td>
-                          <td style={{ fontSize: 10, color: 'var(--text-muted)' }}>{p.holdDuration}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ---- Signal Aggregator ---- */}
-          {signals && (signals as { signals?: Array<{ symbol: string; signal: string; mlScore: number; mlVerdict: string; confidence: number; rank: number; age: string; source: string }> }).signals && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <span className="card-title">📡 Signal Aggregator</span>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    {(signals as { stats?: { total: number; strongSignals: number } }).stats?.total || 0} signals | {(signals as { stats?: { strongSignals: number } }).stats?.strongSignals || 0} STRONG
-                  </span>
-                  <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }} onClick={async () => {
-                    try {
-                      await fetch('/api/telegram', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'test'}) });
-                      setActionStatus('Telegram test sent!');
-                    } catch { setActionStatus('Telegram error'); }
-                    setTimeout(() => setActionStatus(''), 3000);
-                  }}>📨 Telegram Test</button>
-                </div>
-              </div>
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Rank</th><th>Symbol</th><th>Signal</th><th>ML</th><th>Conf</th><th>Age</th><th>Source</th></tr></thead>
-                  <tbody>
-                    {((signals as { signals: Array<{ symbol: string; signal: string; mlScore: number; mlVerdict: string; confidence: number; rank: number; age: string; source: string }> }).signals || []).slice(0, 15).map((s, i) => (
-                      <tr key={i}>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent-purple)' }}>{s.rank}</td>
-                        <td style={{ fontWeight: 600 }}>{s.symbol}</td>
-                        <td><span className={`badge ${s.signal === 'BUY' || s.signal === 'LONG' ? 'badge-buy' : 'badge-sell'}`}>{s.signal}</span></td>
-                        <td style={{ fontFamily: 'var(--font-mono)', color: s.mlScore >= 70 ? 'var(--accent-green)' : s.mlScore >= 40 ? 'var(--accent-amber)' : 'var(--accent-red)' }}>
-                          {s.mlScore}% <span style={{ fontSize: 8, opacity: 0.6 }}>{s.mlVerdict}</span>
-                        </td>
-                        <td style={{ fontFamily: 'var(--font-mono)' }}>{s.confidence}%</td>
-                        <td style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.age}</td>
-                        <td style={{ fontSize: 10, color: 'var(--text-secondary)' }}>{s.source}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ---- Telegram Status ---- */}
-          <div className="card" style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>📢</span>
-              <span style={{ fontWeight: 600 }}>Telegram</span>
-              <span style={{ fontSize: 11, color: telegramOk ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
-                {telegramOk === null ? 'Checking...' : telegramOk ? '✅ @tradedsd33_bot' : '🟡 Not configured'}
-              </span>
-            </div>
-            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Alerts with Accept/Reject</span>
-          </div>
-
-          {/* ---- Decision Log ---- */}
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">📒 Decision Memory</span>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{data.decisions.length} stored</span>
-            </div>
-            <div className="table-wrap">
-              {data.decisions.length > 0 ? (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Symbol</th>
-                      <th>Signal</th>
-                      <th>Dir</th>
-                      <th>Conf</th>
-                      <th>Price</th>
-                      <th>EMA 50</th>
-                      <th>EMA 200</th>
-                      <th>Outcome</th>
-                      <th>PnL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.decisions.slice(0, 30).map((d) => (
-                      <tr key={d.id}>
-                        <td>{new Date(d.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
-                        <td style={{ fontWeight: 600 }}>{d.symbol}</td>
-                        <td>
-                          <span className={`badge ${d.signal === 'BUY' || d.signal === 'LONG' ? 'badge-signal-buy' : d.signal === 'SELL' || d.signal === 'SHORT' ? 'badge-signal-sell' : 'badge-info'}`}>
-                            {d.signal}
-                          </span>
-                        </td>
-                        <td style={{ color: d.direction === 'BULLISH' ? 'var(--accent-green)' : d.direction === 'BEARISH' ? 'var(--accent-red)' : 'var(--text-muted)' }}>
-                          {d.direction === 'BULLISH' ? '▲' : d.direction === 'BEARISH' ? '▼' : '●'}
-                        </td>
-                        <td>{d.confidence}%</td>
-                        <td>${d.price?.toLocaleString()}</td>
-                        <td style={{ fontSize: 10 }}>${d.ema50?.toLocaleString()}</td>
-                        <td style={{ fontSize: 10 }}>${d.ema200?.toLocaleString()}</td>
-                        <td>
-                          <span className={`badge ${d.outcome === 'WIN' ? 'badge-bullish' : d.outcome === 'LOSS' ? 'badge-bearish' : 'badge-info'}`}>
-                            {d.outcome}
-                          </span>
-                        </td>
-                        <td className={d.pnlPercent !== null ? (d.pnlPercent >= 0 ? 'text-green' : 'text-red') : ''}>
-                          {d.pnlPercent !== null ? `${d.pnlPercent >= 0 ? '+' : ''}${d.pnlPercent}%` : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="empty-state">
-                  <div className="empty-state-icon">🧠</div>
-                  No decisions recorded yet. BTC Engine will store them automatically.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ---- Footer ---- */}
-          <footer style={{
-            textAlign: 'center',
-            padding: '24px 0 12px',
-            fontSize: 11,
-            color: 'var(--text-muted)',
-            borderTop: '1px solid var(--border)',
-            marginTop: 24,
-          }}>
-            Bot Center — API: <code style={{ color: 'var(--accent-cyan)' }}>/api/bot</code> •
-            Radar: <code style={{ color: 'var(--accent-cyan)' }}>/crypto-radar</code> •
-            Mode: <span style={{ color: healthColor }}>{s?.mode}</span>
-          </footer>
-        </>
+        </div>
       )}
     </div>
   );
+
 }
 
 // ============================================================
