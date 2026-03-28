@@ -34,6 +34,20 @@ export async function GET() {
       binanceMode = conn.mode;
     } catch { /* */ }
 
+    // Test DexScreener Connection
+    let dexOk = false;
+    try {
+      const res = await fetch('https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112', { signal: AbortSignal.timeout(3000) });
+      dexOk = res.ok;
+    } catch { /* */ }
+
+    // Test CoinGecko Connection
+    let cgOk = false;
+    try {
+      const res = await fetch('https://api.coingecko.com/api/v3/ping', { signal: AbortSignal.timeout(3000) });
+      cgOk = res.ok;
+    } catch { /* */ }
+
     // Aggregate stats
     const agg = getAggregatorStats();
     const execLog = getExecutionLog();
@@ -51,7 +65,7 @@ export async function GET() {
     return NextResponse.json({
       status: overallStatus,
       version: '6.0.0 (Hardened)',
-      systemMode: 'PAPER_ONLY', // New standard for execution
+      systemMode: process.env.AUTO_TRADE_ENABLED === 'true' ? 'AUTO_TRADE' : 'PAPER',
       uptimeSecs: process.uptime(),
       
       coreMonitor: {
@@ -70,8 +84,9 @@ export async function GET() {
 
       api: {
         binance: { ok: binanceOk, mode: binanceMode, latencyMs: binanceLatency },
-        dexScreener: heartbeat?.providers['dexscreener'] || { ok: false },
-        coinGecko: heartbeat?.providers['coingecko'] || { ok: false }, // implicitly part of engine fallback
+        dexScreener: { ok: dexOk },
+        coinGecko: { ok: cgOk },
+
       },
 
       memoryTracker: heartbeat?.memory || {},

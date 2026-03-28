@@ -10070,9 +10070,9 @@
     "priceAfter15m": 69495,
     "priceAfter1h": null,
     "priceAfter4h": null,
-    "outcome": "PENDING",
-    "pnlPercent": null,
-    "evaluatedAt": null
+    "outcome": "LOSS",
+    "pnlPercent": -0.5,
+    "evaluatedAt": "2026-03-23T02:03:01.235Z"
   },
   {
     "id": "dec_1773928531372_0hgw",

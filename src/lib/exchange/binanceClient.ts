@@ -157,13 +157,40 @@ export async function getOrderHistory(symbol: string, limit = 20): Promise<Recor
   return Array.isArray(data) ? data : [];
 }
 
-// ─── Connection test ───────────────────────────────
+// ─── Connection test (with fallback) ───────────────
 export async function testConnection(): Promise<{ ok: boolean; mode: string; time?: number; error?: string }> {
+  const { testnet } = getConfig();
+
+  // Try Binance first
   try {
     const time = await getServerTime();
-    const { testnet } = getConfig();
     return { ok: true, mode: testnet ? 'TESTNET' : 'LIVE', time };
-  } catch (err) {
-    return { ok: false, mode: 'ERROR', error: (err as Error).message };
+  } catch {
+    // Binance blocked — try OKX
   }
+
+  try {
+    const res = await fetch('https://www.okx.com/api/v5/public/time', {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return { ok: true, mode: 'OKX_FALLBACK', time: parseInt(json?.data?.[0]?.ts || '0') };
+    }
+  } catch {
+    // OKX also failed — try CryptoCompare
+  }
+
+  try {
+    const res = await fetch('https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USDT', {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) {
+      return { ok: true, mode: 'CC_FALLBACK', time: Date.now() };
+    }
+  } catch {
+    // All failed
+  }
+
+  return { ok: false, mode: 'ERROR', error: 'All providers (Binance/OKX/CC) failed' };
 }

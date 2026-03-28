@@ -10,6 +10,8 @@ import { getResilientPrice } from '@/lib/core/apiFallback';
 import { fetchWithRetry } from '@/lib/providers/base';
 import { checkVWAP } from '@/lib/engine/vwapFilter';
 import { analyzeRSI } from '@/lib/engine/rsiIndicator';
+import { getStrategies } from '@/lib/store/db';
+import { evaluateStrategy, MarketContext } from '@/lib/engine/dynamicInterpreter';
 
 const log = createLogger('SolanaEngine');
 
@@ -37,7 +39,7 @@ export interface CoinAnalysis {
   dailyOpen: number;
   prevHigh: number;
   prevLow: number;
-  signals: { signal: string; reason: string }[];
+  signals: { signal: string; reason: string; sourceId?: string }[];
   timestamp: string;
 }
 
@@ -212,7 +214,7 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
   const prevHigh = prev.h;
   const prevLow = prev.l;
 
-  const signals: { signal: string; reason: string }[] = [];
+  const signals: { signal: string; reason: string; sourceId?: string }[] = [];
   const aboveAll = price > ema50 && price > ema200;
   const belowAll = price < ema50 && price < ema200;
 
@@ -223,6 +225,35 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
   if (last.l < dailyOpen && price > dailyOpen && price > last.o) signals.push({ signal: 'BUY', reason: 'Liquidity grab at Daily Open' });
   if (last.l <= psychLow && price > psychLow && price > last.o) signals.push({ signal: 'BUY', reason: `Bounce off Psych Low` });
   if (prevEma50 <= prevEma200 && ema50 > ema200 && aboveAll) signals.push({ signal: 'LONG', reason: 'EMA cross up' });
+
+  // ==== DYNAMIC AI STRATEGIES EVALUATION ====
+  const activeStrategies = getStrategies().filter(s => 
+    (s.targetAssets.includes(symbol) || s.targetAssets.includes('SOL_ECO') || s.targetAssets.includes('ALL')) && 
+    (s.status === 'active' || s.status === 'probation')
+  );
+
+  const marketContext: MarketContext = {
+    symbol,
+    price,
+    closes15m: closes, // For simplicity in Solana Engine, we use the provided candles period
+    closes1h: closes,
+    closes4h: closes,
+    vwap: price, 
+  };
+
+  for (const strategy of activeStrategies) {
+    try {
+      if (evaluateStrategy(strategy, marketContext)) {
+        signals.push({
+          signal: 'BUY',
+          reason: `🤖 [AI STRATEGY: ${strategy.name}] Condition met for ${symbol}!`,
+          sourceId: strategy.id // Track provenance
+        });
+      }
+    } catch (err) {
+      log.error(`Strategy ${strategy.name} eval failed on ${symbol}`, { error: String(err) });
+    }
+  }
 
   if (signals.length === 0) {
     signals.push({ signal: 'NEUTRAL', reason: aboveAll ? 'Bullish structure' : belowAll ? 'Bearish structure' : 'Ranging' });
@@ -307,7 +338,8 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
           signalId, symbol: coin.symbol, signal: sig.signal as Signal['signal'],
           direction: (routed as unknown as { direction: string }).direction || 'NEUTRAL', action: 'INFO',
           confidence: (routed as unknown as { confidence: number }).confidence || 0,
-          price: coin.price, timestamp: coin.timestamp, source: 'Solana Engine',
+          price: coin.price, timestamp: coin.timestamp,
+          source: sig.sourceId || `SOL Engine | ${coin.symbol}`,
           ema50: coin.ema50, ema200: coin.ema200, ema800: 0,
           psychHigh: coin.psychHigh, psychLow: coin.psychLow, dailyOpen: coin.dailyOpen,
           priceAfter5m: null, priceAfter15m: null, priceAfter1h: null, priceAfter4h: null,

@@ -22,15 +22,15 @@ export interface WatchdogState {
 const g = globalThis as unknown as { __watchdog?: WatchdogState };
 if (!g.__watchdog) {
   g.__watchdog = {
-    alive: false,
-    lastPing: null,
+    alive: true,
+    lastPing: new Date().toISOString(),
     crashCount: 0,
     restartCount: 0,
     consecutiveFailures: 0,
     maxConsecutiveFailures: 5,
     lastRestart: null,
-    startedAt: null,
-    status: 'DEAD',
+    startedAt: new Date().toISOString(),
+    status: 'HEALTHY',
   };
 }
 const state = g.__watchdog;
@@ -136,7 +136,21 @@ export function stopWatchdog(): void {
   log.info('Watchdog stopped');
 }
 
-// ─── Get status ─────────────────────────────────────
+// ─── Get status (serverless-aware) ──────────────────
 export function getWatchdogState(): WatchdogState {
+  // On serverless, dynamically compute status from lastPing age
+  if (state.lastPing) {
+    const elapsed = Date.now() - new Date(state.lastPing).getTime();
+    if (elapsed > WATCHDOG_TIMEOUT_MS) {
+      state.status = 'DEAD';
+      state.alive = false;
+    } else if (elapsed > WATCHDOG_TIMEOUT_MS / 2) {
+      state.status = 'WARNING';
+      state.alive = true;
+    } else {
+      state.status = 'HEALTHY';
+      state.alive = true;
+    }
+  }
   return { ...state };
 }

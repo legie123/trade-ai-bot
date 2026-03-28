@@ -18,17 +18,48 @@ export const dynamic = 'force-dynamic';
 
 const CORRELATION_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT'];
 
-// ─── Fetch closes for a symbol ──────────────────────
+// ─── Fetch closes with 3-provider fallback ──────────
 async function fetchCloses(symbol: string, limit = 168): Promise<number[]> {
+  // Provider 1: Binance
   try {
     const res = await fetchWithRetry(
       `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=${limit}`,
-      { retries: 1, timeoutMs: 4000 }
+      { retries: 1, timeoutMs: 6000 }
     );
     const klines = await res.json();
-    if (!Array.isArray(klines)) return [];
-    return klines.map((k: [number, string, string, string, string]) => parseFloat(k[4]));
-  } catch { return []; }
+    if (Array.isArray(klines) && klines.length >= 20) {
+      return klines.map((k: [number, string, string, string, string]) => parseFloat(k[4]));
+    }
+  } catch { /* Binance failed */ }
+
+  // Provider 2: OKX
+  try {
+    const instId = symbol.replace('USDT', '-USDT');
+    const res = await fetchWithRetry(
+      `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=1H&limit=${limit}`,
+      { retries: 1, timeoutMs: 6000 }
+    );
+    const json = await res.json();
+    if (Array.isArray(json?.data) && json.data.length >= 20) {
+      return json.data.reverse().map((k: string[]) => parseFloat(k[4]));
+    }
+  } catch { /* OKX failed */ }
+
+  // Provider 3: CryptoCompare
+  try {
+    const fsym = symbol.replace('USDT', '');
+    const res = await fetchWithRetry(
+      `https://min-api.cryptocompare.com/data/v2/histohour?fsym=${fsym}&tsym=USDT&limit=${limit}`,
+      { retries: 1, timeoutMs: 6000 }
+    );
+    const json = await res.json();
+    if (Array.isArray(json?.Data?.Data) && json.Data.Data.length >= 20) {
+      return json.Data.Data.map((k: { close: number }) => k.close);
+    }
+  } catch { /* CryptoCompare failed */ }
+
+  log.warn(`All providers failed for ${symbol} closes`);
+  return [];
 }
 
 // ─── Fear & Greed (uses cached live feed) ───────────

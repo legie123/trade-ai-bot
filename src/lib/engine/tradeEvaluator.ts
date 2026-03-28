@@ -98,8 +98,8 @@ export async function evaluatePendingDecisions(): Promise<{
       TAKE_PROFIT = 5.0; // High Reward
       STOP_LOSS = 1.5;   // Wide Room for volatility
     } else if (stableMajors.includes(symbol)) {
-      TAKE_PROFIT = 3.0; // Stable Gain
-      STOP_LOSS = 0.5;   // Strict Sniper Stop-Loss
+      TAKE_PROFIT = 3.0; // Adjusted Reward online
+      STOP_LOSS = 1.4;   // Fixed to 1.4% SL
     } else {
       // Mid-caps (JTO, JUP, RAY, RNDR, PYTH etc)
       TAKE_PROFIT = 4.0; 
@@ -114,9 +114,9 @@ export async function evaluatePendingDecisions(): Promise<{
       if (changePercent >= TAKE_PROFIT) { forcedOutcome = 'WIN'; forcedPnL = TAKE_PROFIT; }
       // SL hit
       else if (changePercent <= -STOP_LOSS) { forcedOutcome = 'LOSS'; forcedPnL = -STOP_LOSS; }
-      // ATR-based Trailing Stop: activates at 2%+ profit after 30min
+      // ATR-based Trailing Stop: activates at 1.0%+ profit after 30min
       // Uses volatility-adaptive trail distance instead of fixed 50%
-      else if (changePercent >= 2.0 && ageMinutes >= 30) {
+      else if (changePercent >= 1.0 && ageMinutes >= 30) {
         // ATR proxy: use absolute change as volatility measure
         // More volatile → wider trail (less likely premature exit)
         const atrProxy = Math.max(0.5, Math.abs(changePercent) * 0.3); // 30% of swing as ATR

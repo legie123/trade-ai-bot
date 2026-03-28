@@ -1,15 +1,1 @@
-[
-  {
-    "signalType": "BUY",
-    "source": "BTC Engine",
-    "totalTrades": 114,
-    "wins": 20,
-    "losses": 88,
-    "neutral": 6,
-    "winRate": 18,
-    "avgPnlPercent": -0.45,
-    "bestTrade": 1.5,
-    "worstTrade": -1,
-    "lastUpdated": "2026-03-19T19:56:13.506Z"
-  }
-]
+[]

@@ -1,0 +1,28 @@
+name: "TRADE AI - Auto Market Scan (Cron Ping)"
+
+on:
+  schedule:
+    # Rulează automat din 5 în 5 minute
+    - cron: '*/5 * * * *'
+  # Permite pornirea manuală a acestui job din interfața GitHub
+  workflow_dispatch: 
+
+jobs:
+  ping-vercel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit the Cron Scan Endpoint to Wake the Bot
+        run: |
+          echo "Trimit ping spre Vercel pentru TRADE AI..."
+          
+          # Încearcă să extragă parola din GitHub Secrets. Dacă nu există, face fallback pe cea cunoscută a proiectului.
+          SECRET="${{ secrets.CRON_SECRET }}"
+          if [ -z "$SECRET" ]; then
+            SECRET="tradeai_cron_secret_2026"
+          fi
+
+          # Apelăm botul de pe Vercel simulând acțiunea managerului local
+          curl -s --fail -X GET "https://trade-ai-bot-xi.vercel.app/api/cron/scan" \
+          -H "Authorization: Bearer $SECRET"
+          
+          echo "Scan finished succesfuly! Botul este activ și preia trade-urile."

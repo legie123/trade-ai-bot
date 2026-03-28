@@ -10,6 +10,7 @@ import {
   OptimizationState,
   BotMode,
 } from '@/lib/types/radar';
+import { TradingStrategy, StrategyCondition } from '@/lib/types/strategy';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('Database-Supabase');
@@ -29,6 +30,7 @@ interface DbStore {
   performance: PerformanceRecord[];
   optimizer: OptimizationState;
   config: BotConfig;
+  strategies: TradingStrategy[];
 }
 
 const cache: DbStore = {
@@ -48,7 +50,9 @@ const cache: DbStore = {
     riskPerTrade: 1.5,
     maxOpenPositions: 3,
     evaluationIntervals: [5, 15, 60, 240],
-  }
+    aiStatus: 'OK',
+  },
+  strategies: [],
 };
 
 let dbInitialized = false;
@@ -64,26 +68,83 @@ export async function initDB() {
       log.error('Supabase init fetch error', { error: error.message });
       return;
     }
-    if (data && data.length > 0) {
-      for (const row of data) {
-        if (row.id === 'decisions') cache.decisions = row.data || [];
-        if (row.id === 'performance') cache.performance = row.data || [];
-        if (row.id === 'optimizer') cache.optimizer = row.data || cache.optimizer;
-        if (row.id === 'config') cache.config = row.data || cache.config;
+      if (data && data.length > 0) {
+        for (const row of data) {
+          if (row.id === 'decisions') cache.decisions = row.data || [];
+          if (row.id === 'performance') cache.performance = row.data || [];
+          if (row.id === 'optimizer') cache.optimizer = row.data || cache.optimizer;
+          if (row.id === 'config') cache.config = row.data || cache.config;
+          if (row.id === 'strategies') {
+            const strats = row.data as TradingStrategy[] || [];
+            cache.strategies = strats.map((s: TradingStrategy) => ({
+              ...s,
+              entryConditions: decryptConditions(s.entryConditions),
+              exitConditions: decryptConditions(s.exitConditions),
+            }));
+          }
+        }
+        log.info('Supabase database initialized from cloud state');
       }
-      log.info('Supabase database initialized from cloud state');
-    }
-    dbInitialized = true;
+
+      // Seed initial strategies if empty
+      if (cache.strategies.length === 0) {
+        log.info('Strategies DB empty, seeding from hardcoded defaults...');
+        import('@/lib/store/seedStrategies').then(({ INITIAL_STRATEGIES }) => {
+          cache.strategies = INITIAL_STRATEGIES;
+          syncToCloud('strategies', cache.strategies);
+        });
+      }
+      
+      dbInitialized = true;
   } catch (err) {
     log.error('Supabase init execution error', { error: String(err) });
   }
 }
 
+// ─── Premium Core Obfuscation ──────────────────
+const OBFUSCATION_KEY = process.env.CRON_SECRET || 'antigravity-premium-key';
+
+function xorCipher(text: string, key: string): string {
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+  }
+  return result;
+}
+
+function encryptConditions(conditions: StrategyCondition[]): string {
+  const jsonStr = JSON.stringify(conditions);
+  const xor = xorCipher(jsonStr, OBFUSCATION_KEY);
+  return Buffer.from(xor).toString('base64');
+}
+
+function decryptConditions(data: unknown): StrategyCondition[] {
+  if (Array.isArray(data)) return data as StrategyCondition[]; // Backward compat for unencrypted legacy rows
+  try {
+    const xor = Buffer.from(data as string, 'base64').toString('utf-8');
+    const jsonStr = xorCipher(xor, OBFUSCATION_KEY);
+    return JSON.parse(jsonStr) as StrategyCondition[];
+  } catch (_e) { // Ignore err
+    return [];
+  }
+}
+
 // ─── Fire-and-Forget Sync ──────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function syncToCloud(id: string, data: any) {
+function syncToCloud(id: string, data: unknown) {
   if (!supabaseUrl || !dbInitialized) return;
-  supabase.from('json_store').upsert({ id, data }).then(({ error }) => {
+  
+  let payload = data;
+  
+  // Obfuscate strict logic formulas for Premium Core Protection 
+  if (id === 'strategies' && Array.isArray(data)) {
+    payload = (data as TradingStrategy[]).map((s: TradingStrategy) => ({
+      ...s,
+      entryConditions: encryptConditions(s.entryConditions as StrategyCondition[]),
+      exitConditions: encryptConditions(s.exitConditions as StrategyCondition[])
+    }));
+  }
+
+  supabase.from('json_store').upsert({ id, data: payload }).then(({ error }) => {
     if (error) log.error(`Supabase sync failed for ${id}`, { error: error.message });
   });
 }
@@ -181,6 +242,7 @@ export interface BotConfig {
   riskPerTrade: number;
   maxOpenPositions: number;
   evaluationIntervals: number[];
+  aiStatus: 'OK' | 'NO_CREDIT';
 }
 
 export function getBotConfig(): BotConfig {
@@ -190,6 +252,23 @@ export function getBotConfig(): BotConfig {
 export function saveBotConfig(config: Partial<BotConfig>): void {
   cache.config = { ...cache.config, ...config };
   syncToCloud('config', cache.config);
+}
+
+// ─── Dynamic Strategies ────────────────────────────
+export function getStrategies(): TradingStrategy[] {
+  return cache.strategies;
+}
+
+export function saveStrategy(strategy: TradingStrategy): void {
+  const idx = cache.strategies.findIndex((s) => s.id === strategy.id);
+  if (idx > -1) cache.strategies[idx] = strategy;
+  else cache.strategies.push(strategy);
+  syncToCloud('strategies', cache.strategies);
+}
+
+export function removeStrategy(id: string): void {
+  cache.strategies = cache.strategies.filter(s => s.id !== id);
+  syncToCloud('strategies', cache.strategies);
 }
 
 // ─── Equity Curve (for chart) ──────────────────────

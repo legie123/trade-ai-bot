@@ -1,8 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/cron/scan",
-      "schedule": "*/2 * * * *"
+      "path": "/api/cron/nightly-prune",
+      "schedule": "0 0 * * *"
     }
   ]
 }

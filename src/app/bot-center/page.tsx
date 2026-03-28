@@ -66,6 +66,7 @@ interface BotData {
     paperBalance: number;
     riskPerTrade: number;
     maxOpenPositions: number;
+    aiStatus?: 'OK' | 'NO_CREDIT';
   };
   equityCurve: Array<{
     timestamp: string;
@@ -218,6 +219,26 @@ export default function BotCenterPage() {
         <div className="empty-state"><div className="empty-state-icon">🔌</div>Could not connect to Bot API</div>
       ) : (
         <>
+          {/* ---- AI Discovery Status Banner ---- */}
+          {data?.config?.aiStatus === 'NO_CREDIT' && (
+            <div className="card" style={{ marginBottom: 16, background: 'rgba(255, 50, 50, 0.1)', border: '1px solid var(--accent-red)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 28 }}>⚠️</span>
+                  <div>
+                    <div style={{ fontWeight: 700, color: 'var(--accent-red)', fontSize: 16 }}>AI Discovery Offline: OpenAI API Credit Depleted</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                      The AI cannot invent new strategies because your OpenAI account quota is Zero. Existing strategies will continue to backtest and trade normally.
+                    </div>
+                  </div>
+                </div>
+                <a href="https://platform.openai.com/account/billing" target="_blank" rel="noreferrer" style={{ background: 'var(--accent-red)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 6, fontSize: 13, textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  Top Up API Credit 💳
+                </a>
+              </div>
+            </div>
+          )}
+
           {/* ---- Strategy Health Banner ---- */}
           <div className="card" style={{ marginBottom: 16, borderLeft: `3px solid ${healthColor}` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

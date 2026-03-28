@@ -9,6 +9,8 @@ import { Signal } from '@/lib/types/radar';
 import { fetchWithRetry } from '@/lib/providers/base';
 import { createLogger } from '@/lib/core/logger';
 import { getResilientPrice } from '@/lib/core/apiFallback';
+import { getStrategies } from '@/lib/store/db';
+import { evaluateStrategy, MarketContext } from '@/lib/engine/dynamicInterpreter';
 import { checkVWAP } from '@/lib/engine/vwapFilter';
 import { analyzeRSI } from '@/lib/engine/rsiIndicator';
 import { calcBollingerBands } from '@/lib/engine/bollingerBands';
@@ -40,7 +42,7 @@ export interface AnalysisResult {
   psychLow: number;
   prevHigh: number;
   prevLow: number;
-  signals: { signal: string; reason: string }[];
+  signals: { signal: string; reason: string; sourceId?: string }[];
   timestamp: string;
 }
 
@@ -58,21 +60,85 @@ function calcEMA(values: number[], period: number): number {
   return ema;
 }
 
-// ─── Fetch BTC OHLC from Binance (MTF) ──
+// ─── Fetch BTC OHLC with 3-provider fallback ──
+// Binance → OKX → CryptoCompare (handles Vercel IP blocks)
 async function fetchBTCCandles(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
+  // Provider 1: Binance
+  const binanceCandles = await fetchFromBinance(interval);
+  if (binanceCandles.length >= 20) return binanceCandles;
+
+  // Provider 2: OKX (no IP restrictions)
+  log.warn(`Binance failed for ${interval}, trying OKX...`);
+  const okxCandles = await fetchFromOKX(interval);
+  if (okxCandles.length >= 20) return okxCandles;
+
+  // Provider 3: CryptoCompare (most reliable, no restrictions)
+  log.warn(`OKX failed for ${interval}, trying CryptoCompare...`);
+  const ccCandles = await fetchFromCryptoCompare(interval);
+  if (ccCandles.length >= 20) return ccCandles;
+
+  log.error(`All 3 providers failed for ${interval}`);
+  return [];
+}
+
+async function fetchFromBinance(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
   try {
     const res = await fetchWithRetry(
       `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=250`,
-      { retries: 2, timeoutMs: 5000 }
+      { retries: 1, timeoutMs: 8000 }
     );
     const klines = await res.json();
     if (!Array.isArray(klines)) return [];
-    
     return klines.map((k: [number, string, string, string, string]) => ({
       t: k[0], o: parseFloat(k[1]), h: parseFloat(k[2]), l: parseFloat(k[3]), c: parseFloat(k[4])
     }));
   } catch (err) {
-    log.error(`Binance OHLC ${interval} failed`, { error: (err as Error).message });
+    log.warn(`Binance OHLC ${interval} failed`, { error: (err as Error).message });
+    return [];
+  }
+}
+
+async function fetchFromOKX(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
+  try {
+    const barMap: Record<string, string> = { '15m': '15m', '1h': '1H', '4h': '4H' };
+    const bar = barMap[interval] || '1H';
+    const res = await fetchWithRetry(
+      `https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=${bar}&limit=250`,
+      { retries: 1, timeoutMs: 8000 }
+    );
+    const json = await res.json();
+    const data = json?.data;
+    if (!Array.isArray(data)) return [];
+    return data.reverse().map((k: string[]) => ({
+      t: parseInt(k[0]), o: parseFloat(k[1]), h: parseFloat(k[2]), l: parseFloat(k[3]), c: parseFloat(k[4])
+    }));
+  } catch (err) {
+    log.warn(`OKX OHLC ${interval} failed`, { error: (err as Error).message });
+    return [];
+  }
+}
+
+async function fetchFromCryptoCompare(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
+  try {
+    const endpointMap: Record<string, { api: string; limit: number }> = {
+      '15m': { api: 'histominute', limit: 250 },
+      '1h': { api: 'histohour', limit: 250 },
+      '4h': { api: 'histohour', limit: 250 },
+    };
+    const { api, limit } = endpointMap[interval] || endpointMap['1h'];
+    const aggregate = interval === '15m' ? 15 : interval === '4h' ? 4 : 1;
+    const res = await fetchWithRetry(
+      `https://min-api.cryptocompare.com/data/v2/${api}?fsym=BTC&tsym=USDT&limit=${limit}&aggregate=${aggregate}`,
+      { retries: 1, timeoutMs: 8000 }
+    );
+    const json = await res.json();
+    const data = json?.Data?.Data;
+    if (!Array.isArray(data)) return [];
+    return data.map((k: { time: number; open: number; high: number; low: number; close: number }) => ({
+      t: k.time * 1000, o: k.open, h: k.high, l: k.low, c: k.close
+    }));
+  } catch (err) {
+    log.warn(`CryptoCompare OHLC ${interval} failed`, { error: (err as Error).message });
     return [];
   }
 }
@@ -133,7 +199,7 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
   const dailyOpen = c4h[c4h.length - 1].o; // Macro open
   const dailyClose = price;
 
-  const signals: { signal: string; reason: string }[] = [];
+  const signals: { signal: string; reason: string; sourceId?: string }[] = [];
 
   // ── MTF Confluence Logic ──
   const isBullish15m = price > ema50_15m && ema50_15m > ema200_15m;
@@ -168,13 +234,13 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
     const prevEma9 = prevCloses.length >= 9 ? calcEMA(prevCloses, 9) : ema9;
     const prevEma21 = prevCloses.length >= 21 ? calcEMA(prevCloses, 21) : ema21;
 
-    // Golden cross on 15m + aligned with 1h trend
-    if (prevEma9 <= prevEma21 && ema9 > ema21 && isBullish1h) {
-      signals.push({ signal: 'BUY', reason: `⚡ 9/21 EMA Golden Cross (15m) — scalp BUY aligned with 1h trend` });
+    // Golden cross on 15m + aligned with 1h and 4h trend
+    if (prevEma9 <= prevEma21 && ema9 > ema21 && isBullish1h && isBullish4h) {
+      signals.push({ signal: 'BUY', reason: `⚡ 9/21 EMA Golden Cross (15m) — scalp BUY aligned with 1h/4h trend` });
     }
-    // Death cross on 15m + aligned with 1h trend
-    else if (prevEma9 >= prevEma21 && ema9 < ema21 && isBearish1h) {
-      signals.push({ signal: 'SELL', reason: `⚡ 9/21 EMA Death Cross (15m) — scalp SELL aligned with 1h trend` });
+    // Death cross on 15m + aligned with 1h and 4h trend
+    else if (prevEma9 >= prevEma21 && ema9 < ema21 && isBearish1h && isBearish4h) {
+      signals.push({ signal: 'SELL', reason: `⚡ 9/21 EMA Death Cross (15m) — scalp SELL aligned with 1h/4h trend` });
     }
   }
 
@@ -267,7 +333,7 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
   }
 
   // ── VWAP + RSI Double Gate (Institutional Filter) ──
-  const confirmedSignals: { signal: string; reason: string }[] = [];
+  const confirmedSignals: { signal: string; reason: string; sourceId?: string }[] = [];
   for (const sig of signals) {
     if (sig.signal === 'NEUTRAL') {
       confirmedSignals.push(sig);
@@ -301,6 +367,35 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
       signal: sig.signal,
       reason: `${sig.reason} | VWAP ✅ Vol ${vwap.volumeRatio}x | RSI ✅ ${rsi.rsi} ${rsi.zone}`,
     });
+  }
+
+  // ==== DYNAMIC AI STRATEGIES EVALUATION ====
+  const activeStrategies = getStrategies().filter(s => 
+    (s.targetAssets.includes('BTC') || s.targetAssets.includes('ALL')) && 
+    (s.status === 'active' || s.status === 'probation')
+  );
+
+  const marketContext: MarketContext = {
+    symbol: 'BTCUSDT',
+    price,
+    closes15m,
+    closes1h,
+    closes4h,
+    vwap: price, // For now assuming Vwap ~ Price if not independently fetched
+  };
+
+  for (const strategy of activeStrategies) {
+    try {
+      if (evaluateStrategy(strategy, marketContext)) {
+        confirmedSignals.push({
+          signal: 'BUY',
+          reason: `🤖 [AI STRATEGY: ${strategy.name}] Condition met!`,
+          sourceId: strategy.id // Track provenance
+        });
+      }
+    } catch (err) {
+      log.error(`Strategy ${strategy.name} eval failed`, { error: String(err) });
+    }
   }
 
   return {
@@ -340,7 +435,7 @@ export async function generateBTCSignals(): Promise<AnalysisResult> {
     const signal: Signal = {
       id: signalId, symbol: 'BTC', timeframe: '4h', signal: sig.signal as Signal['signal'],
       price: analysis.price, timestamp: analysis.timestamp,
-      source: 'BTC Engine', message: sig.reason,
+      source: sig.sourceId || 'BTC Engine', message: sig.reason, // Mark source as the AI strategy ID if present
     };
 
     const routed = routeSignal(signal);
