@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Signal, DashboardStats, RadarFilters } from '@/lib/types/radar';
+import InstallPwaButton from '@/components/InstallPwaButton';
 
 // ============================================================
 // Crypto Radar — Main Dashboard Page
@@ -243,6 +244,7 @@ export default function CryptoRadarPage() {
         </nav>
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <InstallPwaButton />
           <button className="btn" onClick={handleRefresh} style={{ background: 'transparent', borderColor: 'var(--border)' }}>
             ↻ Matrix Sync
           </button>
