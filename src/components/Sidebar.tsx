@@ -16,6 +16,8 @@ export default function Sidebar() {
 
   return (
     <aside className={`sidebar ${expanded ? 'sidebar-expanded' : ''}`}
+      role="complementary"
+      aria-label="Desktop sidebar navigation"
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
     >
@@ -26,7 +28,7 @@ export default function Sidebar() {
       </div>
 
       {/* Nav Items */}
-      <nav className="sidebar-nav">
+      <nav className="sidebar-nav" aria-label="Sidebar navigation">
         {NAV_ITEMS.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -35,8 +37,10 @@ export default function Sidebar() {
               href={item.href}
               className={`sidebar-item ${isActive ? 'active' : ''}`}
               title={item.label}
+              aria-label={`${item.label} page`}
+              aria-current={isActive ? 'page' : undefined}
             >
-              <span className="sidebar-item-icon">{item.icon}</span>
+              <span className="sidebar-item-icon" aria-hidden="true">{item.icon}</span>
               {expanded && (
                 <span className="sidebar-item-label">{item.label}</span>
               )}

@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { Signal, DashboardStats, RadarFilters } from '@/lib/types/radar';
 import InstallPwaButton from '@/components/InstallPwaButton';
 import KpiBar from '@/components/KpiBar';
 import Sparkline, { generateSparkData } from '@/components/Sparkline';
+import { useDebounce, usePersistedState } from '@/hooks/useDebounce';
+// LoadingStates available for future skeletons
+// import { SkeletonCard, ErrorState } from '@/components/LoadingStates';
 
 // ============================================================
 // Crypto Radar — Main Dashboard Page
@@ -32,6 +35,13 @@ interface LogDecision {
 }
 
 const POLL_INTERVAL = 30_000; // 30 seconds (cost-optimized)
+
+const FILTER_PRESETS: { label: string; icon: string; filters: Partial<RadarFilters> }[] = [
+  { label: 'All', icon: '🌐', filters: { search: '', chain: '', exchange: '', minVolume: '', minChange: '' } },
+  { label: 'SOL Scalp', icon: '⚡', filters: { chain: 'solana', exchange: 'raydium', minChange: '5' } },
+  { label: 'ETH Movers', icon: '💎', filters: { chain: 'ethereum', minChange: '3' } },
+  { label: 'High Vol', icon: '🔥', filters: { minVolume: '100000', minChange: '' } },
+];
 
 interface BTCData {
   price: number;
@@ -66,8 +76,10 @@ export default function CryptoRadarPage() {
   const [btcData, setBtcData] = useState<BTCData | null>(null);
   const [solCoins, setSolCoins] = useState<SolanaCoin[]>([]);
   const [loading, setLoading] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_fetchError, setFetchError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<string>('—');
-  const [filters, setFilters] = useState<RadarFilters>({
+  const [filters, setFilters] = usePersistedState<RadarFilters>('radar-filters', {
     search: '',
     exchange: '',
     chain: '',
@@ -75,6 +87,7 @@ export default function CryptoRadarPage() {
     minMarketCap: '',
     minChange: '',
   });
+  const debouncedSearch = useDebounce(filters.search, 300);
   const [decisions, setDecisions] = useState<LogDecision[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [indicators, setIndicators] = useState<any>(null);
@@ -203,16 +216,19 @@ export default function CryptoRadarPage() {
   }, [fetchSignals, fetchTokens, fetchBTC, fetchSolana, fetchDecisions, fetchIndicators, fetchEquity]);
 
   // ---- Filter tokens ----
-  const filtered = tokens.filter((t) => {
-    if (filters.search && !t.symbol.toLowerCase().includes(filters.search.toLowerCase()) &&
-        !t.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
+  const filtered = useMemo(() => tokens.filter((t) => {
+    if (debouncedSearch && !t.symbol.toLowerCase().includes(debouncedSearch.toLowerCase()) &&
+        !t.name.toLowerCase().includes(debouncedSearch.toLowerCase())) return false;
     if (filters.exchange && t.exchange.toLowerCase() !== filters.exchange.toLowerCase()) return false;
     if (filters.chain && t.chain.toLowerCase() !== filters.chain.toLowerCase()) return false;
     if (filters.minVolume && (t.volume24h || 0) < parseFloat(filters.minVolume)) return false;
     if (filters.minMarketCap && (t.marketCap || 0) < parseFloat(filters.minMarketCap)) return false;
     if (filters.minChange && Math.abs(t.change24h || 0) < parseFloat(filters.minChange)) return false;
     return true;
-  });
+  }), [tokens, debouncedSearch, filters]);
+
+  const hasActiveFilters = filters.search || filters.chain || filters.exchange || filters.minVolume || filters.minChange;
+  const activeFilterCount = [filters.search, filters.chain, filters.exchange, filters.minVolume, filters.minChange].filter(Boolean).length;
 
   const handleRefresh = async () => {
     setLoading(true);
@@ -224,7 +240,7 @@ export default function CryptoRadarPage() {
   return (
     <div className="page-container" style={{ maxWidth: 1600 }}>
       {/* ---- Premium Navigation & Top Bar ---- */}
-      <header className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', marginBottom: 24, borderRadius: 20 }}>
+      <header className="glass-card" role="banner" aria-label="Crypto Radar navigation" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', marginBottom: 24, borderRadius: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <div className="logo" style={{ fontSize: 20, letterSpacing: '0.05em' }}>
              <span style={{ color: '#fff', textShadow: '0 0 10px rgba(255,255,255,0.3)' }}>OPTICAL</span>
@@ -263,17 +279,44 @@ export default function CryptoRadarPage() {
         systemHealth={loading ? 'SYNCING' : 'GOOD'}
       />
 
-      {/* ---- Premium Filters Bar ---- */}
-      <div className="glass-card" style={{ padding: '12px 20px', marginBottom: 24, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input placeholder="🔍 Search symbol..." value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }} />
-        <select value={filters.chain} onChange={(e) => setFilters({ ...filters, chain: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }}>
+      {/* ---- Filter Presets ---- */}
+      <div role="toolbar" aria-label="Filter presets" style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {FILTER_PRESETS.map((preset) => {
+          const isActive = preset.label === 'All' ? !hasActiveFilters
+            : Object.entries(preset.filters).every(([k, v]) => v ? filters[k as keyof RadarFilters] === v : true) && hasActiveFilters;
+          return (
+            <button key={preset.label} className={`filter-preset ${isActive ? 'filter-preset-active' : ''}`}
+              aria-pressed={isActive ? true : false}
+              onClick={() => setFilters({ ...filters, ...preset.filters, search: preset.label === 'All' ? '' : filters.search })}
+            >
+              {preset.icon} {preset.label}
+            </button>
+          );
+        })}
+        {hasActiveFilters && (
+          <button className="filter-preset filter-preset-clear"
+            aria-label="Clear all filters"
+            onClick={() => setFilters({ search: '', exchange: '', chain: '', minVolume: '', minMarketCap: '', minChange: '' })}
+          >
+            ✕ Clear ({activeFilterCount})
+          </button>
+        )}
+      </div>
+
+      {/* ---- Filters Bar ---- */}
+      <div className="glass-card" role="search" aria-label="Token filters" style={{ padding: '12px 20px', marginBottom: 24, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input placeholder="Search symbol..." aria-label="Search by symbol or name" value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }} />
+        <select aria-label="Filter by blockchain" value={filters.chain} onChange={(e) => setFilters({ ...filters, chain: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }}>
           <option value="">All Chains</option><option value="solana">Solana</option><option value="ethereum">Ethereum</option>
         </select>
-        <select value={filters.exchange} onChange={(e) => setFilters({ ...filters, exchange: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }}>
+        <select aria-label="Filter by exchange" value={filters.exchange} onChange={(e) => setFilters({ ...filters, exchange: e.target.value })} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }}>
           <option value="">All Exchanges</option><option value="raydium">Raydium</option><option value="pumpfun">Pump.fun</option>
         </select>
-        <input placeholder="Min Vol" type="number" style={{ width: 100, background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }} value={filters.minVolume} onChange={(e) => setFilters({ ...filters, minVolume: e.target.value })} />
-        <input placeholder="Min % Change" type="number" style={{ width: 100, background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }} value={filters.minChange} onChange={(e) => setFilters({ ...filters, minChange: e.target.value })} />
+        <input placeholder="Min Vol" aria-label="Minimum volume filter" type="number" style={{ width: 100, background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }} value={filters.minVolume} onChange={(e) => setFilters({ ...filters, minVolume: e.target.value })} />
+        <input placeholder="Min % Change" aria-label="Minimum percent change filter" type="number" style={{ width: 100, background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }} value={filters.minChange} onChange={(e) => setFilters({ ...filters, minChange: e.target.value })} />
+        {debouncedSearch && (
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>Showing results for &ldquo;{debouncedSearch}&rdquo;</span>
+        )}
       </div>
 
       <div className="bento-grid">

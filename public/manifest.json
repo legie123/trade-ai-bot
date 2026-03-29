@@ -1,23 +1,54 @@
 {
-  "name": "TRADE AI (Radar)",
-  "short_name": "Trade Radar",
-  "description": "Bento Grid Dashboard for Algorithmic Trading",
-  "start_url": "/",
+  "name": "TRADE AI — Command Center",
+  "short_name": "TRADE AI",
+  "description": "Algorithmic Trading Command Center — Real-time signals, strategy arena, portfolio management",
+  "start_url": "/crypto-radar",
   "display": "standalone",
   "background_color": "#050505",
-  "theme_color": "#0ea5e9",
+  "theme_color": "#050505",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "id": "/crypto-radar",
+  "categories": ["finance", "productivity"],
   "icons": [
     {
       "src": "/app-icon-gold.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icon-gold.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/app-icon-gold-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icon-gold-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
-  "orientation": "portrait",
-  "scope": "/"
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Radar",
+      "short_name": "Radar",
+      "url": "/crypto-radar",
+      "icons": [{"src": "/app-icon-gold.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Arena",
+      "short_name": "Arena",
+      "url": "/bot-center",
+      "icons": [{"src": "/app-icon-gold.png", "sizes": "192x192"}]
+    }
+  ]
 }
