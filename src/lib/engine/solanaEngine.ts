@@ -223,9 +223,20 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
   const prevEma50 = closesMinusOne.length >= 50 ? calcEMA(closesMinusOne, 50) : ema50;
   const prevEma200 = closesMinusOne.length >= 200 ? calcEMA(closesMinusOne, 200) : ema200;
   
+  // ── Bullish Signals ──
   if (last.l < dailyOpen && price > dailyOpen && price > last.o) signals.push({ signal: 'BUY', reason: 'Liquidity grab at Daily Open' });
-  if (last.l <= psychLow && price > psychLow && price > last.o) signals.push({ signal: 'BUY', reason: `Bounce off Psych Low` });
-  if (prevEma50 <= prevEma200 && ema50 > ema200 && aboveAll) signals.push({ signal: 'LONG', reason: 'EMA cross up' });
+  if (last.l <= psychLow && price > psychLow && price > last.o) signals.push({ signal: 'BUY', reason: 'Bounce off Psych Low' });
+  if (prevEma50 <= prevEma200 && ema50 > ema200 && aboveAll) signals.push({ signal: 'LONG', reason: 'EMA Golden Cross' });
+
+  // ── Bearish Signals (Calibration #3) ──
+  if (last.h >= psychHigh && price < psychHigh && price < last.o) signals.push({ signal: 'SELL', reason: 'Rejection at Psych High' });
+  if (last.h > dailyOpen && price < dailyOpen && price < last.o) signals.push({ signal: 'SELL', reason: 'Failed breakout above Daily Open' });
+  if (prevEma50 >= prevEma200 && ema50 < ema200 && belowAll) signals.push({ signal: 'SHORT', reason: 'EMA Death Cross' });
+  
+  // ── Momentum: price far below EMA50 = bearish continuation ──
+  if (belowAll && price < ema50 * 0.97) signals.push({ signal: 'SELL', reason: `Bearish momentum: price 3%+ below EMA50` });
+  // ── Momentum: price far above EMA50 = overbought ──  
+  if (aboveAll && price > ema50 * 1.05) signals.push({ signal: 'SELL', reason: `Overbought: price 5%+ above EMA50` });
 
   // ==== DYNAMIC AI STRATEGIES EVALUATION ====
   const activeStrategies = getStrategies().filter(s => 
@@ -236,7 +247,7 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
   const marketContext: MarketContext = {
     symbol,
     price,
-    closes15m: closes, // For simplicity in Solana Engine, we use the provided candles period
+    closes15m: closes,
     closes1h: closes,
     closes4h: closes,
     vwap: price, 
@@ -248,7 +259,7 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
         signals.push({
           signal: 'BUY',
           reason: `🤖 [AI STRATEGY: ${strategy.name}] Condition met for ${symbol}!`,
-          sourceId: strategy.id // Track provenance
+          sourceId: strategy.id
         });
       }
     } catch (err) {
@@ -256,9 +267,31 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
     }
   }
 
-  if (signals.length === 0) {
-    signals.push({ signal: 'NEUTRAL', reason: aboveAll ? 'Bullish structure' : belowAll ? 'Bearish structure' : 'Ranging' });
+  // ── TREND FILTER: Block signals against EMA trend (Calibration #3) ──
+  const trendUp = ema50 > ema200;
+  const trendDown = ema50 < ema200;
+  const filtered: typeof signals = [];
+
+  for (const sig of signals) {
+    if (sig.signal === 'NEUTRAL') { filtered.push(sig); continue; }
+    if ((sig.signal === 'BUY' || sig.signal === 'LONG') && trendDown) {
+      log.info(`${symbol} ${sig.signal} BLOCKED by Trend Filter (EMA50 < EMA200)`);
+      continue; // silently drop — don't clutter with NEUTRAL
+    }
+    if ((sig.signal === 'SELL' || sig.signal === 'SHORT') && trendUp) {
+      log.info(`${symbol} ${sig.signal} BLOCKED by Trend Filter (EMA50 > EMA200)`);
+      continue;
+    }
+    filtered.push(sig);
   }
+
+  if (filtered.length === 0) {
+    filtered.push({ signal: 'NEUTRAL', reason: aboveAll ? 'Bullish structure (no setup)' : belowAll ? 'Bearish structure (no setup)' : 'Ranging' });
+  }
+
+  // Replace signals with filtered version
+  signals.length = 0;
+  signals.push(...filtered);
 
   return {
     symbol, name,
