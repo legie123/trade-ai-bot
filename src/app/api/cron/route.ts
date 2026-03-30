@@ -6,7 +6,7 @@
 // ============================================================
 import { NextResponse } from 'next/server';
 import { initDB, getDecisions, getBotConfig, getEquityCurve } from '@/lib/store/db';
-import { analyzeBTC } from '@/lib/engine/btcEngine';
+import { generateBTCSignals } from '@/lib/engine/btcEngine';
 import { evaluatePendingDecisions } from '@/lib/engine/tradeEvaluator';
 import { createLogger } from '@/lib/core/logger';
 
@@ -39,9 +39,9 @@ export async function GET() {
     // ── Step 1: Run BTC Engine → generates signals + decisions ──
     let btcSignals = 0;
     try {
-      const btcResult = await analyzeBTC();
-      btcSignals = btcResult.signals.length;
-      log.info(`BTC Engine: ${btcSignals} signals generated, price $${btcResult.price}`);
+      const btcResult = await generateBTCSignals();
+      btcSignals = btcResult.signals.filter(s => s.signal !== 'NEUTRAL').length;
+      log.info(`BTC Engine: ${btcSignals} actionable signals, price $${btcResult.price}`);
     } catch (err) {
       log.error('BTC Engine failed', { error: (err as Error).message });
     }
