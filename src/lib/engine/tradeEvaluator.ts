@@ -95,15 +95,15 @@ export async function evaluatePendingDecisions(): Promise<{
     const stableMajors = ['BTC', 'ETH', 'SOL'];
 
     if (volatileMemes.includes(symbol)) {
-      TAKE_PROFIT = 5.0; // High Reward
-      STOP_LOSS = 1.5;   // Wide Room for volatility
+      TAKE_PROFIT = 5.0; // High Reward for memes
+      STOP_LOSS = 2.0;   // Wide Room for volatility
     } else if (stableMajors.includes(symbol)) {
-      TAKE_PROFIT = 3.0; // Adjusted Reward online
-      STOP_LOSS = 1.4;   // Fixed to 1.4% SL
+      TAKE_PROFIT = 3.5; // Adjusted TP for majors
+      STOP_LOSS = 2.0;   // Widened from 1.4% → 2.0% to avoid noise exits in chop
     } else {
       // Mid-caps (JTO, JUP, RAY, RNDR, PYTH etc)
       TAKE_PROFIT = 4.0; 
-      STOP_LOSS = 1.0;   
+      STOP_LOSS = 1.5;   // Widened from 1.0% → 1.5%
     }
 
     let forcedOutcome: 'WIN' | 'LOSS' | null = null;

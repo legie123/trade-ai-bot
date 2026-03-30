@@ -324,18 +324,44 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
     signals.push({ signal: 'SELL', reason: 'MTF Confluence: Full Bearish Alignment (15m, 1h, 4h)' });
   }
 
-  if (signals.length === 0) {
-    signals.push({ 
-      signal: 'NEUTRAL', 
-      reason: bullConfluence === 2 ? 'Bullish bias but missing full MTF' 
-            : bearConfluence === 2 ? 'Bearish bias but missing full MTF' 
-            : 'Ranging / Choppy MTF' 
+  // ── TREND FILTER: Block signals against major EMA trend ──
+  // Calibration #2: prevents BUY in downtrend and SELL in uptrend
+  const trendBullish = ema50_1h > ema200_1h;
+  const trendBearish = ema50_1h < ema200_1h;
+  const trendFiltered: typeof signals = [];
+
+  for (const sig of signals) {
+    if (sig.signal === 'NEUTRAL') {
+      trendFiltered.push(sig);
+      continue;
+    }
+    // Block BUY/LONG in bearish trend
+    if ((sig.signal === 'BUY' || sig.signal === 'LONG') && trendBearish) {
+      log.info(`BTC ${sig.signal} BLOCKED by Trend Filter (EMA50 ${ema50_1h.toFixed(0)} < EMA200 ${ema200_1h.toFixed(0)})`);
+      trendFiltered.push({ signal: 'NEUTRAL', reason: `${sig.reason} — BLOCKED: EMA downtrend` });
+      continue;
+    }
+    // Block SELL/SHORT in bullish trend
+    if ((sig.signal === 'SELL' || sig.signal === 'SHORT') && trendBullish) {
+      log.info(`BTC ${sig.signal} BLOCKED by Trend Filter (EMA50 ${ema50_1h.toFixed(0)} > EMA200 ${ema200_1h.toFixed(0)})`);
+      trendFiltered.push({ signal: 'NEUTRAL', reason: `${sig.reason} — BLOCKED: EMA uptrend` });
+      continue;
+    }
+    trendFiltered.push(sig);
+  }
+
+  if (trendFiltered.length === 0) {
+    trendFiltered.push({
+      signal: 'NEUTRAL',
+      reason: trendBullish ? 'Bullish trend but no actionable signal'
+            : trendBearish ? 'Bearish trend — waiting for SELL setup'
+            : 'Ranging / Choppy MTF'
     });
   }
 
   // ── VWAP + RSI Double Gate (Institutional Filter) ──
   const confirmedSignals: { signal: string; reason: string; sourceId?: string }[] = [];
-  for (const sig of signals) {
+  for (const sig of trendFiltered) {
     if (sig.signal === 'NEUTRAL') {
       confirmedSignals.push(sig);
       continue;
