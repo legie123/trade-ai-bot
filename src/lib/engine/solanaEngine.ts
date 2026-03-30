@@ -3,6 +3,7 @@
 // Hardened with apiFallback, structured logging, stale guards
 // ============================================================
 import { routeSignal } from '@/lib/router/signalRouter';
+import { trySignal } from '@/lib/engine/signalCooldown';
 import { signalStore } from '@/lib/store/signalStore';
 import { Signal } from '@/lib/types/radar';
 import { createLogger } from '@/lib/core/logger';
@@ -320,6 +321,9 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
         }
       }
       totalSignals++;
+
+      // Cooldown gate: prevent duplicate signals per coin
+      if (!trySignal(coin.symbol, sig.signal)) continue;
 
       const signalId = `sol_${coin.symbol}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
       const signal: Signal = {

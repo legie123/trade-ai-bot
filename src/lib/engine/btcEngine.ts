@@ -4,6 +4,7 @@
 // Computes EMA 50/200/800, detects liquidity plays
 // ============================================================
 import { routeSignal } from '@/lib/router/signalRouter';
+import { trySignal } from '@/lib/engine/signalCooldown';
 import { signalStore } from '@/lib/store/signalStore';
 import { Signal } from '@/lib/types/radar';
 import { fetchWithRetry } from '@/lib/providers/base';
@@ -429,6 +430,9 @@ export async function generateBTCSignals(): Promise<AnalysisResult> {
 
   for (const sig of analysis.signals) {
     if (sig.signal === 'NEUTRAL') continue;
+
+    // Cooldown gate: prevent duplicate signals within 30min
+    if (!trySignal('BTC', sig.signal)) continue;
 
     const signalId = `btc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
