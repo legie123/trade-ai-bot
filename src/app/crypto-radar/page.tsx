@@ -7,6 +7,7 @@ import InstallPwaButton from '@/components/InstallPwaButton';
 import KpiBar from '@/components/KpiBar';
 import Sparkline, { generateSparkData } from '@/components/Sparkline';
 import { useDebounce, usePersistedState } from '@/hooks/useDebounce';
+import { useBotStats } from '@/hooks/useBotStats';
 // LoadingStates available for future skeletons
 // import { SkeletonCard, ErrorState } from '@/components/LoadingStates';
 
@@ -64,6 +65,7 @@ interface SolanaCoin {
 }
 
 export default function CryptoRadarPage() {
+  const { stats: botStats } = useBotStats(30_000);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     totalSignalsToday: 0,
@@ -275,14 +277,17 @@ export default function CryptoRadarPage() {
         </div>
       </header>
 
-      {/* ---- KPI Metrics Bar ---- */}
+      {/* ---- KPI Metrics Bar (LIVE from /api/bot) ---- */}
       <KpiBar
-        equity={1000}
-        pnl24h={0}
-        maxDrawdown={0}
-        riskMode="PAPER"
+        equity={botStats.equity}
+        pnl24h={botStats.todayPnlPercent}
+        maxDrawdown={botStats.maxDrawdown}
+        riskMode={botStats.mode}
         lastSync={lastSync || null}
-        systemHealth={loading ? 'SYNCING' : 'GOOD'}
+        systemHealth={loading ? 'SYNCING' : botStats.strategyHealth}
+        winRate={botStats.overallWinRate}
+        totalDecisions={botStats.totalDecisions}
+        todayDecisions={botStats.todayDecisions}
       />
 
       {/* ---- Filter Presets ---- */}
