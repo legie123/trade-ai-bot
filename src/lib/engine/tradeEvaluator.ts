@@ -109,44 +109,52 @@ export async function evaluatePendingDecisions(): Promise<{
     let forcedOutcome: 'WIN' | 'LOSS' | null = null;
     let forcedPnL = changePercent;
 
+    // ── Effective PnL for directional trades ──
+    const effectivePnl = (decision.signal === 'SELL' || decision.signal === 'SHORT')
+      ? -changePercent  // SELL profits when price drops
+      : changePercent;  // BUY profits when price rises
+
     if (decision.signal === 'BUY' || decision.signal === 'LONG') {
       // TP hit
       if (changePercent >= TAKE_PROFIT) { forcedOutcome = 'WIN'; forcedPnL = TAKE_PROFIT; }
       // SL hit
       else if (changePercent <= -STOP_LOSS) { forcedOutcome = 'LOSS'; forcedPnL = -STOP_LOSS; }
-      // ATR-based Trailing Stop: activates at 1.0%+ profit after 30min
-      // Uses volatility-adaptive trail distance instead of fixed 50%
+      // Profit Lock: if in profit 1%+ after 30min, lock 60% of gains
+      // (FIX: old trailing stop had impossible condition changePercent < changePercent*0.7)
       else if (changePercent >= 1.0 && ageMinutes >= 30) {
-        // ATR proxy: use absolute change as volatility measure
-        // More volatile → wider trail (less likely premature exit)
-        const atrProxy = Math.max(0.5, Math.abs(changePercent) * 0.3); // 30% of swing as ATR
-        const trailDistance = atrProxy * 1.5; // 1.5x ATR trailing distance
-        const trailLevel = changePercent - trailDistance;
-
-        // If price has retraced past the trail level, close with profit
-        if (trailLevel > 0 && changePercent < (changePercent * 0.7)) {
-          forcedOutcome = 'WIN';
-          forcedPnL = Math.max(trailLevel, changePercent * 0.5); // Min 50% of peak gains
-        }
-        // If holding strong above trail, check for extended target
-        else if (changePercent >= TAKE_PROFIT * 0.8 && ageMinutes >= 45) {
-          // Near TP after 45min — lock 70% of gains
-          forcedOutcome = 'WIN';
-          forcedPnL = changePercent * 0.7;
-        }
+        forcedOutcome = 'WIN';
+        forcedPnL = Math.max(changePercent * 0.6, 0.5); // Lock 60% of gains, min 0.5%
+        log.info(`BUY ${symbol}: Profit Lock triggered at ${changePercent.toFixed(2)}% → locking ${forcedPnL.toFixed(2)}%`);
       }
     } else if (decision.signal === 'SELL' || decision.signal === 'SHORT') {
+      // SELL TP: price dropped by TAKE_PROFIT %
       if (changePercent <= -TAKE_PROFIT) { forcedOutcome = 'WIN'; forcedPnL = TAKE_PROFIT; }
+      // SELL SL: price rose by STOP_LOSS %
       else if (changePercent >= STOP_LOSS) { forcedOutcome = 'LOSS'; forcedPnL = -STOP_LOSS; }
+      // SELL Profit Lock: if price dropped 1%+ after 30min
+      else if (changePercent <= -1.0 && ageMinutes >= 30) {
+        forcedOutcome = 'WIN';
+        forcedPnL = Math.max(Math.abs(changePercent) * 0.6, 0.5);
+        log.info(`SELL ${symbol}: Profit Lock triggered at ${changePercent.toFixed(2)}% → locking +${forcedPnL.toFixed(2)}%`);
+      }
     }
+
+    // ── STALE DECISION EXPIRY: 4 hours max ──
+    // Decisions older than 4h that haven't hit TP/SL are force-closed
+    const MAX_AGE_MINUTES = 240; // 4 hours
 
     const updates: Partial<typeof decision> = {};
 
-    // If early TP/SL hit, OR 60 mins expired
-    if (forcedOutcome || ageMinutes >= 60) {
+    // If early TP/SL hit, 60min soft expiry, or 4h hard expiry
+    if (forcedOutcome || ageMinutes >= 60 || ageMinutes >= MAX_AGE_MINUTES) {
       if (forcedOutcome) {
         updates.outcome = forcedOutcome;
         updates.pnlPercent = Math.round(forcedPnL * 100) / 100;
+      } else if (ageMinutes >= MAX_AGE_MINUTES) {
+        // Hard expiry: force close with current P&L
+        updates.outcome = effectivePnl > 0.3 ? 'WIN' : effectivePnl < -0.3 ? 'LOSS' : 'NEUTRAL';
+        updates.pnlPercent = Math.round(effectivePnl * 100) / 100;
+        log.info(`${decision.signal} ${symbol}: EXPIRED after ${Math.round(ageMinutes)}min → ${updates.outcome} (${updates.pnlPercent}%)`);
       } else {
         const { outcome, pnlPercent } = evaluateOutcome(decision.signal, decision.price, currentPrice);
         updates.outcome = outcome;
@@ -158,7 +166,7 @@ export async function evaluatePendingDecisions(): Promise<{
       if (updates.outcome === 'WIN') wins++;
       if (updates.outcome === 'LOSS') losses++;
 
-      log.info(`${decision.signal} ${decision.symbol}: ${updates.outcome} (${updates.pnlPercent > 0 ? '+' : ''}${updates.pnlPercent}%)`);
+      log.info(`${decision.signal} ${decision.symbol}: ${updates.outcome} (${updates.pnlPercent! > 0 ? '+' : ''}${updates.pnlPercent}%)`);
     } else {
       // Record interim journey
       if (ageMinutes >= 5 && decision.priceAfter5m === null) updates.priceAfter5m = currentPrice;
