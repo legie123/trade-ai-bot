@@ -152,7 +152,9 @@ function isDuplicateTrade(symbol: string, signal: string, cooldownMinutes: numbe
 }
 
 // ─── Stale Data Guard ──────────────────────────────
-function isStaleData(decisionTimestamp: string | undefined, maxAgeMs: number = 10 * 60_000): boolean {
+// Calibration #6: widened from 10min to 45min — aligned with BTC cooldown (30min)
+// Signals have cached timestamps from engine cycles, not real-time
+function isStaleData(decisionTimestamp: string | undefined, maxAgeMs: number = 45 * 60_000): boolean {
   if (!decisionTimestamp) return false; // no timestamp = can't check, allow
   const age = Date.now() - new Date(decisionTimestamp).getTime();
   return age > maxAgeMs;
@@ -188,7 +190,7 @@ export function calculateRisk(params: RiskParams): RiskOutput {
   const maxDrawdownLimit = parseFloat(process.env.MAX_DRAWDOWN_PERCENT || '15');
   const baseRisk = parseFloat(process.env.RISK_PER_TRADE_PERCENT || '2');
   const maxCorrelatedPositions = parseInt(process.env.MAX_CORRELATED_POSITIONS || '4');
-  const cooldownMinutes = parseInt(process.env.COOLDOWN_MINUTES || '15');
+  const cooldownMinutes = parseInt(process.env.COOLDOWN_MINUTES || '5'); // Reduced: signalCooldown.ts handles main logic
   const maxLatencyMs = parseInt(process.env.MAX_LATENCY_MS || '2000');
 
   const dailyLossUsed = getDailyLossUsed();
