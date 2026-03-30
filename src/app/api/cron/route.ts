@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 // Track last run to prevent double-runs
 let lastRunTimestamp = 0;
-const MIN_INTERVAL_MS = 45_000; // minimum 45s between runs
+const MIN_INTERVAL_MS = 90_000; // minimum 90s between runs (scheduler = every 2min)
 
 export async function GET() {
   const now = Date.now();
