@@ -189,10 +189,16 @@ export default function CryptoRadarPage() {
     } catch { /* optional */ }
   }, []);
 
+  // ---- Cron loop: triggers BTC engine + trade evaluator on server ----
+  const triggerCron = useCallback(async () => {
+    try { await fetch('/api/cron'); } catch { /* background, non-blocking */ }
+  }, []);
+
   // ---- Initial + polling ----
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      await triggerCron(); // Kick the trading loop first
       await Promise.all([fetchBTC(), fetchTokens(), fetchIndicators(), fetchEquity()]);
       await fetchSignals();
       await fetchDecisions();
@@ -209,11 +215,11 @@ export default function CryptoRadarPage() {
       fetchEquity();
       setLastSync(new Date().toLocaleTimeString());
     }, POLL_INTERVAL);
-    // BTC engine every 60s, Solana engine every 90s (offset to respect rate limits)
-    const btcInterval = setInterval(() => { fetchBTC(); }, 60_000);
+    // BTC engine + cron loop every 60s, Solana engine every 180s
+    const cronInterval = setInterval(() => { triggerCron(); fetchBTC(); }, 60_000);
     const solInterval = setInterval(() => { fetchSolana(); }, 180_000);
-    return () => { clearInterval(interval); clearInterval(btcInterval); clearInterval(solInterval); };
-  }, [fetchSignals, fetchTokens, fetchBTC, fetchSolana, fetchDecisions, fetchIndicators, fetchEquity]);
+    return () => { clearInterval(interval); clearInterval(cronInterval); clearInterval(solInterval); };
+  }, [fetchSignals, fetchTokens, fetchBTC, fetchSolana, fetchDecisions, fetchIndicators, fetchEquity, triggerCron]);
 
   // ---- Filter tokens ----
   const filtered = useMemo(() => tokens.filter((t) => {

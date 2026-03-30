@@ -144,9 +144,12 @@ export default function BotCenterPage() {
   }, []);
 
   useEffect(() => {
+    // Kick the trading loop on page load
+    fetch('/api/cron').catch(() => {});
     fetchData();
     fetchDashboardData();
     const interval = setInterval(() => {
+      fetch('/api/cron').catch(() => {}); // Keep trading loop alive
       fetchData();
       fetchDashboardData();
     }, 30_000);
