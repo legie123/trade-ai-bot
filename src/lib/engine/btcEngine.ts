@@ -454,6 +454,15 @@ function emptyResult(reason: string): AnalysisResult {
 export async function generateBTCSignals(): Promise<AnalysisResult> {
   const analysis = await analyzeBTC();
 
+  // Calibration #5: Collect all valid signals, then pick the BEST one
+  const MIN_CONFIDENCE = 70;
+  let bestSignal: {
+    sig: typeof analysis.signals[0];
+    routed: ReturnType<typeof routeSignal>;
+    confidence: number;
+    sessionInfo: { session: string };
+  } | null = null;
+
   for (const sig of analysis.signals) {
     if (sig.signal === 'NEUTRAL') continue;
 
@@ -465,7 +474,7 @@ export async function generateBTCSignals(): Promise<AnalysisResult> {
     const signal: Signal = {
       id: signalId, symbol: 'BTC', timeframe: '4h', signal: sig.signal as Signal['signal'],
       price: analysis.price, timestamp: analysis.timestamp,
-      source: sig.sourceId || 'BTC Engine', message: sig.reason, // Mark source as the AI strategy ID if present
+      source: sig.sourceId || 'BTC Engine', message: sig.reason,
     };
 
     const routed = routeSignal(signal);
@@ -477,21 +486,37 @@ export async function generateBTCSignals(): Promise<AnalysisResult> {
       baseConfidence, sig.signal as 'BUY' | 'SELL' | 'LONG' | 'SHORT'
     );
 
+    // Confidence gate: skip weak signals
+    if (adjustedConfidence < MIN_CONFIDENCE) {
+      log.info(`BTC ${sig.signal} SKIPPED: confidence ${adjustedConfidence}% < ${MIN_CONFIDENCE}% threshold`);
+      continue;
+    }
+
+    // Track best signal (highest confidence)
+    if (!bestSignal || adjustedConfidence > bestSignal.confidence) {
+      bestSignal = { sig, routed, confidence: adjustedConfidence, sessionInfo };
+    }
+  }
+
+  // Save only the BEST signal per cycle (not all of them)
+  if (bestSignal) {
     try {
       const { addDecision } = await import('@/lib/store/db');
+      const signalId = `btc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       addDecision({
         id: `dec_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        signalId, symbol: 'BTC', signal: sig.signal as Signal['signal'],
-        direction: (routed as unknown as { direction: string }).direction || 'NEUTRAL',
-        action: (routed as unknown as { action: string }).action || 'INFO',
-        confidence: adjustedConfidence,
+        signalId, symbol: 'BTC', signal: bestSignal.sig.signal as Signal['signal'],
+        direction: (bestSignal.routed as unknown as { direction: string }).direction || 'NEUTRAL',
+        action: (bestSignal.routed as unknown as { action: string }).action || 'INFO',
+        confidence: bestSignal.confidence,
         price: analysis.price, timestamp: analysis.timestamp,
-        source: `BTC Engine | ${sessionInfo.session}`,
+        source: `BTC Engine | ${bestSignal.sessionInfo.session}`,
         ema50: analysis.ema50, ema200: analysis.ema200, ema800: analysis.ema800,
         psychHigh: analysis.psychHigh, psychLow: analysis.psychLow, dailyOpen: analysis.dailyOpen,
         priceAfter5m: null, priceAfter15m: null, priceAfter1h: null, priceAfter4h: null,
         outcome: 'PENDING', pnlPercent: null, evaluatedAt: null,
       });
+      log.info(`BTC DECISION SAVED: ${bestSignal.sig.signal} @ $${analysis.price} conf:${bestSignal.confidence}%`);
     } catch (err) {
       log.error('Failed to save decision', { error: (err as Error).message });
     }

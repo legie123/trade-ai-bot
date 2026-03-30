@@ -368,13 +368,22 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
       const routed = routeSignal(signal);
       signalStore.addSignal(routed);
 
+      const confidence = (routed as unknown as { confidence: number }).confidence || 0;
+
+      // Calibration #5: Confidence gate — skip weak signals
+      const MIN_CONFIDENCE = 70;
+      if (confidence < MIN_CONFIDENCE) {
+        log.info(`${coin.symbol} ${sig.signal} SKIPPED: confidence ${confidence}% < ${MIN_CONFIDENCE}%`);
+        continue;
+      }
+
       try {
         const { addDecision } = await import('@/lib/store/db');
         addDecision({
           id: `dec_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
           signalId, symbol: coin.symbol, signal: sig.signal as Signal['signal'],
           direction: (routed as unknown as { direction: string }).direction || 'NEUTRAL', action: 'INFO',
-          confidence: (routed as unknown as { confidence: number }).confidence || 0,
+          confidence,
           price: coin.price, timestamp: coin.timestamp,
           source: sig.sourceId || `SOL Engine | ${coin.symbol}`,
           ema50: coin.ema50, ema200: coin.ema200, ema800: 0,
@@ -382,6 +391,7 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
           priceAfter5m: null, priceAfter15m: null, priceAfter1h: null, priceAfter4h: null,
           outcome: 'PENDING', pnlPercent: null, evaluatedAt: null,
         });
+        log.info(`${coin.symbol} DECISION SAVED: ${sig.signal} @ $${coin.price} conf:${confidence}%`);
       } catch (err) {
         log.error(`Decision save failed for ${coin.symbol}`, { error: (err as Error).message });
       }
