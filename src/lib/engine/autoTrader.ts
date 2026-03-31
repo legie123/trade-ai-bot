@@ -114,7 +114,7 @@ export async function evaluateForAutoTrade(
       // Scale balance by Kelly's suggested risk vs default 2%
       const kellyMultiplier = kelly.suggestedRisk / 2.0;
       kellyAdjustedBalance = accountBalance * Math.min(1.5, Math.max(0.5, kellyMultiplier));
-      log.info('Kelly adjustment', { suggestedRisk: kelly.suggestedRisk, multiplier: kellyMultiplier.toFixed(2) });
+      log.debug('Kelly adjustment', { suggestedRisk: kelly.suggestedRisk, multiplier: kellyMultiplier.toFixed(2) });
     }
   } catch { /* Kelly optional */ }
 
@@ -182,7 +182,7 @@ export async function evaluateForAutoTrade(
 
 // ─── Scan all pending decisions for auto-trade ─────
 export async function scanForAutoTrades(accountBalance: number = 1000): Promise<TradeSignal[]> {
-  log.info('Scanning for auto-trades', { balance: accountBalance });
+  log.debug('Scanning for auto-trades', { balance: accountBalance });
 
   if (isKillSwitchEngaged()) {
     log.warn('Scan aborted — Kill switch is active');
@@ -192,7 +192,7 @@ export async function scanForAutoTrades(accountBalance: number = 1000): Promise<
   const decisions = getDecisions().filter((d) => d.outcome === 'PENDING');
   const recent = decisions
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 10);
+    .slice(0, 5); // Only check 5 most recent (was 10 — too noisy)
 
   const results: TradeSignal[] = [];
   for (const d of recent) {

@@ -220,7 +220,7 @@ export function calculateRisk(params: RiskParams): RiskOutput {
 
   // ── Duplicate trade protection ──
   if (isDuplicateTrade(symbol, signal, cooldownMinutes)) {
-    log.info('Trade blocked — duplicate', { symbol, signal, cooldownMinutes });
+    log.debug('Trade blocked — duplicate', { symbol, signal, cooldownMinutes });
     return rejectOutput(entryPrice, dailyLossUsed, maxDailyLoss, maxDrawdownLimit, drawdownPercent,
       `🔄 Duplicate trade: ${symbol} ${signal} already active within ${cooldownMinutes}min cooldown`);
   }
