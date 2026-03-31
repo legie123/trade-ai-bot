@@ -8,31 +8,55 @@ import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('TradeEvaluator');
 
-// ─── Fetch current BTC price ───────────────────────
+// ─── CoinGecko ID map for all traded coins ────────
+const COINGECKO_IDS: Record<string, string> = {
+  BTC: 'bitcoin', BTCUSDT: 'bitcoin',
+  ETH: 'ethereum',
+  SOL: 'solana',
+  BONK: 'bonk',
+  WIF: 'dogwifcoin',
+  JUP: 'jupiter-exchange-solana',
+  JTO: 'jito-governance-token',
+  PYTH: 'pyth-network',
+  RNDR: 'render-token',
+  RAY: 'raydium',
+};
+
+// ─── Fetch current price (CoinGecko first, DexScreener fallback) ───
 async function getCurrentPrice(symbol: string): Promise<number> {
-  if (symbol.toUpperCase() === 'BTC' || symbol.toUpperCase() === 'BTCUSDT') {
+  const sym = symbol.toUpperCase();
+  const geckoId = COINGECKO_IDS[sym];
+
+  // Strategy 1: CoinGecko (reliable, rate-limited)
+  if (geckoId) {
     try {
       const res = await fetchWithRetry(
-        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
+        `https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`,
         { retries: 2, timeoutMs: 5000 }
       );
       const data = await res.json();
-      return data?.bitcoin?.usd || 0;
+      const price = data?.[geckoId]?.usd;
+      if (price && price > 0) return price;
     } catch {
-      return 0;
+      log.debug(`CoinGecko failed for ${sym}, trying DexScreener`);
     }
   }
-  // For altcoins, use DEX Screener
+
+  // Strategy 2: DexScreener (for unlisted / new tokens)
   try {
     const res = await fetchWithRetry(
-      `https://api.dexscreener.com/dex/search?q=${symbol}`,
+      `https://api.dexscreener.com/dex/search?q=${sym}`,
       { retries: 1, timeoutMs: 5000 }
     );
     const data = await res.json();
-    return data?.pairs?.[0] ? parseFloat(data.pairs[0].priceUsd) : 0;
+    const price = data?.pairs?.[0] ? parseFloat(data.pairs[0].priceUsd) : 0;
+    if (price > 0) return price;
   } catch {
-    return 0;
+    log.debug(`DexScreener also failed for ${sym}`);
   }
+
+  log.warn(`Cannot get price for ${sym} — decision will be skipped this cycle`);
+  return 0;
 }
 
 // ─── Determine WIN/LOSS ────────────────────────────

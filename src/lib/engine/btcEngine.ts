@@ -336,15 +336,20 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
       trendFiltered.push(sig);
       continue;
     }
-    // Block BUY/LONG in bearish trend
-    if ((sig.signal === 'BUY' || sig.signal === 'LONG') && trendBearish) {
-      log.info(`BTC ${sig.signal} BLOCKED by Trend Filter (EMA50 ${ema50_1h.toFixed(0)} < EMA200 ${ema200_1h.toFixed(0)})`);
+
+    // Mean-reversion signals are valid against trend (overbought SELL in uptrend, relief bounce BUY in downtrend)
+    const isMeanReversion = sig.reason.includes('Overbought') || sig.reason.includes('Oversold')
+      || sig.reason.includes('momentum') || sig.reason.includes('Bounce') || sig.reason.includes('Extreme');
+
+    // Block BUY/LONG in bearish trend (except mean-reversion)
+    if ((sig.signal === 'BUY' || sig.signal === 'LONG') && trendBearish && !isMeanReversion) {
+      log.debug(`BTC ${sig.signal} BLOCKED by Trend Filter`);
       trendFiltered.push({ signal: 'NEUTRAL', reason: `${sig.reason} — BLOCKED: EMA downtrend` });
       continue;
     }
-    // Block SELL/SHORT in bullish trend
-    if ((sig.signal === 'SELL' || sig.signal === 'SHORT') && trendBullish) {
-      log.info(`BTC ${sig.signal} BLOCKED by Trend Filter (EMA50 ${ema50_1h.toFixed(0)} > EMA200 ${ema200_1h.toFixed(0)})`);
+    // Block SELL/SHORT in bullish trend (except mean-reversion)
+    if ((sig.signal === 'SELL' || sig.signal === 'SHORT') && trendBullish && !isMeanReversion) {
+      log.debug(`BTC ${sig.signal} BLOCKED by Trend Filter`);
       trendFiltered.push({ signal: 'NEUTRAL', reason: `${sig.reason} — BLOCKED: EMA uptrend` });
       continue;
     }

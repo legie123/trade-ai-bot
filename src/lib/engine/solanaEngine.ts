@@ -275,12 +275,16 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
 
   for (const sig of signals) {
     if (sig.signal === 'NEUTRAL') { filtered.push(sig); continue; }
-    if ((sig.signal === 'BUY' || sig.signal === 'LONG') && trendDown) {
-      log.info(`${symbol} ${sig.signal} BLOCKED by Trend Filter (EMA50 < EMA200)`);
-      continue; // silently drop — don't clutter with NEUTRAL
+
+    // Mean-reversion signals are allowed against trend (overbought SELL in uptrend, oversold BUY in downtrend)
+    const isMeanReversion = sig.reason.includes('Overbought') || sig.reason.includes('momentum') || sig.reason.includes('Bounce');
+
+    if ((sig.signal === 'BUY' || sig.signal === 'LONG') && trendDown && !isMeanReversion) {
+      log.debug(`${symbol} ${sig.signal} BLOCKED by Trend Filter (EMA50 < EMA200)`);
+      continue;
     }
-    if ((sig.signal === 'SELL' || sig.signal === 'SHORT') && trendUp) {
-      log.info(`${symbol} ${sig.signal} BLOCKED by Trend Filter (EMA50 > EMA200)`);
+    if ((sig.signal === 'SELL' || sig.signal === 'SHORT') && trendUp && !isMeanReversion) {
+      log.debug(`${symbol} ${sig.signal} BLOCKED by Trend Filter (EMA50 > EMA200)`);
       continue;
     }
     filtered.push(sig);
