@@ -109,11 +109,18 @@ export function routeSignal(signal: Signal): RoutedSignal {
   const direction = DIRECTION_MAP[normalized];
   const action = determineAction(signal.signal, normalized);
 
-  // Confidence: based on data completeness
-  let confidence = 40; // base: we have at least a signal
-  if (signal.price > 0) confidence += 20;
-  if (signal.timeframe && signal.timeframe !== '—') confidence += 15;
-  if (signal.source === 'TradingView') confidence += 15;
+  // Confidence: based on data completeness + source quality
+  // Calibration #10: Internal engines pass through 9 filters → higher base confidence
+  let confidence = 50; // raised from 40 — we have signal + filters
+  if (signal.price > 0) confidence += 15;
+  if (signal.timeframe && signal.timeframe !== '—') confidence += 10;
+  // Source bonus: internal engines are MORE reliable than external
+  const src = (signal.source || '').toLowerCase();
+  if (src.includes('engine') || src.includes('btc') || src.includes('sol')) {
+    confidence += 15; // Internal engine — filtered through VWAP+RSI+Trend
+  } else if (signal.source === 'TradingView') {
+    confidence += 10; // External but structured
+  }
   if (signal.symbol.length >= 2) confidence += 10;
   confidence = Math.min(confidence, 100);
 
