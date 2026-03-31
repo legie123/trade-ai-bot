@@ -98,12 +98,12 @@ export async function evaluatePendingDecisions(): Promise<{
       TAKE_PROFIT = 5.0; // High Reward for memes
       STOP_LOSS = 2.0;   // Wide Room for volatility
     } else if (stableMajors.includes(symbol)) {
-      TAKE_PROFIT = 3.5; // Adjusted TP for majors
+      TAKE_PROFIT = 2.5; // Calibration #8: reduced from 3.5% — realistic for 2h window
       STOP_LOSS = 2.0;   // Widened from 1.4% → 2.0% to avoid noise exits in chop
     } else {
       // Mid-caps (JTO, JUP, RAY, RNDR, PYTH etc)
-      TAKE_PROFIT = 4.0; 
-      STOP_LOSS = 1.5;   // Widened from 1.0% → 1.5%
+      TAKE_PROFIT = 3.0;  // Calibration #8: reduced from 4.0%
+      STOP_LOSS = 1.5;    // Widened from 1.0% → 1.5%
     }
 
     let forcedOutcome: 'WIN' | 'LOSS' | null = null;
@@ -119,34 +119,50 @@ export async function evaluatePendingDecisions(): Promise<{
       if (changePercent >= TAKE_PROFIT) { forcedOutcome = 'WIN'; forcedPnL = TAKE_PROFIT; }
       // SL hit
       else if (changePercent <= -STOP_LOSS) { forcedOutcome = 'LOSS'; forcedPnL = -STOP_LOSS; }
-      // Profit Lock: if in profit 1%+ after 30min, lock 60% of gains
-      // (FIX: old trailing stop had impossible condition changePercent < changePercent*0.7)
-      else if (changePercent >= 1.0 && ageMinutes >= 30) {
+      // Graduated Profit Lock (Calibration #8):
+      // Level 1: +0.8% after 30min → lock 0.5%
+      // Level 2: +1.5% after 45min → lock 1.0%
+      // Level 3: +2.0% after 60min → lock 1.5%
+      else if (changePercent >= 2.0 && ageMinutes >= 60) {
         forcedOutcome = 'WIN';
-        forcedPnL = Math.max(changePercent * 0.6, 0.5); // Lock 60% of gains, min 0.5%
-        log.info(`BUY ${symbol}: Profit Lock triggered at ${changePercent.toFixed(2)}% → locking ${forcedPnL.toFixed(2)}%`);
+        forcedPnL = Math.max(changePercent * 0.75, 1.5);
+        log.info(`BUY ${symbol}: Profit Lock L3 at ${changePercent.toFixed(2)}% → ${forcedPnL.toFixed(2)}%`);
+      } else if (changePercent >= 1.5 && ageMinutes >= 45) {
+        forcedOutcome = 'WIN';
+        forcedPnL = Math.max(changePercent * 0.65, 1.0);
+        log.info(`BUY ${symbol}: Profit Lock L2 at ${changePercent.toFixed(2)}% → ${forcedPnL.toFixed(2)}%`);
+      } else if (changePercent >= 0.8 && ageMinutes >= 30) {
+        forcedOutcome = 'WIN';
+        forcedPnL = Math.max(changePercent * 0.6, 0.5);
+        log.info(`BUY ${symbol}: Profit Lock L1 at ${changePercent.toFixed(2)}% → ${forcedPnL.toFixed(2)}%`);
       }
     } else if (decision.signal === 'SELL' || decision.signal === 'SHORT') {
-      // SELL TP: price dropped by TAKE_PROFIT %
       if (changePercent <= -TAKE_PROFIT) { forcedOutcome = 'WIN'; forcedPnL = TAKE_PROFIT; }
-      // SELL SL: price rose by STOP_LOSS %
       else if (changePercent >= STOP_LOSS) { forcedOutcome = 'LOSS'; forcedPnL = -STOP_LOSS; }
-      // SELL Profit Lock: if price dropped 1%+ after 30min
-      else if (changePercent <= -1.0 && ageMinutes >= 30) {
+      // SELL graduated profit lock (mirror of BUY)
+      else if (changePercent <= -2.0 && ageMinutes >= 60) {
+        forcedOutcome = 'WIN';
+        forcedPnL = Math.max(Math.abs(changePercent) * 0.75, 1.5);
+        log.info(`SELL ${symbol}: Profit Lock L3 at ${changePercent.toFixed(2)}% → +${forcedPnL.toFixed(2)}%`);
+      } else if (changePercent <= -1.5 && ageMinutes >= 45) {
+        forcedOutcome = 'WIN';
+        forcedPnL = Math.max(Math.abs(changePercent) * 0.65, 1.0);
+        log.info(`SELL ${symbol}: Profit Lock L2 at ${changePercent.toFixed(2)}% → +${forcedPnL.toFixed(2)}%`);
+      } else if (changePercent <= -0.8 && ageMinutes >= 30) {
         forcedOutcome = 'WIN';
         forcedPnL = Math.max(Math.abs(changePercent) * 0.6, 0.5);
-        log.info(`SELL ${symbol}: Profit Lock triggered at ${changePercent.toFixed(2)}% → locking +${forcedPnL.toFixed(2)}%`);
+        log.info(`SELL ${symbol}: Profit Lock L1 at ${changePercent.toFixed(2)}% → +${forcedPnL.toFixed(2)}%`);
       }
     }
 
     // ── STALE DECISION EXPIRY: 4 hours max ──
-    // Decisions older than 4h that haven't hit TP/SL are force-closed
-    const MAX_AGE_MINUTES = 240; // 4 hours
+    const MAX_AGE_MINUTES = 240; // 4 hours hard limit
+    const SOFT_EXPIRY_MINUTES = 120; // Calibration #8: extended from 60min to 120min
 
     const updates: Partial<typeof decision> = {};
 
-    // If early TP/SL hit, 60min soft expiry, or 4h hard expiry
-    if (forcedOutcome || ageMinutes >= 60 || ageMinutes >= MAX_AGE_MINUTES) {
+    // If early TP/SL/ProfitLock hit, 2h soft expiry, or 4h hard expiry
+    if (forcedOutcome || ageMinutes >= SOFT_EXPIRY_MINUTES || ageMinutes >= MAX_AGE_MINUTES) {
       if (forcedOutcome) {
         updates.outcome = forcedOutcome;
         updates.pnlPercent = Math.round(forcedPnL * 100) / 100;
@@ -156,6 +172,7 @@ export async function evaluatePendingDecisions(): Promise<{
         updates.pnlPercent = Math.round(effectivePnl * 100) / 100;
         log.info(`${decision.signal} ${symbol}: EXPIRED after ${Math.round(ageMinutes)}min → ${updates.outcome} (${updates.pnlPercent}%)`);
       } else {
+        // Soft expiry at 2h: evaluate current position
         const { outcome, pnlPercent } = evaluateOutcome(decision.signal, decision.price, currentPrice);
         updates.outcome = outcome;
         updates.pnlPercent = pnlPercent;
@@ -171,6 +188,7 @@ export async function evaluatePendingDecisions(): Promise<{
       // Record interim journey
       if (ageMinutes >= 5 && decision.priceAfter5m === null) updates.priceAfter5m = currentPrice;
       if (ageMinutes >= 15 && decision.priceAfter15m === null) updates.priceAfter15m = currentPrice;
+      if (ageMinutes >= 60 && decision.priceAfter1h === null) updates.priceAfter1h = currentPrice;
     }
 
     if (Object.keys(updates).length > 0) {
