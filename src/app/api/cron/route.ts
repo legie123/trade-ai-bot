@@ -37,6 +37,13 @@ export async function GET() {
 
     log.info('=== CRON LOOP START ===');
 
+    // ── Streak Guard Status ──
+    const { getStreakStatus } = await import('@/lib/engine/streakGuard');
+    const streak = getStreakStatus();
+    if (streak.action !== 'NORMAL') {
+      log.warn(`Streak Guard: ${streak.reason}`);
+    }
+
     // ── Step 1a: Run BTC Engine → generates signals + decisions ──
     let btcSignals = 0;
     try {

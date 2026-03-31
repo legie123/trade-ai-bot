@@ -4,6 +4,7 @@
 // ============================================================
 import { routeSignal } from '@/lib/router/signalRouter';
 import { trySignal } from '@/lib/engine/signalCooldown';
+import { getStreakStatus } from '@/lib/engine/streakGuard';
 import { signalStore } from '@/lib/store/signalStore';
 import { Signal } from '@/lib/types/radar';
 import { createLogger } from '@/lib/core/logger';
@@ -371,7 +372,9 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
       const confidence = (routed as unknown as { confidence: number }).confidence || 0;
 
       // Calibration #5: Confidence gate — skip weak signals
-      const MIN_CONFIDENCE = 70;
+      // Calibration #9: Dynamic confidence threshold based on loss streak
+      const streak = getStreakStatus();
+      const MIN_CONFIDENCE = 70 + streak.confidenceBoost;
       if (confidence < MIN_CONFIDENCE) {
         log.info(`${coin.symbol} ${sig.signal} SKIPPED: confidence ${confidence}% < ${MIN_CONFIDENCE}%`);
         continue;

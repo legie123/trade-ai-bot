@@ -5,6 +5,7 @@
 // ============================================================
 import { routeSignal } from '@/lib/router/signalRouter';
 import { trySignal } from '@/lib/engine/signalCooldown';
+import { getStreakStatus } from '@/lib/engine/streakGuard';
 import { signalStore } from '@/lib/store/signalStore';
 import { Signal } from '@/lib/types/radar';
 import { fetchWithRetry } from '@/lib/providers/base';
@@ -454,8 +455,12 @@ function emptyResult(reason: string): AnalysisResult {
 export async function generateBTCSignals(): Promise<AnalysisResult> {
   const analysis = await analyzeBTC();
 
-  // Calibration #5: Collect all valid signals, then pick the BEST one
-  const MIN_CONFIDENCE = 70;
+  // Calibration #5+#9: Dynamic confidence threshold based on loss streak
+  const streak = getStreakStatus();
+  const MIN_CONFIDENCE = 70 + streak.confidenceBoost; // 70 normal, 80/85/90 on streaks
+  if (streak.action !== 'NORMAL') {
+    log.info(`BTC Engine: ${streak.reason} — MIN_CONFIDENCE raised to ${MIN_CONFIDENCE}%`);
+  }
   let bestSignal: {
     sig: typeof analysis.signals[0];
     routed: ReturnType<typeof routeSignal>;
