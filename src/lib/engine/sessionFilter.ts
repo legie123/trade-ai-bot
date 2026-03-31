@@ -90,7 +90,7 @@ export function applySessionFilter(
     multiplier = 0.5;
   }
 
-  const adjustedConfidence = Math.round(confidence * multiplier);
+  const adjustedConfidence = Math.min(100, Math.round(confidence * multiplier)); // Cap at 100
   const shouldTrade = adjustedConfidence >= 70; // Only trade if adjusted confidence is high enough
 
   log.info(`Session: ${session.session} | Confidence: ${confidence}→${adjustedConfidence} | x${multiplier}`);

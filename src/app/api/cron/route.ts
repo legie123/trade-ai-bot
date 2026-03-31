@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server';
 import { initDB, getDecisions, getBotConfig, getEquityCurve } from '@/lib/store/db';
 import { generateBTCSignals } from '@/lib/engine/btcEngine';
+import { analyzeMultiCoin } from '@/lib/engine/solanaEngine';
 import { evaluatePendingDecisions } from '@/lib/engine/tradeEvaluator';
 import { createLogger } from '@/lib/core/logger';
 
@@ -36,7 +37,7 @@ export async function GET() {
 
     log.info('=== CRON LOOP START ===');
 
-    // ── Step 1: Run BTC Engine → generates signals + decisions ──
+    // ── Step 1a: Run BTC Engine → generates signals + decisions ──
     let btcSignals = 0;
     try {
       const btcResult = await generateBTCSignals();
@@ -44,6 +45,16 @@ export async function GET() {
       log.info(`BTC Engine: ${btcSignals} actionable signals, price $${btcResult.price}`);
     } catch (err) {
       log.error('BTC Engine failed', { error: (err as Error).message });
+    }
+
+    // ── Step 1b: Run Solana Engine → altcoin signals + decisions ──
+    let solSignals = 0;
+    try {
+      const solResult = await analyzeMultiCoin();
+      solSignals = solResult.totalSignals;
+      log.info(`Solana Engine: ${solSignals} actionable signals across ${solResult.coins.length} coins`);
+    } catch (err) {
+      log.error('Solana Engine failed', { error: (err as Error).message });
     }
 
     // ── Step 2: Evaluate pending decisions (older than 5 min) ──
@@ -78,6 +89,7 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       loop: {
         btcSignals,
+        solSignals,
         evaluated: evalResult.evaluated,
         wins: evalResult.wins,
         losses: evalResult.losses,
