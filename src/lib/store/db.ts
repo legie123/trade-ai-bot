@@ -84,20 +84,24 @@ export async function initDB() {
       for (const row of data) {
         if (row.id === 'decisions') {
           const raw = row.data || [];
-          // Deduplicate by signalId — prevents inflation from multiple container syncs
+          // Deduplicate by signalId
           const seen = new Set<string>();
-          cache.decisions = raw.filter((d: DecisionSnapshot) => {
+          const deduped = raw.filter((d: DecisionSnapshot) => {
             const key = d.signalId || d.id;
             if (seen.has(key)) return false;
             seen.add(key);
             return true;
           });
+          // Keep only latest 100 decisions (prevents infinite Supabase growth)
+          const sorted = deduped.sort((a: DecisionSnapshot, b: DecisionSnapshot) =>
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          cache.decisions = sorted.slice(0, 100);
           if (raw.length !== cache.decisions.length) {
-            log.warn(`Deduped decisions: ${raw.length} → ${cache.decisions.length} — syncing clean set back`);
-            // Immediately sync clean set back to Supabase to fix the source
+            log.warn(`Cleaned decisions: ${raw.length} → ${cache.decisions.length} (dedup+cap100)`);
+            // Sync clean set back to Supabase
             supabase.from('json_store').upsert({ id: 'decisions', data: cache.decisions }).then(({ error: syncErr }) => {
               if (syncErr) log.error('Failed to sync clean decisions', { error: syncErr.message });
-              else log.info('Clean decisions synced to Supabase');
+              else log.info(`Clean decisions synced: ${cache.decisions.length} entries`);
             });
           }
         }
@@ -312,9 +316,12 @@ export interface EquityPoint {
 
 export function getEquityCurve(): EquityPoint[] {
   const config = getBotConfig();
-  const decisions = getDecisions()
+  const allDecs = getDecisions();
+  const decisions = allDecs
     .filter((d) => d.outcome !== 'PENDING')
     .reverse(); // oldest first
+
+  log.debug(`getEquityCurve: total=${allDecs.length} non-pending=${decisions.length}`);
 
   let cumPnl = 0;
   let balance = config.paperBalance;

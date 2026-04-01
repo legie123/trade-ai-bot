@@ -29,7 +29,7 @@ export async function GET() {
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     let balance = 1000; // Starting balance
-    const riskPerTrade = 1.5; // 1.5% risk per trade
+    const positionSize = 20; // 20% of balance per trade (paper trading standard)
     const curve: EquityPoint[] = [
       { timestamp: new Date(Date.now() - 30 * 86400000).toISOString(), balance: 1000, pnl: 0, tradeCount: 0, event: 'START' }
     ];
@@ -45,10 +45,8 @@ export async function GET() {
 
     for (const d of resolved) {
       const pnlPct = d.pnlPercent || 0;
-      const riskAmount = balance * (riskPerTrade / 100);
-      const slPct = d.symbol === 'BTC' ? 0.5 : 1.0;
-      const leverage = riskAmount / (balance * (slPct / 100));
-      const tradePnl = balance * leverage * (pnlPct / 100);
+      // Additive P&L: trade risks positionSize% of current balance
+      const tradePnl = balance * (positionSize / 100) * (pnlPct / 100);
       
       balance += tradePnl;
       if (balance < 0) balance = 0;
