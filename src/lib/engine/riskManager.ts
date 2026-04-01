@@ -171,7 +171,7 @@ export function calculateRisk(params: RiskParams): RiskOutput {
   const maxDrawdownLimit = parseFloat(process.env.MAX_DRAWDOWN_PERCENT || '15');
   const baseRisk = parseFloat(process.env.RISK_PER_TRADE_PERCENT || '2');
   const maxCorrelatedPositions = parseInt(process.env.MAX_CORRELATED_POSITIONS || '4');
-  const cooldownMinutes = parseInt(process.env.COOLDOWN_MINUTES || '5'); // Reduced: signalCooldown.ts handles main logic
+  const cooldownMinutes = parseInt(process.env.COOLDOWN_MINUTES || '30'); // Master Audit: was 5min, caused 3 RNDR losses in 22min
   const maxLatencyMs = parseInt(process.env.MAX_LATENCY_MS || '2000');
 
   const dailyLossUsed = getDailyLossUsed();

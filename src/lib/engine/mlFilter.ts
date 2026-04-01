@@ -139,6 +139,17 @@ export function scoreSignal(decision: DecisionSnapshot): MLScore {
     reasons.push('Pattern suggests false signal');
   }
 
+  // Master Audit: Hard-block coins with statistically proven failure
+  const evaluated = getDecisions().filter(d => d.outcome !== 'PENDING');
+  const coinTrades = evaluated.filter(d => d.symbol === decision.symbol);
+  if (coinTrades.length >= 6) {
+    const coinWR = coinTrades.filter(d => d.outcome === 'WIN').length / coinTrades.length;
+    if (coinWR < 0.35) {
+      verdict = 'REJECT';
+      reasons.push(`🚫 ${decision.symbol} hard-blocked: ${Math.round(coinWR*100)}% WR over ${coinTrades.length} trades`);
+    }
+  }
+
   // Add specific reasons
   if (features.emaAlignment >= 0.8) reasons.push('EMAs confirm direction');
   if (features.emaAlignment < 0.3) reasons.push('⚠️ EMAs oppose direction');

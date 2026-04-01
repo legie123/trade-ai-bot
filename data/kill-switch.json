@@ -1,9 +1,9 @@
 {
-  "engaged": true,
-  "engagedAt": "2026-04-01T05:23:21.726Z",
-  "reason": "Daily loss limit hit: 6.3% >= 3% limit",
-  "autoEngaged": true,
+  "engaged": false,
+  "engagedAt": null,
+  "reason": "Master Audit reset — new trading day",
+  "autoEngaged": false,
   "manualOverride": false,
-  "dailyLossTriggered": true,
+  "dailyLossTriggered": false,
   "maxExposureTriggered": false
 }
