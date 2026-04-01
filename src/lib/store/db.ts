@@ -82,7 +82,20 @@ export async function initDB() {
     }
     if (data && data.length > 0) {
       for (const row of data) {
-        if (row.id === 'decisions') cache.decisions = row.data || [];
+        if (row.id === 'decisions') {
+          const raw = row.data || [];
+          // Deduplicate by signalId — prevents inflation from multiple container syncs
+          const seen = new Set<string>();
+          cache.decisions = raw.filter((d: DecisionSnapshot) => {
+            const key = d.signalId || d.id;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          if (raw.length !== cache.decisions.length) {
+            log.warn(`Deduped decisions: ${raw.length} → ${cache.decisions.length}`);
+          }
+        }
         if (row.id === 'performance') cache.performance = row.data || [];
         if (row.id === 'optimizer') cache.optimizer = row.data || cache.optimizer;
         if (row.id === 'config') cache.config = row.data || cache.config;
