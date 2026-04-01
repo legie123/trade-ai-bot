@@ -1,57 +1,20 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useRealtimeData } from '@/hooks/useRealtimeData';
+import { LiveIndicator } from '@/components/LiveIndicator';
 import styles from './styles.module.css';
 
-interface DashboardState {
-  system: { status: string; uptime: number; memoryUsageRssMB: number };
-  watchdog: { status: string; crashCount: number };
-  heartbeat: {
-    status: string;
-    providers: Record<string, { ok: boolean; lastLatencyMs: number | null }>;
-  };
-  killSwitch: { engaged: boolean; reason: string | null };
-  trading: { totalSignals: number; pendingDecisions: number; executionsToday: number; dailyPnlPercent: number; openPositions: number };
-  logs: { recent: { ts: string; level: string; msg: string }[]; errorCount1h: number };
-}
-
 export default function DashboardPage() {
-  const [data, setData] = useState<DashboardState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { dashboard: data, connectionStatus, lastUpdate, updateCount, reconnect } = useRealtimeData();
 
-  const fetchDashboard = async () => {
-    try {
-      const res = await fetch('/api/dashboard');
-      if (!res.ok) throw new Error('Failed to fetch dashboard data');
-      const json = await res.json();
-      setData(json);
-      setError('');
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Kick cron on mount
   useEffect(() => {
-    fetchDashboard();
-    const inv = setInterval(fetchDashboard, 5000); // 5s refresh
-    return () => clearInterval(inv);
+    fetch('/api/cron').catch(() => {});
   }, []);
 
-  const toggleKillSwitch = async (engage: boolean) => {
-    // Basic API implementation to trigger kill switch endpoints
-    // For now we just mock the payload fetch since the API endpoints are in API logic
-    await fetch('/api/bot', { 
-      method: 'POST', 
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'killswitch', engage }) 
-    });
-    fetchDashboard();
-  };
+  const loading = !data;
 
-  if (loading && !data) return <div className={styles.container}>Loading dashboard...</div>;
-  if (error) return <div className={styles.container}>Error: {error}</div>;
+  if (loading) return <div className={styles.container}>Loading dashboard...</div>;
   if (!data) return null;
 
   const isRed = data.system.status === 'RED' || data.killSwitch.engaged;
@@ -64,15 +27,21 @@ export default function DashboardPage() {
           Trading AI <span className={styles.paperTag}>PAPER ONLY</span>
         </h1>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <LiveIndicator
+            status={connectionStatus}
+            lastUpdate={lastUpdate}
+            updateCount={updateCount}
+            onReconnect={reconnect}
+          />
           <span className={sysClass} style={{ fontWeight: 'bold' }}>
             System: {data.system.status}
           </span>
           {data.killSwitch.engaged ? (
-            <button className={`${styles.btn} ${styles.btnDanger}`} onClick={() => toggleKillSwitch(false)}>
+            <button className={`${styles.btn} ${styles.btnDanger}`} onClick={() => fetch('/api/bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'killswitch', engage: false }) })}>
               DISENGAGE KILL SWITCH
             </button>
           ) : (
-            <button className={`${styles.btn} ${styles.btnDanger}`} onClick={() => toggleKillSwitch(true)}>
+            <button className={`${styles.btn} ${styles.btnDanger}`} onClick={() => fetch('/api/bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'killswitch', engage: true }) })}>
               ENGAGE KILL SWITCH
             </button>
           )}
@@ -134,7 +103,7 @@ export default function DashboardPage() {
           {Object.entries(data.heartbeat?.providers || {}).length === 0 ? (
             <div className={styles.statRow}><span style={{color: '#8b949e'}}>Awaiting heartbeat...</span></div>
           ) : (
-            Object.entries(data.heartbeat.providers).map(([name, p]) => (
+            Object.entries(data.heartbeat?.providers || {}).map(([name, p]) => (
               <div key={name} className={styles.statRow}>
                 <span style={{ textTransform: 'capitalize' }}>{name}</span>
                 <span className={p.ok ? styles.statusGreen : styles.statusRed}>

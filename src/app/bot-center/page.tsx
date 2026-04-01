@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { TradingViewPanel } from '@/components/TradingViewChart';
 import KpiBar from '@/components/KpiBar';
 import PipelineStatus from '@/components/PipelineStatus';
 import InstallPwaButton from '@/components/InstallPwaButton';
+import { LiveIndicator } from '@/components/LiveIndicator';
+import { useRealtimeData } from '@/hooks/useRealtimeData';
 
 // ============================================================
 // Bot Command Center — Intelligence Dashboard
@@ -90,92 +92,52 @@ interface BotData {
 }
 
 export default function BotCenterPage() {
-  const [data, setData] = useState<BotData | null>(null);
-  const [loading, setLoading] = useState(true);
+  // ── Real-time SSE connection (replaces all polling) ──
+  const { data: realtimeData, bot: rtBot, connectionStatus, lastUpdate, updateCount, forceRefresh, reconnect } = useRealtimeData();
+
   const [actionStatus, setActionStatus] = useState<string>('');
-  const [backtest, setBacktest] = useState<Record<string, unknown> | null>(null);
-  const [exchange, setExchange] = useState<Record<string, unknown> | null>(null);
-  const [notifEnabled, setNotifEnabled] = useState(false);
-  const [analytics, setAnalytics] = useState<Record<string, unknown> | null>(null);
-  const [autoTrade, setAutoTrade] = useState<Record<string, unknown> | null>(null);
   const [binanceStatus, setBinanceStatus] = useState<string>('—');
-  const [portfolio, setPortfolio] = useState<Record<string, unknown> | null>(null);
-  const [signals, setSignals] = useState<Record<string, unknown> | null>(null);
   const [telegramOk, setTelegramOk] = useState<boolean | null>(null);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch('/api/bot');
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch (e) {
-      console.warn('Bot fetch error:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Construct BotData from real-time stream
+  const data: BotData | null = rtBot ? {
+    stats: rtBot.stats as BotData['stats'],
+    decisions: rtBot.decisions as BotData['decisions'],
+    performance: rtBot.performance as BotData['performance'],
+    optimizer: { version: rtBot.stats.optimizerVersion || 0, weights: {}, lastOptimizedAt: rtBot.stats.lastOptimized || '', history: [] },
+    config: { ...rtBot.config, aiStatus: 'OK' },
+    equityCurve: rtBot.equityCurve,
+    strategies: [],
+  } : null;
 
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      const [exRes, anRes, atRes, portRes, sigRes, telRes, binRes] = await Promise.allSettled([
-        fetch('/api/exchanges').then(r => r.ok ? r.json() : null),
-        fetch('/api/analytics').then(r => r.ok ? r.json() : null),
-        fetch('/api/auto-trade').then(r => r.ok ? r.json() : null),
-        fetch('/api/portfolio').then(r => r.ok ? r.json() : null),
-        fetch('/api/signals').then(r => r.ok ? r.json() : null),
-        fetch('/api/telegram').then(r => r.ok ? r.json() : null),
-        fetch('/api/auto-trade', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'test-binance'}) }).then(r => r.ok ? r.json() : null)
-      ]);
+  const loading = !realtimeData;
 
-      if (exRes.status === 'fulfilled' && exRes.value) setExchange(exRes.value);
-      if (anRes.status === 'fulfilled' && anRes.value) setAnalytics(anRes.value);
-      if (atRes.status === 'fulfilled' && atRes.value) setAutoTrade(atRes.value);
-      if (portRes.status === 'fulfilled' && portRes.value) setPortfolio(portRes.value);
-      if (sigRes.status === 'fulfilled' && sigRes.value) setSignals(sigRes.value);
-      if (telRes.status === 'fulfilled' && telRes.value) setTelegramOk(telRes.value.ok);
-      if (binRes.status === 'fulfilled' && binRes.value?.connection) {
-        setBinanceStatus(binRes.value.connection.ok ? `✅ ${binRes.value.connection.mode}` : `❌ ${binRes.value.connection.error}`);
-      }
-    } catch (e) {
-      console.warn('Dashboard fetch error:', e);
-    }
-  }, []);
-
+  // Kick cron loop on mount + fetch external connection status
   useEffect(() => {
-    // Kick the trading loop on page load
     fetch('/api/cron').catch(() => {});
-    fetchData();
-    fetchDashboardData();
-    const interval = setInterval(() => {
-      fetch('/api/cron').catch(() => {}); // Keep trading loop alive
-      fetchData();
-      fetchDashboardData();
-    }, 30_000);
 
-    // Notification SSE (Push)
-    let evtSource: EventSource | null = null;
-    if (notifEnabled) {
-      evtSource = new EventSource('/api/notifications');
-      evtSource.addEventListener('signal', (e) => {
-        try {
-          const json = JSON.parse(e.data);
-          for (const alert of json.alerts || []) {
-            new Notification(`🚨 ${alert.symbol} ${alert.signal}`, {
-              body: `${alert.direction} | Confidence: ${alert.confidence}% | Price: $${alert.price}`,
-              icon: '/favicon.ico',
-            });
-          }
-        } catch { /* parse err */ }
-      });
-    }
-
-    return () => { 
-      clearInterval(interval); 
-      if (evtSource) evtSource.close();
+    // Check external connections once
+    const checkExternal = async () => {
+      try {
+        const [telRes, binRes] = await Promise.allSettled([
+          fetch('/api/telegram').then(r => r.ok ? r.json() : null),
+          fetch('/api/auto-trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test-binance' }) }).then(r => r.ok ? r.json() : null),
+        ]);
+        if (telRes.status === 'fulfilled' && telRes.value) setTelegramOk(telRes.value.ok);
+        if (binRes.status === 'fulfilled' && binRes.value?.connection) {
+          setBinanceStatus(binRes.value.connection.ok ? `✅ ${binRes.value.connection.mode}` : `❌ ${binRes.value.connection.error}`);
+        }
+      } catch { /* silent */ }
     };
-  }, [fetchData, fetchDashboardData, notifEnabled]);
+    checkExternal();
+
+    // Kick cron every 2 min to keep trading loop alive
+    const cronInterval = setInterval(() => {
+      fetch('/api/cron').catch(() => {});
+    }, 120_000);
+
+    return () => clearInterval(cronInterval);
+  }, []);
 
   const botAction = async (action: string) => {
     setActionStatus(`Running ${action}...`);
@@ -187,7 +149,7 @@ export default function BotCenterPage() {
       });
       const json = await res.json();
       setActionStatus(`✅ ${action}: ${JSON.stringify(json).slice(0, 80)}`);
-      await fetchData();
+      await forceRefresh();
     } catch {
       setActionStatus(`❌ ${action} failed`);
     }
@@ -224,11 +186,17 @@ export default function BotCenterPage() {
         </nav>
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <LiveIndicator
+            status={connectionStatus}
+            lastUpdate={lastUpdate}
+            updateCount={updateCount}
+            onReconnect={reconnect}
+          />
           <InstallPwaButton />
           <button className="btn" onClick={() => botAction('evaluate')} style={{ border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)' }}>
             ▶ Evaluate
           </button>
-          <button className="btn" onClick={() => { fetchData(); fetchDashboardData(); }} style={{ background: 'transparent', borderColor: 'var(--border)' }}>
+          <button className="btn" onClick={() => forceRefresh()} style={{ background: 'transparent', borderColor: 'var(--border)' }}>
             ↻ Sync
           </button>
         </div>
