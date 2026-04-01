@@ -61,10 +61,17 @@ function extractFeatures(decision: DecisionSnapshot): FeatureSet {
   const hourWins = hourTrades.filter((d) => d.outcome === 'WIN').length;
   const hourScore = hourTrades.length >= 3 ? hourWins / hourTrades.length : 0.5;
 
-  // Symbol score
+  // Symbol score — risk-weighted (WR + average P&L)
   const symTrades = evaluated.filter((d) => d.symbol === decision.symbol);
   const symWins = symTrades.filter((d) => d.outcome === 'WIN').length;
-  const symbolScore = symTrades.length >= 3 ? symWins / symTrades.length : 0.5;
+  let symbolScore = symTrades.length >= 3 ? symWins / symTrades.length : 0.5;
+
+  // Calibration #16: Risk-weight by P&L — penalize coins with low/negative expectancy
+  if (symTrades.length >= 5) {
+    const avgPnl = symTrades.reduce((s, d) => s + (d.pnlPercent || 0), 0) / symTrades.length;
+    if (avgPnl < 0) symbolScore *= 0.3;         // Negative expectancy → heavy penalty
+    else if (avgPnl < 0.2) symbolScore *= 0.6;  // Barely positive → moderate penalty
+  }
 
   // Source score
   const srcTrades = evaluated.filter((d) => d.source === decision.source);
@@ -75,6 +82,15 @@ function extractFeatures(decision: DecisionSnapshot): FeatureSet {
   const recent = evaluated.slice(-10);
   const recentWins = recent.filter((d) => d.outcome === 'WIN').length;
   const streakScore = recent.length > 0 ? recentWins / recent.length : 0.5;
+
+  // Direction-specific win rate — penalize if THIS direction specifically loses on this coin
+  const dirTrades = evaluated.filter((d) => d.symbol === decision.symbol && 
+    ((isBullish && (d.signal === 'BUY' || d.signal === 'LONG')) ||
+     (!isBullish && (d.signal === 'SELL' || d.signal === 'SHORT'))));
+  if (dirTrades.length >= 3) {
+    const dirWR = dirTrades.filter(d => d.outcome === 'WIN').length / dirTrades.length;
+    if (dirWR < 0.4) symbolScore *= 0.5; // This direction loses on this coin
+  }
 
   // Volume context (approximate from confidence)
   const volumeContext = decision.confidence >= 85 ? 0.8 : decision.confidence >= 70 ? 0.5 : 0.3;
