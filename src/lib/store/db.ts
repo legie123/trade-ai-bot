@@ -162,6 +162,11 @@ export function getDecisions(): DecisionSnapshot[] {
 
 export function addDecision(snapshot: DecisionSnapshot): void {
   if (cache.decisions.some((d) => d.signalId === snapshot.signalId)) return;
+
+  // Calibration #13: Final confidence floor — reject garbage signals at DB level
+  if (snapshot.confidence < 65 && snapshot.signal !== 'NEUTRAL') {
+    return; // Silent drop — engine should have caught this
+  }
   
   cache.decisions.unshift(snapshot);
   if (cache.decisions.length > 1000) cache.decisions.length = 1000;
