@@ -300,7 +300,7 @@ export function getEquityCurve(): EquityPoint[] {
 
   let cumPnl = 0;
   let balance = config.paperBalance;
-  const positionSize = config.riskPerTrade || 5; // % of balance per trade (default 5%)
+  const positionSize = 20; // 20% of balance per trade (paper trading standard)
 
   return decisions.map((d) => {
     const pnlPct = d.pnlPercent || 0;
