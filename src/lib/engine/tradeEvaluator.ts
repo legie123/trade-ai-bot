@@ -184,38 +184,38 @@ export async function evaluatePendingDecisions(): Promise<{
       if (changePercent >= TAKE_PROFIT) { forcedOutcome = 'WIN'; forcedPnL = TAKE_PROFIT; }
       // SL hit
       else if (changePercent <= -STOP_LOSS) { forcedOutcome = 'LOSS'; forcedPnL = -STOP_LOSS; }
-      // Graduated Profit Lock (Calibration #8):
-      // Level 1: +0.8% after 30min → lock 0.5%
-      // Level 2: +1.5% after 45min → lock 1.0%
-      // Level 3: +2.0% after 60min → lock 1.5%
-      else if (changePercent >= 2.0 && ageMinutes >= 60) {
+      // Audit #19: Graduated Profit Lock — raised thresholds for better R:R
+      // L1: +1.2% after 40min → lock 0.8% (was +0.8%/30min → 0.5%)
+      // L2: +2.0% after 50min → lock 1.3% (was +1.5%/45min → 1.0%)
+      // L3: +2.5% after 60min → lock 2.0% (was +2.0%/60min → 1.5%)
+      else if (changePercent >= 2.5 && ageMinutes >= 60) {
         forcedOutcome = 'WIN';
-        forcedPnL = Math.max(changePercent * 0.75, 1.5);
+        forcedPnL = Math.max(changePercent * 0.80, 2.0);
         log.info(`BUY ${symbol}: Profit Lock L3 at ${changePercent.toFixed(2)}% → ${forcedPnL.toFixed(2)}%`);
-      } else if (changePercent >= 1.5 && ageMinutes >= 45) {
+      } else if (changePercent >= 2.0 && ageMinutes >= 50) {
         forcedOutcome = 'WIN';
-        forcedPnL = Math.max(changePercent * 0.65, 1.0);
+        forcedPnL = Math.max(changePercent * 0.70, 1.3);
         log.info(`BUY ${symbol}: Profit Lock L2 at ${changePercent.toFixed(2)}% → ${forcedPnL.toFixed(2)}%`);
-      } else if (changePercent >= 0.8 && ageMinutes >= 30) {
+      } else if (changePercent >= 1.2 && ageMinutes >= 40) {
         forcedOutcome = 'WIN';
-        forcedPnL = Math.max(changePercent * 0.6, 0.5);
+        forcedPnL = Math.max(changePercent * 0.70, 0.8);
         log.info(`BUY ${symbol}: Profit Lock L1 at ${changePercent.toFixed(2)}% → ${forcedPnL.toFixed(2)}%`);
       }
     } else if (decision.signal === 'SELL' || decision.signal === 'SHORT') {
       if (changePercent <= -TAKE_PROFIT) { forcedOutcome = 'WIN'; forcedPnL = TAKE_PROFIT; }
       else if (changePercent >= STOP_LOSS) { forcedOutcome = 'LOSS'; forcedPnL = -STOP_LOSS; }
-      // SELL graduated profit lock (mirror of BUY)
-      else if (changePercent <= -2.0 && ageMinutes >= 60) {
+      // SELL graduated profit lock (mirror of BUY — Audit #19)
+      else if (changePercent <= -2.5 && ageMinutes >= 60) {
         forcedOutcome = 'WIN';
-        forcedPnL = Math.max(Math.abs(changePercent) * 0.75, 1.5);
+        forcedPnL = Math.max(Math.abs(changePercent) * 0.80, 2.0);
         log.info(`SELL ${symbol}: Profit Lock L3 at ${changePercent.toFixed(2)}% → +${forcedPnL.toFixed(2)}%`);
-      } else if (changePercent <= -1.5 && ageMinutes >= 45) {
+      } else if (changePercent <= -2.0 && ageMinutes >= 50) {
         forcedOutcome = 'WIN';
-        forcedPnL = Math.max(Math.abs(changePercent) * 0.65, 1.0);
+        forcedPnL = Math.max(Math.abs(changePercent) * 0.70, 1.3);
         log.info(`SELL ${symbol}: Profit Lock L2 at ${changePercent.toFixed(2)}% → +${forcedPnL.toFixed(2)}%`);
-      } else if (changePercent <= -0.8 && ageMinutes >= 30) {
+      } else if (changePercent <= -1.2 && ageMinutes >= 40) {
         forcedOutcome = 'WIN';
-        forcedPnL = Math.max(Math.abs(changePercent) * 0.6, 0.5);
+        forcedPnL = Math.max(Math.abs(changePercent) * 0.70, 0.8);
         log.info(`SELL ${symbol}: Profit Lock L1 at ${changePercent.toFixed(2)}% → +${forcedPnL.toFixed(2)}%`);
       }
     }
