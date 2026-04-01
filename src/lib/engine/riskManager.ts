@@ -79,16 +79,13 @@ function estimateATR(symbol: string): number {
 
 // ─── Calculate daily loss used (persistent) ────────
 function getDailyLossUsed(): number {
-  const persistedLoss = gRisk.__dailyLossMap![getDailyKey()] || 0;
-
-  // Also check from decisions as backup
+  // Audit #22: Only use decision-based loss (accurate)
+  // persistedLoss via recordDailyLoss() was accumulating incorrectly across evaluator cycles
   const today = getDailyKey();
   const decisions = getDecisions().filter((d) => {
     return d.timestamp.startsWith(today) && d.outcome !== 'PENDING' && (d.pnlPercent || 0) < 0;
   });
-  const decisionLoss = Math.abs(decisions.reduce((s, d) => s + (d.pnlPercent || 0), 0));
-
-  return Math.max(persistedLoss, decisionLoss);
+  return Math.abs(decisions.reduce((s, d) => s + (d.pnlPercent || 0), 0));
 }
 
 // ─── Max Drawdown Calculator ───────────────────────
