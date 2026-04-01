@@ -17,6 +17,7 @@ export interface RiskParams {
   accountBalance: number;
   decisionTimestamp?: string; // ISO timestamp of the signal
   apiLatencyMs?: number;     // last API response time
+  kellyResult?: { suggestedRisk: number, halfKelly: number, winRate: number, payoffRatio: number, confident: boolean };
 }
 
 export interface RiskOutput {
@@ -74,15 +75,7 @@ function estimateATR(symbol: string): number {
   return sumRange / (prices.length - 1);
 }
 
-// ─── Kelly Criterion ───────────────────────────────
-function kellyFraction(winRate: number, avgWin: number, avgLoss: number): number {
-  if (avgLoss === 0 || winRate === 0) return 0;
-  const b = avgWin / avgLoss;
-  const p = winRate;
-  const q = 1 - p;
-  const kelly = (b * p - q) / b;
-  return Math.max(0, Math.min(kelly * 0.5, 0.25)); // Half-Kelly, cap 25%
-}
+  // Kelly logic moved to kellySizer.ts
 
 // ─── Calculate daily loss used (persistent) ────────
 function getDailyLossUsed(): number {
@@ -123,23 +116,7 @@ function getOpenSymbolCount(symbol: string): number {
   return pending.length;
 }
 
-// ─── Get historical win rate ───────────────────────
-function getWinStats(): { winRate: number; avgWin: number; avgLoss: number } {
-  const evaluated = getDecisions().filter((d) => d.outcome === 'WIN' || d.outcome === 'LOSS');
-  if (evaluated.length < 3) return { winRate: 0.5, avgWin: 1.5, avgLoss: 1.0 };
-
-  const wins = evaluated.filter((d) => d.outcome === 'WIN');
-  const losses = evaluated.filter((d) => d.outcome === 'LOSS');
-  const winRate = wins.length / evaluated.length;
-  const avgWin = wins.length > 0
-    ? wins.reduce((s, d) => s + Math.abs(d.pnlPercent || 0), 0) / wins.length
-    : 1.5;
-  const avgLoss = losses.length > 0
-    ? losses.reduce((s, d) => s + Math.abs(d.pnlPercent || 0), 0) / losses.length
-    : 1.0;
-
-  return { winRate, avgWin, avgLoss };
-}
+// Win Stats computation moved to kellySizer.ts
 
 // ─── Duplicate Trade Protection ────────────────────
 function isDuplicateTrade(symbol: string, signal: string, cooldownMinutes: number): boolean {
@@ -268,9 +245,9 @@ export function calculateRisk(params: RiskParams): RiskOutput {
     ? entryPrice * (1 + tpPercent / 100)
     : entryPrice * (1 - tpPercent / 100);
 
-  // Kelly-based position sizing
-  const { winRate, avgWin, avgLoss } = getWinStats();
-  const kelly = kellyFraction(winRate, avgWin, avgLoss);
+  // Kelly-based position sizing from cache or default base
+  const kellyPercent = params.kellyResult ? params.kellyResult.suggestedRisk : baseRisk;
+  const kellyForLog = params.kellyResult ? params.kellyResult.halfKelly : (baseRisk / 100);
 
   // Confidence-adjusted risk
   const confidenceMultiplier = confidence >= 90 ? 1.5 : confidence >= 80 ? 1.2 : confidence >= 70 ? 1.0 : 0.5;
@@ -279,8 +256,8 @@ export function calculateRisk(params: RiskParams): RiskOutput {
   const drawdownScale = drawdownPercent > 10 ? 0.5 : drawdownPercent > 5 ? 0.75 : 1.0;
 
   const riskPercent = Math.min(
-    baseRisk * confidenceMultiplier * drawdownScale,
-    kelly > 0 ? kelly * 100 : baseRisk,
+    baseRisk * confidenceMultiplier * drawdownScale, // Adjusted classic risk
+    kellyPercent > 0 ? kellyPercent : baseRisk,      // Scaled Kelly risk
     dailyLossRemaining
   );
 
@@ -302,12 +279,12 @@ export function calculateRisk(params: RiskParams): RiskOutput {
     takeProfit: Math.round(takeProfit * 100) / 100,
     takeProfitPercent: Math.round(tpPercent * 100) / 100,
     riskRewardRatio: Math.round(rr * 100) / 100,
-    kellyFraction: Math.round(kelly * 1000) / 1000,
+    kellyFraction: Math.round(kellyForLog * 1000) / 1000,
     dailyLossUsed: Math.round(dailyLossUsed * 100) / 100,
     dailyLossLimit: maxDailyLoss,
     maxDrawdown: maxDrawdownLimit,
     drawdownCurrent: Math.round(drawdownPercent * 100) / 100,
     canTrade: true,
-    reason: `Risk: ${riskPercent.toFixed(1)}% | RR: ${rr.toFixed(1)} | Kelly: ${(kelly * 100).toFixed(1)}% | DD: ${drawdownPercent.toFixed(1)}%`,
+    reason: `Risk: ${riskPercent.toFixed(1)}% | RR: ${rr.toFixed(1)} | Kelly: ${(kellyForLog * 100).toFixed(1)}% | DD: ${drawdownPercent.toFixed(1)}%`,
   };
 }

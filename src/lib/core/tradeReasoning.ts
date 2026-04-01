@@ -7,6 +7,7 @@ import { calculateRisk, RiskOutput } from '@/lib/engine/riskManager';
 import { scoreSignal, MLScore } from '@/lib/engine/mlFilter';
 import { calculateCompositeScore, CompositeResult } from '@/lib/engine/compositeScore';
 import { aggregateConfidence, ConfidenceResult } from '@/lib/core/confidenceAggregator';
+import type { KellyResult } from '@/lib/engine/kellySizer';
 
 export interface TradeReasoningReport {
   symbol: string;
@@ -40,13 +41,13 @@ function identifyStrategy(decision: DecisionSnapshot): string {
   return 'Momentum & Trend Following'; // Fallback
 }
 
-// ─── Generate the Full Transparency Report ─────────────
 export function generateTradeReasoning(
   decision: DecisionSnapshot,
   allPending: DecisionSnapshot[],
   accountBalance: number,
   isAccepted: boolean,
-  rejectionReason?: string
+  rejectionReason?: string,
+  kellyResult?: KellyResult
 ): TradeReasoningReport {
 
   const confidence = aggregateConfidence(allPending, decision.symbol);
@@ -61,6 +62,7 @@ export function generateTradeReasoning(
     accountBalance,
     decisionTimestamp: decision.timestamp,
     apiLatencyMs: 0, // Not evaluating network here
+    kellyResult,
   });
 
   const ml = scoreSignal(decision);

@@ -9,6 +9,7 @@ import { calculateRisk } from '@/lib/engine/riskManager';
 import { getAutoTradeConfig } from '@/lib/engine/autoTrader';
 import { getExecutionLog } from '@/lib/engine/executor';
 import { calculateCompositeScore } from '@/lib/engine/compositeScore';
+import type { KellyResult } from '@/lib/engine/kellySizer';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,7 +86,7 @@ interface TradeReasoning {
   compositeBreakdown: string[];
 }
 
-function buildReasoning(decision: ReturnType<typeof getDecisions>[0], balance: number): TradeReasoning {
+function buildReasoning(decision: ReturnType<typeof getDecisions>[0], balance: number, kellyResult?: KellyResult): TradeReasoning {
   const isBullish = decision.signal === 'BUY' || decision.signal === 'LONG';
   const config = getAutoTradeConfig();
 
@@ -102,6 +103,7 @@ function buildReasoning(decision: ReturnType<typeof getDecisions>[0], balance: n
     confidence: decision.confidence,
     symbol: decision.symbol,
     accountBalance: balance,
+    kellyResult,
   });
 
   // EMA analysis
@@ -246,7 +248,9 @@ export async function GET(request: Request) {
     decisions = decisions.slice(0, limit);
 
     const balance = 1000; // paper balance
-    const reasonings = decisions.map(d => buildReasoning(d, balance));
+    const { getKellyRiskCached } = await import('@/lib/engine/kellySizer');
+    const kellyResult = await getKellyRiskCached();
+    const reasonings = decisions.map(d => buildReasoning(d, balance, kellyResult));
 
     // Summary stats
     const execCount = reasonings.filter(r => r.decision === 'EXECUTE').length;

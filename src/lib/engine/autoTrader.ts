@@ -108,13 +108,14 @@ export async function evaluateForAutoTrade(
 
   // Dynamic Kelly position sizing
   let kellyAdjustedBalance = accountBalance;
+  let kellyResult = undefined;
   try {
-    const kelly = await getKellyRiskCached();
-    if (kelly.confident && kelly.suggestedRisk > 0) {
+    kellyResult = await getKellyRiskCached();
+    if (kellyResult.confident && kellyResult.suggestedRisk > 0) {
       // Scale balance by Kelly's suggested risk vs default 2%
-      const kellyMultiplier = kelly.suggestedRisk / 2.0;
+      const kellyMultiplier = kellyResult.suggestedRisk / 2.0;
       kellyAdjustedBalance = accountBalance * Math.min(1.5, Math.max(0.5, kellyMultiplier));
-      log.debug('Kelly adjustment', { suggestedRisk: kelly.suggestedRisk, multiplier: kellyMultiplier.toFixed(2) });
+      log.debug('Kelly adjustment', { suggestedRisk: kellyResult.suggestedRisk, multiplier: kellyMultiplier.toFixed(2) });
     }
   } catch { /* Kelly optional */ }
 
@@ -127,6 +128,7 @@ export async function evaluateForAutoTrade(
     accountBalance: kellyAdjustedBalance,
     decisionTimestamp: decision.timestamp,
     apiLatencyMs: 200, // simulated
+    kellyResult,
   });
 
   // Decision logic

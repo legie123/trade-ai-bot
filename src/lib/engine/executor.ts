@@ -280,6 +280,7 @@ export async function runExecutionPipeline(accountBalance = 1000): Promise<Execu
       accountBalance,
       decisionTimestamp: decision.timestamp,
       apiLatencyMs: 50, // simulated low latency for paper mode
+      kellyResult: kelly,
     });
 
     if (!risk.canTrade) {

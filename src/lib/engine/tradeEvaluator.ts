@@ -22,27 +22,67 @@ const COINGECKO_IDS: Record<string, string> = {
   RAY: 'raydium',
 };
 
-// ─── Fetch current price (CoinGecko first, DexScreener fallback) ───
+// ─── Price cache (60s TTL) to prevent API rate limiting ───
+const priceCache: Map<string, { price: number; ts: number }> = new Map();
+const PRICE_CACHE_TTL = 60_000; // 60s
+
+// Batch-fetch all CoinGecko prices in one request
+async function batchFetchGeckoPrices(): Promise<void> {
+  const ids = Object.values(COINGECKO_IDS).filter((v, i, a) => a.indexOf(v) === i).join(',');
+  try {
+    const res = await fetchWithRetry(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
+      { retries: 2, timeoutMs: 8000 }
+    );
+    const data = await res.json();
+    const now = Date.now();
+    for (const [sym, geckoId] of Object.entries(COINGECKO_IDS)) {
+      const price = data?.[geckoId]?.usd;
+      if (price && price > 0) {
+        priceCache.set(sym, { price, ts: now });
+      }
+    }
+    log.debug(`Batch price fetch: ${priceCache.size} coins cached`);
+  } catch {
+    log.warn('Batch CoinGecko fetch failed');
+  }
+}
+
+// ─── Fetch current price (cached → batch CoinGecko → DexScreener) ───
 async function getCurrentPrice(symbol: string): Promise<number> {
   const sym = symbol.toUpperCase();
-  const geckoId = COINGECKO_IDS[sym];
 
-  // Strategy 1: CoinGecko (reliable, rate-limited)
+  // Check cache first
+  const cached = priceCache.get(sym);
+  if (cached && Date.now() - cached.ts < PRICE_CACHE_TTL) {
+    return cached.price;
+  }
+
+  // If cache empty, do batch fetch
+  if (priceCache.size === 0 || [...priceCache.values()].every(v => Date.now() - v.ts > PRICE_CACHE_TTL)) {
+    await batchFetchGeckoPrices();
+    const fresh = priceCache.get(sym);
+    if (fresh && Date.now() - fresh.ts < PRICE_CACHE_TTL) return fresh.price;
+  }
+
+  // Single CoinGecko fallback
+  const geckoId = COINGECKO_IDS[sym];
   if (geckoId) {
     try {
       const res = await fetchWithRetry(
         `https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`,
-        { retries: 2, timeoutMs: 5000 }
+        { retries: 1, timeoutMs: 5000 }
       );
       const data = await res.json();
       const price = data?.[geckoId]?.usd;
-      if (price && price > 0) return price;
-    } catch {
-      log.debug(`CoinGecko failed for ${sym}, trying DexScreener`);
-    }
+      if (price && price > 0) {
+        priceCache.set(sym, { price, ts: Date.now() });
+        return price;
+      }
+    } catch { /* fall through */ }
   }
 
-  // Strategy 2: DexScreener (for unlisted / new tokens)
+  // DexScreener fallback
   try {
     const res = await fetchWithRetry(
       `https://api.dexscreener.com/dex/search?q=${sym}`,
@@ -50,12 +90,13 @@ async function getCurrentPrice(symbol: string): Promise<number> {
     );
     const data = await res.json();
     const price = data?.pairs?.[0] ? parseFloat(data.pairs[0].priceUsd) : 0;
-    if (price > 0) return price;
-  } catch {
-    log.debug(`DexScreener also failed for ${sym}`);
-  }
+    if (price > 0) {
+      priceCache.set(sym, { price, ts: Date.now() });
+      return price;
+    }
+  } catch { /* fall through */ }
 
-  log.warn(`Cannot get price for ${sym} — decision will be skipped this cycle`);
+  log.warn(`Cannot get price for ${sym} — skipping this cycle`);
   return 0;
 }
 
