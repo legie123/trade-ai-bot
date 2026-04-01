@@ -386,7 +386,9 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
 
       try {
         const { addDecision } = await import('@/lib/store/db');
-        addDecision({
+        const { scoreSignal } = await import('@/lib/engine/mlFilter');
+
+        const decisionData = {
           id: `dec_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
           signalId, symbol: coin.symbol, signal: sig.signal as Signal['signal'],
           direction: (routed as unknown as { direction: string }).direction || 'NEUTRAL', action: 'INFO',
@@ -396,9 +398,17 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
           ema50: coin.ema50, ema200: coin.ema200, ema800: 0,
           psychHigh: coin.psychHigh, psychLow: coin.psychLow, dailyOpen: coin.dailyOpen,
           priceAfter5m: null, priceAfter15m: null, priceAfter1h: null, priceAfter4h: null,
-          outcome: 'PENDING', pnlPercent: null, evaluatedAt: null,
-        });
-        log.info(`${coin.symbol} DECISION SAVED: ${sig.signal} @ $${coin.price} conf:${confidence}%`);
+          outcome: 'PENDING' as const, pnlPercent: null, evaluatedAt: null,
+        };
+
+        // Calibration #15: ML Filter gate
+        const mlScore = scoreSignal(decisionData as Parameters<typeof scoreSignal>[0]);
+        if (mlScore.verdict === 'REJECT') {
+          log.info(`${coin.symbol} ${sig.signal} ML-REJECTED: score ${mlScore.score}/100`);
+        } else {
+          addDecision(decisionData);
+          log.info(`${coin.symbol} DECISION SAVED: ${sig.signal} @ $${coin.price} conf:${confidence}% ml:${mlScore.score}/100 [${mlScore.verdict}]`);
+        }
       } catch (err) {
         log.error(`Decision save failed for ${coin.symbol}`, { error: (err as Error).message });
       }

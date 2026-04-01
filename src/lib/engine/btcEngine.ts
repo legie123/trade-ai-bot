@@ -512,8 +512,10 @@ export async function generateBTCSignals(): Promise<AnalysisResult> {
   if (bestSignal) {
     try {
       const { addDecision } = await import('@/lib/store/db');
+      const { scoreSignal } = await import('@/lib/engine/mlFilter');
       const signalId = `btc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      addDecision({
+
+      const decisionData = {
         id: `dec_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         signalId, symbol: 'BTC', signal: bestSignal.sig.signal as Signal['signal'],
         direction: (bestSignal.routed as unknown as { direction: string }).direction || 'NEUTRAL',
@@ -524,9 +526,17 @@ export async function generateBTCSignals(): Promise<AnalysisResult> {
         ema50: analysis.ema50, ema200: analysis.ema200, ema800: analysis.ema800,
         psychHigh: analysis.psychHigh, psychLow: analysis.psychLow, dailyOpen: analysis.dailyOpen,
         priceAfter5m: null, priceAfter15m: null, priceAfter1h: null, priceAfter4h: null,
-        outcome: 'PENDING', pnlPercent: null, evaluatedAt: null,
-      });
-      log.info(`BTC DECISION SAVED: ${bestSignal.sig.signal} @ $${analysis.price} conf:${bestSignal.confidence}%`);
+        outcome: 'PENDING' as const, pnlPercent: null, evaluatedAt: null,
+      };
+
+      // Calibration #15: ML Filter gate — reject signals with REJECT verdict
+      const mlScore = scoreSignal(decisionData as Parameters<typeof scoreSignal>[0]);
+      if (mlScore.verdict === 'REJECT') {
+        log.info(`BTC ${bestSignal.sig.signal} ML-REJECTED: score ${mlScore.score}/100 — ${mlScore.reasons.join(', ')}`);
+      } else {
+        addDecision(decisionData);
+        log.info(`BTC DECISION SAVED: ${bestSignal.sig.signal} @ $${analysis.price} conf:${bestSignal.confidence}% ml:${mlScore.score}/100 [${mlScore.verdict}]`);
+      }
     } catch (err) {
       log.error('Failed to save decision', { error: (err as Error).message });
     }
