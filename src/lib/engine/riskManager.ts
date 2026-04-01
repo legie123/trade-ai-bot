@@ -60,7 +60,11 @@ export function resetDailyLoss(): void {
 // ─── ATR Approximation from recent decisions ───────
 function estimateATR(symbol: string): number {
   const decisions = getDecisions().filter((d) => d.symbol === symbol);
-  if (decisions.length < 5) return 0.02; // default 2%
+  if (decisions.length < 5) {
+    // Fallback: 6% base ATR for new highly volatile DEX tokens, 2% for majors
+    const isMajor = ['BTC', 'ETH', 'SOL'].includes(symbol);
+    return isMajor ? 0.02 : 0.06;
+  }
 
   const prices = decisions.slice(-20).map((d) => d.price);
   let sumRange = 0;

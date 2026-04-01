@@ -51,13 +51,19 @@ export function calculateKellyRisk(
   const winRate = wins.length / resolved.length;
   const lossRate = 1 - winRate;
 
+  // Apply 0.25% standard DEX penalty (slippage + fees)
+  const penalty = 0.25;
+
   // Average win and loss magnitudes
-  const avgWin = wins.length > 0
+  const rawAvgWin = wins.length > 0
     ? wins.reduce((sum, t) => sum + Math.abs(t.pnlPercent), 0) / wins.length
     : 0;
-  const avgLoss = losses.length > 0
+  const rawAvgLoss = losses.length > 0
     ? losses.reduce((sum, t) => sum + Math.abs(t.pnlPercent), 0) / losses.length
     : 1; // Prevent division by zero
+
+  const avgWin = Math.max(0, rawAvgWin - penalty);
+  const avgLoss = rawAvgLoss + penalty;
 
   // Payoff ratio (R:R)
   const payoffRatio = avgLoss > 0 ? avgWin / avgLoss : 0;
