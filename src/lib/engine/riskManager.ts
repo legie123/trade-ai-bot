@@ -167,7 +167,7 @@ function rejectOutput(
 export function calculateRisk(params: RiskParams): RiskOutput {
   const { entryPrice, signal, confidence, symbol, accountBalance, decisionTimestamp, apiLatencyMs } = params;
 
-  const maxDailyLoss = parseFloat(process.env.MAX_DAILY_LOSS_PERCENT || '5');
+  const maxDailyLoss = parseFloat(process.env.MAX_DAILY_LOSS_PERCENT || '15'); // Audit #21: was 5%, too strict for paper trading
   const maxDrawdownLimit = parseFloat(process.env.MAX_DRAWDOWN_PERCENT || '15');
   const baseRisk = parseFloat(process.env.RISK_PER_TRADE_PERCENT || '2');
   const maxCorrelatedPositions = parseInt(process.env.MAX_CORRELATED_POSITIONS || '4');

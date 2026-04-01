@@ -1,7 +1,7 @@
 {
   "engaged": false,
   "engagedAt": null,
-  "reason": "Master Audit reset — new trading day",
+  "reason": "Audit #21 reset — daily loss limit raised to 15%",
   "autoEngaged": false,
   "manualOverride": false,
   "dailyLossTriggered": false,
