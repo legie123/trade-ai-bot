@@ -75,7 +75,25 @@ export async function GET() {
       log.error('Evaluator failed', { error: (err as Error).message });
     }
 
-    // ── Step 3: Gather current state ──
+    // ── Step 3: Auto-Optimizer (runs once per hour) ──
+    try {
+      const { runOptimizer } = await import('@/lib/engine/optimizer');
+      const { getOptimizerState } = await import('@/lib/store/db');
+      const optState = getOptimizerState();
+      const lastOpt = optState.lastOptimizedAt ? new Date(optState.lastOptimizedAt).getTime() : 0;
+      const hoursSinceOpt = (Date.now() - lastOpt) / 3600_000;
+
+      if (hoursSinceOpt >= 1) {
+        const optResult = runOptimizer();
+        if (optResult.optimized) {
+          log.info(`Optimizer v${optResult.version}: ${Object.keys(optResult.changes).length} weight changes`);
+        }
+      }
+    } catch (err) {
+      log.error('Optimizer failed', { error: (err as Error).message });
+    }
+
+    // ── Step 4: Gather current state ──
     const decisions = getDecisions();
     const pending = decisions.filter(d => d.outcome === 'PENDING').length;
     const total = decisions.length;
