@@ -93,7 +93,12 @@ export async function initDB() {
             return true;
           });
           if (raw.length !== cache.decisions.length) {
-            log.warn(`Deduped decisions: ${raw.length} → ${cache.decisions.length}`);
+            log.warn(`Deduped decisions: ${raw.length} → ${cache.decisions.length} — syncing clean set back`);
+            // Immediately sync clean set back to Supabase to fix the source
+            supabase.from('json_store').upsert({ id: 'decisions', data: cache.decisions }).then(({ error: syncErr }) => {
+              if (syncErr) log.error('Failed to sync clean decisions', { error: syncErr.message });
+              else log.info('Clean decisions synced to Supabase');
+            });
           }
         }
         if (row.id === 'performance') cache.performance = row.data || [];
