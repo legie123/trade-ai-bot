@@ -296,15 +296,20 @@ export function getEquityCurve(): EquityPoint[] {
   const config = getBotConfig();
   const decisions = getDecisions()
     .filter((d) => d.outcome !== 'PENDING')
-    .reverse();
+    .reverse(); // oldest first
 
   let cumPnl = 0;
   let balance = config.paperBalance;
+  const positionSize = config.riskPerTrade || 5; // % of balance per trade (default 5%)
 
   return decisions.map((d) => {
     const pnlPct = d.pnlPercent || 0;
     cumPnl += pnlPct;
-    balance = balance * (1 + pnlPct / 100);
+
+    // Additive P&L: each trade risks positionSize% of CURRENT balance
+    // Trade P&L impact = balance * (positionSize/100) * (pnlPct/100)
+    const tradeImpact = balance * (positionSize / 100) * (pnlPct / 100);
+    balance = Math.max(balance + tradeImpact, 0); // never go below 0
 
     return {
       timestamp: d.timestamp,

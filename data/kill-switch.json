@@ -1,0 +1,9 @@
+{
+  "engaged": true,
+  "engagedAt": "2026-04-01T05:23:21.726Z",
+  "reason": "Daily loss limit hit: 6.3% >= 3% limit",
+  "autoEngaged": true,
+  "manualOverride": false,
+  "dailyLossTriggered": true,
+  "maxExposureTriggered": false
+}
