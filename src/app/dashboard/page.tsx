@@ -72,6 +72,7 @@ export default function DashboardPage() {
 
       <header className={styles.header}>
         <h1 className={styles.title}>
+          <img src="/dragon-logo.png" alt="Dragon AI" className={styles.dragonLogo} />
           Trading AI <span className={styles.paperTag}>PAPER ONLY</span>
         </h1>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
