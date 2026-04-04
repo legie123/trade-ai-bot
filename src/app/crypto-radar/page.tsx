@@ -96,6 +96,38 @@ export default function CryptoRadarPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [equity, setEquity] = useState<any>(null);
 
+  // ---- Watch/Mute State ----
+  const [watchlist, setWatchlist] = usePersistedState<string[]>('radar-watchlist', []);
+  const [mutedSymbols, setMutedSymbols] = usePersistedState<string[]>('radar-muted', []);
+  const [toast, setToast] = useState<string>('');
+
+  // Auto-clear toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(''), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const toggleWatch = (symbol: string) => {
+    if (watchlist.includes(symbol)) {
+      setWatchlist(watchlist.filter((s: string) => s !== symbol));
+      setToast(`👁 ${symbol} removed from watchlist`);
+    } else {
+      setWatchlist([...watchlist, symbol]);
+      setToast(`👁 Watching ${symbol}`);
+    }
+  };
+
+  const toggleMute = (symbol: string) => {
+    if (mutedSymbols.includes(symbol)) {
+      setMutedSymbols(mutedSymbols.filter((s: string) => s !== symbol));
+      setToast(`🔊 ${symbol} unmuted`);
+    } else {
+      setMutedSymbols([...mutedSymbols, symbol]);
+      setToast(`🔇 ${symbol} muted`);
+    }
+  };
+
   // ---- Fetch signals from webhook endpoint ----
   const fetchSignals = useCallback(async () => {
     try {
@@ -247,6 +279,21 @@ export default function CryptoRadarPage() {
 
   return (
     <div className="page-container" style={{ maxWidth: 1600 }}>
+      {/* ---- Toast Notification ---- */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: 20, right: 20, zIndex: 9999,
+          padding: '12px 20px', borderRadius: 12,
+          background: 'rgba(6,182,212,0.15)',
+          border: '1px solid #06b6d4',
+          color: '#fff', fontSize: 13, fontWeight: 600,
+          backdropFilter: 'blur(12px)', boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          animation: 'radarToast 0.3s ease-out',
+        }}>
+          {toast}
+        </div>
+      )}
+      <style>{`@keyframes radarToast { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }`}</style>
       {/* ---- Premium Navigation & Top Bar ---- */}
       <header className="glass-card" role="banner" aria-label="Crypto Radar navigation" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', marginBottom: 24, borderRadius: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -464,16 +511,16 @@ export default function CryptoRadarPage() {
              <div style={{ padding: 12, flex: 1, maxHeight: 450, overflowY: 'auto' }}>
                {signals.length > 0 ? (
                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                   {signals.slice(0, 15).map((s: any) => (
-                     <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${s.signal.includes('BUY') ? 'var(--accent-green)' : 'var(--accent-red)'}` }}>
+                   {signals.filter((s: any) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((s: any) => (
+                     <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: watchlist.includes(s.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${s.signal.includes('BUY') ? 'var(--accent-green)' : 'var(--accent-red)'}`, transition: 'background 0.2s' }}>
                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(s.timestamp)}</span>
-                       <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.symbol}</span>
+                       <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.symbol} {watchlist.includes(s.symbol) && <span style={{ fontSize: 10, color: 'var(--accent-cyan)' }}>★</span>}</span>
                        <span className={`badge ${getSignalBadge(s.signal)}`} style={{ fontSize: 10 }}>{s.signal} {s.direction === 'BULLISH' ? '▲' : '▼'}</span>
                        <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(s.confidence) }}>{s.confidence}%</span>
                        {/* Actionable CTAs */}
                        <div className="signal-cta-group">
-                         <button className="signal-cta" title="Watch" onClick={() => {/* TODO: watchlist */}}>👁</button>
-                         <button className="signal-cta" title="Mute" onClick={() => {/* TODO: mute */}} style={{ opacity: 0.5 }}>🔇</button>
+                         <button className="signal-cta" title={watchlist.includes(s.symbol) ? 'Unwatch' : 'Watch'} onClick={() => toggleWatch(s.symbol)} style={{ background: watchlist.includes(s.symbol) ? 'rgba(6,182,212,0.2)' : undefined, color: watchlist.includes(s.symbol) ? 'var(--accent-cyan)' : undefined }}>👁</button>
+                         <button className="signal-cta" title={mutedSymbols.includes(s.symbol) ? 'Unmute' : 'Mute'} onClick={() => toggleMute(s.symbol)} style={{ opacity: 0.5 }}>🔇</button>
                        </div>
                      </div>
                    ))}

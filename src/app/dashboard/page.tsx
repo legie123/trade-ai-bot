@@ -1,16 +1,48 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
 import { LiveIndicator } from '@/components/LiveIndicator';
+import BottomNav from '@/components/BottomNav';
 import styles from './styles.module.css';
 
 export default function DashboardPage() {
-  const { dashboard: data, connectionStatus, lastUpdate, updateCount, reconnect } = useRealtimeData();
+  const { dashboard: data, connectionStatus, lastUpdate, updateCount, reconnect, forceRefresh } = useRealtimeData();
+  const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
+  const [ksLoading, setKsLoading] = useState(false);
 
   // Kick cron on mount
   useEffect(() => {
     fetch('/api/cron').catch(() => {});
   }, []);
+
+  // Auto-clear toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const handleKillSwitch = useCallback(async (engage: boolean) => {
+    setKsLoading(true);
+    try {
+      const res = await fetch('/api/bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'killswitch', engage }),
+      });
+      const json = await res.json();
+      if (json.status === 'ok') {
+        setToast({ msg: engage ? '🔴 Kill Switch ENGAGED' : '✅ Kill Switch DISENGAGED', type: 'ok' });
+        await forceRefresh();
+      } else {
+        setToast({ msg: `❌ Error: ${json.error}`, type: 'err' });
+      }
+    } catch {
+      setToast({ msg: '❌ Network error', type: 'err' });
+    } finally {
+      setKsLoading(false);
+    }
+  }, [forceRefresh]);
 
   const loading = !data;
 
@@ -22,6 +54,22 @@ export default function DashboardPage() {
 
   return (
     <div className={styles.container}>
+      {/* Toast notification */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: 20, right: 20, zIndex: 9999,
+          padding: '12px 20px', borderRadius: 12,
+          background: toast.type === 'ok' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+          border: `1px solid ${toast.type === 'ok' ? '#10b981' : '#ef4444'}`,
+          color: '#fff', fontSize: 13, fontWeight: 600,
+          backdropFilter: 'blur(12px)', boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          animation: 'slideInRight 0.3s ease-out',
+        }}>
+          {toast.msg}
+        </div>
+      )}
+      <style>{`@keyframes slideInRight { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }`}</style>
+
       <header className={styles.header}>
         <h1 className={styles.title}>
           Trading AI <span className={styles.paperTag}>PAPER ONLY</span>
@@ -37,12 +85,22 @@ export default function DashboardPage() {
             System: {data.system.status}
           </span>
           {data.killSwitch.engaged ? (
-            <button className={`${styles.btn} ${styles.btnDanger}`} onClick={() => fetch('/api/bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'killswitch', engage: false }) })}>
-              DISENGAGE KILL SWITCH
+            <button
+              className={`${styles.btn} ${styles.btnDanger}`}
+              onClick={() => handleKillSwitch(false)}
+              disabled={ksLoading}
+              style={{ opacity: ksLoading ? 0.6 : 1, cursor: ksLoading ? 'wait' : 'pointer' }}
+            >
+              {ksLoading ? '⏳ ...' : 'DISENGAGE KILL SWITCH'}
             </button>
           ) : (
-            <button className={`${styles.btn} ${styles.btnDanger}`} onClick={() => fetch('/api/bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'killswitch', engage: true }) })}>
-              ENGAGE KILL SWITCH
+            <button
+              className={`${styles.btn} ${styles.btnDanger}`}
+              onClick={() => handleKillSwitch(true)}
+              disabled={ksLoading}
+              style={{ opacity: ksLoading ? 0.6 : 1, cursor: ksLoading ? 'wait' : 'pointer' }}
+            >
+              {ksLoading ? '⏳ ...' : 'ENGAGE KILL SWITCH'}
             </button>
           )}
         </div>
@@ -142,6 +200,7 @@ export default function DashboardPage() {
           })
         )}
       </div>
+      <BottomNav />
     </div>
   );
 }

@@ -98,6 +98,8 @@ export default function BotCenterPage() {
   const [actionStatus, setActionStatus] = useState<string>('');
   const [binanceStatus, setBinanceStatus] = useState<string>('—');
   const [telegramOk, setTelegramOk] = useState<boolean | null>(null);
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
 
   // Construct BotData from real-time stream
   const data: BotData | null = rtBot ? {
@@ -139,7 +141,15 @@ export default function BotCenterPage() {
     return () => clearInterval(cronInterval);
   }, []);
 
+  // Auto-clear action status toast
+  useEffect(() => {
+    if (!actionStatus) return;
+    const t = setTimeout(() => setActionStatus(''), 4000);
+    return () => clearTimeout(t);
+  }, [actionStatus]);
+
   const botAction = async (action: string) => {
+    setEvalLoading(true);
     setActionStatus(`Running ${action}...`);
     try {
       const res = await fetch('/api/bot', {
@@ -148,10 +158,26 @@ export default function BotCenterPage() {
         body: JSON.stringify({ action }),
       });
       const json = await res.json();
-      setActionStatus(`✅ ${action}: ${JSON.stringify(json).slice(0, 80)}`);
+      if (json.status === 'error') throw new Error(json.error);
+      setActionStatus(`✅ ${action} completed`);
       await forceRefresh();
     } catch {
       setActionStatus(`❌ ${action} failed`);
+    } finally {
+      setEvalLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncLoading(true);
+    setActionStatus('↻ Syncing...');
+    try {
+      await forceRefresh();
+      setActionStatus('✅ Synced');
+    } catch {
+      setActionStatus('❌ Sync failed');
+    } finally {
+      setSyncLoading(false);
     }
   };
 
@@ -163,6 +189,21 @@ export default function BotCenterPage() {
 
   return (
     <div className="page-container" style={{ maxWidth: 1600 }}>
+      {/* ---- Action Status Toast ---- */}
+      {actionStatus && (
+        <div style={{
+          position: 'fixed', top: 20, right: 20, zIndex: 9999,
+          padding: '12px 20px', borderRadius: 12,
+          background: actionStatus.startsWith('✅') ? 'rgba(16,185,129,0.15)' : actionStatus.startsWith('❌') ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)',
+          border: `1px solid ${actionStatus.startsWith('✅') ? '#10b981' : actionStatus.startsWith('❌') ? '#ef4444' : '#3b82f6'}`,
+          color: '#fff', fontSize: 13, fontWeight: 600,
+          backdropFilter: 'blur(12px)', boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          animation: 'toastSlideIn 0.3s ease-out',
+        }}>
+          {actionStatus}
+        </div>
+      )}
+      <style>{`@keyframes toastSlideIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }`}</style>
       {/* ---- Premium Navigation & Top Bar ---- */}
       <header className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', marginBottom: 24, borderRadius: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -193,11 +234,11 @@ export default function BotCenterPage() {
             onReconnect={reconnect}
           />
           <InstallPwaButton />
-          <button className="btn" onClick={() => botAction('evaluate')} style={{ border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)' }}>
-            ▶ Evaluate
+          <button className="btn" onClick={() => botAction('evaluate')} disabled={evalLoading} style={{ border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)', opacity: evalLoading ? 0.6 : 1, cursor: evalLoading ? 'wait' : 'pointer' }}>
+            {evalLoading ? '⏳ ...' : '▶ Evaluate'}
           </button>
-          <button className="btn" onClick={() => forceRefresh()} style={{ background: 'transparent', borderColor: 'var(--border)' }}>
-            ↻ Sync
+          <button className="btn" onClick={handleSync} disabled={syncLoading} style={{ background: 'transparent', borderColor: 'var(--border)', opacity: syncLoading ? 0.6 : 1, cursor: syncLoading ? 'wait' : 'pointer' }}>
+            {syncLoading ? '⏳ ...' : '↻ Sync'}
           </button>
         </div>
       </header>

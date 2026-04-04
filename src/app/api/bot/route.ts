@@ -17,6 +17,7 @@ import {
 } from '@/lib/store/db';
 import { evaluatePendingDecisions } from '@/lib/engine/tradeEvaluator';
 import { runOptimizer } from '@/lib/engine/optimizer';
+import { engageKillSwitch, disengageKillSwitch, getKillSwitchState } from '@/lib/core/killSwitch';
 import { BotStats } from '@/lib/types/radar';
 
 export const dynamic = 'force-dynamic';
@@ -130,6 +131,15 @@ export async function POST(request: Request) {
         const { config } = body;
         if (config) saveBotConfig(config);
         return NextResponse.json({ status: 'ok', config: getBotConfig() });
+      }
+      case 'killswitch': {
+        const { engage } = body;
+        if (engage) {
+          engageKillSwitch('Manual kill switch via dashboard', false);
+        } else {
+          disengageKillSwitch();
+        }
+        return NextResponse.json({ status: 'ok', killSwitch: getKillSwitchState() });
       }
       default:
         return NextResponse.json(
