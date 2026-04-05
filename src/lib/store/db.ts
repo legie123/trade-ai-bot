@@ -32,6 +32,7 @@ interface DbStore {
   optimizer: OptimizationState;
   config: BotConfig;
   strategies: TradingStrategy[];
+  syndicateAudits: any[]; // Stores Master arguments
 }
 
 const cache: DbStore = {
@@ -54,6 +55,7 @@ const cache: DbStore = {
     aiStatus: 'OK',
   },
   strategies: [],
+  syndicateAudits: [],
 };
 
 let dbInitialized = false;
@@ -118,6 +120,7 @@ export async function initDB() {
             }));
           }
         }
+        if (row.id === 'syndicate_audit') cache.syndicateAudits = row.data || [];
       }
       log.info('Supabase database initialized from cloud state');
     }
@@ -209,6 +212,17 @@ export function getPendingDecisions(): DecisionSnapshot[] {
 export function getDecisionsToday(): DecisionSnapshot[] {
   const today = new Date().toISOString().split('T')[0];
   return cache.decisions.filter((d) => d.timestamp.startsWith(today));
+}
+
+// ─── Syndicate Audit (Combat Logs) ────────────────
+export function addSyndicateAudit(audit: any): void {
+  cache.syndicateAudits.unshift({ ...audit, id: `audit-${Date.now()}` });
+  if (cache.syndicateAudits.length > 500) cache.syndicateAudits.length = 500;
+  syncToCloud('syndicate_audit', cache.syndicateAudits);
+}
+
+export function getSyndicateAudits(): any[] {
+  return cache.syndicateAudits;
 }
 
 // ─── Performance Records ───────────────────────────

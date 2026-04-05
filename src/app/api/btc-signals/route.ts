@@ -1,18 +1,19 @@
-// GET /api/btc-signals — run BTC engine, auto-evaluate, return analysis + signals
+// GET /api/btc-signals — run BTC scanner, return analysis + trigger Phoenix V2
 import { NextResponse } from 'next/server';
-import { generateBTCSignals } from '@/lib/engine/btcEngine';
-import { evaluatePendingDecisions } from '@/lib/engine/tradeEvaluator';
+import { analyzeBTC } from '@/lib/engine/btcEngine';
 import { createLogger } from '@/lib/core/logger';
+import { ManagerVizionar } from '@/lib/v2/manager/managerVizionar';
+import { gladiatorStore } from '@/lib/store/gladiatorStore';
+import { Signal } from '@/lib/types/radar';
+import { routeSignal } from '@/lib/router/signalRouter';
 
 const log = createLogger('BtcSignalsRoute');
+const manager = new ManagerVizionar();
 
 export const dynamic = 'force-dynamic';
 
 let cache: { data: Record<string, unknown>; expiresAt: number } | null = null;
 const CACHE_TTL_MS = 15_000;
-
-let lastEvalTime = 0;
-const EVAL_COOLDOWN_MS = 60_000;
 
 export async function GET() {
   try {
@@ -23,8 +24,8 @@ export async function GET() {
       return NextResponse.json(cache.data);
     }
 
-    // 2. Run BTC engine (generates signals + saves decisions)
-    const analysis = await generateBTCSignals();
+    // 2. Obtain raw BTC TA signals (Scout Level)
+    const analysis = await analyzeBTC();
 
     const responseData = {
       status: 'ok',
@@ -43,19 +44,33 @@ export async function GET() {
       timestamp: analysis.timestamp,
     };
 
-    // Update Cache
     cache = { data: responseData, expiresAt: now + CACHE_TTL_MS };
 
-    // 3. Auto-evaluate pending decisions in background (Throttled)
-    if (now - lastEvalTime > EVAL_COOLDOWN_MS) {
-      lastEvalTime = now;
-      evaluatePendingDecisions()
-        .then((res) => {
-          if (res.evaluated > 0) {
-            log.info(`Auto-Eval: ${res.evaluated} evaluated: ${res.wins}W / ${res.losses}L`);
-          }
-        })
-        .catch((err) => log.warn('Auto-Eval error', { error: (err as Error).message }));
+    // 3. Phoenix V2 Auto-Trigger
+    for (const rawSig of analysis.signals) {
+      if (rawSig.signal !== 'NEUTRAL') {
+         const signalId = `btc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+         const signalPayload: Signal = {
+           id: signalId,
+           symbol: 'BTC',
+           timeframe: '1h', // Defaulting from analyzeBTC
+           signal: rawSig.signal as Signal['signal'],
+           price: analysis.price,
+           timestamp: analysis.timestamp,
+           source: 'BTC Scout V2',
+           message: rawSig.reason,
+         };
+         
+         const routed = routeSignal(signalPayload);
+         const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
+         
+         if (gladiator) {
+           log.info(`[V2 TRIGGER] Processing internal BTC signal with Gladiator: ${gladiator.name}`);
+           manager.processSignal(gladiator, routed).catch(err => {
+             log.error('[V2 CRITICAL] Phoenix Process Error (BTC)', { error: err.message });
+           });
+         }
+      }
     }
 
     return NextResponse.json(responseData);
@@ -67,4 +82,3 @@ export async function GET() {
     );
   }
 }
-

@@ -90,11 +90,9 @@ export default function CryptoRadarPage() {
     minChange: '',
   });
   const debouncedSearch = useDebounce(filters.search, 300);
-  const [decisions, setDecisions] = useState<LogDecision[]>([]);
+  const [combatAudits, setCombatAudits] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [indicators, setIndicators] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [equity, setEquity] = useState<any>(null);
 
   // ---- Watch/Mute State ----
   const [watchlist, setWatchlist] = usePersistedState<string[]>('radar-watchlist', []);
@@ -147,7 +145,9 @@ export default function CryptoRadarPage() {
       const res = await fetch('/api/bot');
       if (res.ok) {
         const data = await res.json();
-        setDecisions(data.decisions?.slice(0, 5) || []);
+        if (data.syndicateAudits) {
+          setCombatAudits(data.syndicateAudits.slice(0, 20));
+        }
       }
     } catch {}
   }, []);
@@ -216,13 +216,6 @@ export default function CryptoRadarPage() {
     } catch { /* optional */ }
   }, []);
 
-  const fetchEquity = useCallback(async () => {
-    try {
-      const res = await fetch('/api/equity');
-      if (res.ok) setEquity(await res.json());
-    } catch { /* optional */ }
-  }, []);
-
   // ---- Cron loop: triggers BTC engine + trade evaluator on server ----
   const triggerCron = useCallback(async () => {
     try { await fetch('/api/cron'); } catch { /* background, non-blocking */ }
@@ -233,7 +226,7 @@ export default function CryptoRadarPage() {
     const load = async () => {
       setLoading(true);
       await triggerCron(); // Kick the trading loop first
-      await Promise.all([fetchBTC(), fetchTokens(), fetchIndicators(), fetchEquity()]);
+      await Promise.all([fetchBTC(), fetchTokens(), fetchIndicators()]);
       await fetchSignals();
       await fetchDecisions();
       setTimeout(() => fetchSolana(), 3000);
@@ -246,14 +239,13 @@ export default function CryptoRadarPage() {
       fetchTokens();
       fetchDecisions();
       fetchIndicators();
-      fetchEquity();
       setLastSync(new Date().toLocaleTimeString());
     }, POLL_INTERVAL);
     // BTC engine + cron loop every 60s, Solana engine every 180s
     const cronInterval = setInterval(() => { triggerCron(); fetchBTC(); }, 60_000);
     const solInterval = setInterval(() => { fetchSolana(); }, 180_000);
     return () => { clearInterval(interval); clearInterval(cronInterval); clearInterval(solInterval); };
-  }, [fetchSignals, fetchTokens, fetchBTC, fetchSolana, fetchDecisions, fetchIndicators, fetchEquity, triggerCron]);
+  }, [fetchSignals, fetchTokens, fetchBTC, fetchSolana, fetchDecisions, fetchIndicators, triggerCron]);
 
   // ---- Filter tokens ----
   const filtered = useMemo(() => tokens.filter((t) => {
@@ -505,29 +497,61 @@ export default function CryptoRadarPage() {
            <div className="glass-card" style={{ flex: 1, padding: 0, display: 'flex', flexDirection: 'column' }}>
              <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)' }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '0.05em' }}>LIVE SIGNALS STREAM</span>
-                <span className="pulse" style={{ fontSize: 10, color: 'var(--accent-red)' }}>● {signals.length}</span>
+                <span className="pulse" style={{ fontSize: 10, color: 'var(--accent-red)' }}>● {combatAudits.length > 0 ? combatAudits.length : signals.length}</span>
              </div>
              
              <div style={{ padding: 12, flex: 1, maxHeight: 450, overflowY: 'auto' }}>
-               {signals.length > 0 ? (
-                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                   {signals.filter((s: any) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((s: any) => (
-                     <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: watchlist.includes(s.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${s.signal.includes('BUY') ? 'var(--accent-green)' : 'var(--accent-red)'}`, transition: 'background 0.2s' }}>
-                       <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(s.timestamp)}</span>
-                       <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.symbol} {watchlist.includes(s.symbol) && <span style={{ fontSize: 10, color: 'var(--accent-cyan)' }}>★</span>}</span>
-                       <span className={`badge ${getSignalBadge(s.signal)}`} style={{ fontSize: 10 }}>{s.signal} {s.direction === 'BULLISH' ? '▲' : '▼'}</span>
-                       <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(s.confidence) }}>{s.confidence}%</span>
-                       {/* Actionable CTAs */}
-                       <div className="signal-cta-group">
-                         <button className="signal-cta" title={watchlist.includes(s.symbol) ? 'Unwatch' : 'Watch'} onClick={() => toggleWatch(s.symbol)} style={{ background: watchlist.includes(s.symbol) ? 'rgba(6,182,212,0.2)' : undefined, color: watchlist.includes(s.symbol) ? 'var(--accent-cyan)' : undefined }}>👁</button>
-                         <button className="signal-cta" title={mutedSymbols.includes(s.symbol) ? 'Unmute' : 'Mute'} onClick={() => toggleMute(s.symbol)} style={{ opacity: 0.5 }}>🔇</button>
-                       </div>
-                     </div>
-                   ))}
-                 </div>
-               ) : (
-                 <div className="empty-state">Awaiting optical data...</div>
-               )}
+                {combatAudits.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    {combatAudits.filter((s: any) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((audit: any) => (
+                      <div key={audit.id || audit.signalId} style={{ display: 'flex', flexDirection: 'column', padding: 12, background: watchlist.includes(audit.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${audit.consensus?.finalDirection === 'LONG' ? 'var(--accent-green)' : audit.consensus?.finalDirection === 'SHORT' ? 'var(--accent-red)' : 'var(--text-muted)'}`, transition: 'background 0.2s' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(audit.timestamp)}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{audit.symbol} {watchlist.includes(audit.symbol) && <span style={{ fontSize: 10, color: 'var(--accent-cyan)' }}>★</span>}</span>
+                          <span className={`badge ${audit.consensus?.finalDirection === 'LONG' ? 'badge-signal-buy' : audit.consensus?.finalDirection === 'SHORT' ? 'badge-signal-sell' : 'badge-info'}`} style={{ fontSize: 10 }}>{audit.consensus?.finalDirection || 'NEUTRAL'}</span>
+                          <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(audit.consensus?.weightedConfidence ? audit.consensus.weightedConfidence * 100 : 0) }}>
+                            {Math.round((audit.consensus?.weightedConfidence || 0) * 100)}%
+                          </span>
+                          
+                          {/* Actionable CTAs */}
+                          <div className="signal-cta-group">
+                            <button className="signal-cta" title={watchlist.includes(audit.symbol) ? 'Unwatch' : 'Watch'} onClick={() => toggleWatch(audit.symbol)} style={{ background: watchlist.includes(audit.symbol) ? 'rgba(6,182,212,0.2)' : undefined, color: watchlist.includes(audit.symbol) ? 'var(--accent-cyan)' : undefined }}>👁</button>
+                            <button className="signal-cta" title={mutedSymbols.includes(audit.symbol) ? 'Unmute' : 'Mute'} onClick={() => toggleMute(audit.symbol)} style={{ opacity: 0.5 }}>🔇</button>
+                          </div>
+                        </div>
+                        {audit.consensus?.opinions && (
+                          <div style={{ display: 'flex', gap: 6, marginTop: 8, fontSize: 10, flexWrap: 'wrap' }}>
+                            {audit.consensus.opinions.map((op: any, i: number) => (
+                              <span key={i} style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', color: op.direction === 'LONG' ? 'var(--accent-green)' : op.direction === 'SHORT' ? 'var(--accent-red)' : 'var(--text-muted)'}}>
+                                {op.seat.split('_')[0]}: {op.direction}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : signals.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {signals.filter((s: any) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((s: any) => (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: watchlist.includes(s.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${s.signal.includes('BUY') ? 'var(--accent-green)' : 'var(--accent-red)'}`, transition: 'background 0.2s' }}>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(s.timestamp)}</span>
+                        <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.symbol} {watchlist.includes(s.symbol) && <span style={{ fontSize: 10, color: 'var(--accent-cyan)' }}>★</span>}</span>
+                        <span className={`badge ${getSignalBadge(s.signal)}`} style={{ fontSize: 10 }}>{s.signal}</span>
+                        <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(s.confidence) }}>{s.confidence}%</span>
+                        
+                        {/* Actionable CTAs */}
+                        <div className="signal-cta-group">
+                          <button className="signal-cta" title={watchlist.includes(s.symbol) ? 'Unwatch' : 'Watch'} onClick={() => toggleWatch(s.symbol)} style={{ background: watchlist.includes(s.symbol) ? 'rgba(6,182,212,0.2)' : undefined, color: watchlist.includes(s.symbol) ? 'var(--accent-cyan)' : undefined }}>👁</button>
+                          <button className="signal-cta" title={mutedSymbols.includes(s.symbol) ? 'Unmute' : 'Mute'} onClick={() => toggleMute(s.symbol)} style={{ opacity: 0.5 }}>🔇</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">Awaiting optical data...</div>
+                )}
              </div>
            </div>
 
@@ -603,7 +627,7 @@ export default function CryptoRadarPage() {
 
       {/* ---- Footer ---- */}
       <footer style={{ textAlign: 'center', padding: '24px 0 12px', fontSize: 11, color: 'var(--text-muted)', marginTop: 24 }}>
-        OPTICAL RADAR v2.0 | Matrix Last Sync: {lastSync} | Connected via <code style={{ color: 'var(--accent-cyan)' }}>/api/tradingview</code>
+        OPTICAL RADAR — TRADE AI PHOENIX V2 | Matrix Last Sync: {lastSync} | Connected via <code style={{ color: 'var(--accent-cyan)' }}>/api/tradingview</code>
       </footer>
     </div>
   );
@@ -623,12 +647,6 @@ function getSignalBadge(signal: string): string {
   if (signal === 'BUY' || signal === 'LONG') return 'badge-signal-buy';
   if (signal === 'SELL' || signal === 'SHORT') return 'badge-signal-sell';
   return 'badge-info';
-}
-
-function getDirectionBadge(direction: string): string {
-  if (direction === 'BULLISH') return 'badge-bullish';
-  if (direction === 'BEARISH') return 'badge-bearish';
-  return 'badge-neutral';
 }
 
 function getConfColor(confidence: number): string {

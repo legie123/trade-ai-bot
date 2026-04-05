@@ -4,8 +4,11 @@ import { signalStore } from '@/lib/store/signalStore';
 import { Signal, TradingViewWebhook } from '@/lib/types/radar';
 import { routeSignal, normalizeSignalType } from '@/lib/router/signalRouter';
 import { createLogger } from '@/lib/core/logger';
+import { ManagerVizionar } from '@/lib/v2/manager/managerVizionar';
+import { gladiatorStore } from '@/lib/store/gladiatorStore';
 
 const log = createLogger('TradingViewRoute');
+const manager = new ManagerVizionar();
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +49,18 @@ export async function POST(request: NextRequest) {
     }
 
     log.info(`Routed: ${routed.direction} ${routed.action} | ${routed.symbol} ${routed.signal} @ ${routed.price} | conf:${routed.confidence}%`);
+
+    // ==========================================
+    // PHOENIX V2 ACTIVATION (The Oracle Ritual)
+    // ==========================================
+    const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
+    if (gladiator) {
+      log.info(`[V2 TRIGGER] Processing signal with Gladiator: ${gladiator.name} (${gladiator.arena})`);
+      // Run asynchrously to avoid blocking the webhook response
+      manager.processSignal(gladiator, routed).catch(err => {
+        log.error('[V2 CRITICAL] Phoenix Process Error', { error: err.message });
+      });
+    }
 
     return NextResponse.json({
       status: 'received',

@@ -14,8 +14,11 @@ import {
   recalculatePerformance,
   getEquityCurve,
   getStrategies,
+  getSyndicateAudits,
 } from '@/lib/store/db';
+import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { evaluatePendingDecisions } from '@/lib/engine/tradeEvaluator';
+
 import { runOptimizer } from '@/lib/engine/optimizer';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState } from '@/lib/core/killSwitch';
 import { BotStats } from '@/lib/types/radar';
@@ -96,10 +99,13 @@ export async function GET() {
 
     return NextResponse.json({
       status: 'ok',
+      version: 'Phoenix V2 (GTC)',
       stats,
       decisions: allDecisions.slice(0, 50),
       performance,
       strategies: getStrategies(),
+      gladiators: gladiatorStore.getGladiators(),
+      syndicateAudits: getSyndicateAudits().slice(0, 50),
       optimizer,
       config,
       equityCurve: getEquityCurve(),

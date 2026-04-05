@@ -1,18 +1,19 @@
-// GET /api/solana-signals — run Solana multi-coin engine
+// GET /api/solana-signals — run Solana multi-coin scanner
 import { NextResponse } from 'next/server';
 import { analyzeMultiCoin } from '@/lib/engine/solanaEngine';
-import { evaluatePendingDecisions } from '@/lib/engine/tradeEvaluator';
 import { createLogger } from '@/lib/core/logger';
+import { ManagerVizionar } from '@/lib/v2/manager/managerVizionar';
+import { gladiatorStore } from '@/lib/store/gladiatorStore';
+import { Signal } from '@/lib/types/radar';
+import { routeSignal } from '@/lib/router/signalRouter';
 
 const log = createLogger('SolanaSignalsRoute');
+const manager = new ManagerVizionar();
 
 export const dynamic = 'force-dynamic';
 
 let cache: { data: Record<string, unknown>; expiresAt: number } | null = null;
 const CACHE_TTL_MS = 15_000;
-
-let lastEvalTime = 0;
-const EVAL_COOLDOWN_MS = 60_000;
 
 export async function GET() {
   try {
@@ -32,19 +33,35 @@ export async function GET() {
       timestamp: result.timestamp,
     };
 
-    // Update Cache
     cache = { data: responseData, expiresAt: now + CACHE_TTL_MS };
 
-    // 2. Auto-evaluate pending decisions (Throttled)
-    if (now - lastEvalTime > EVAL_COOLDOWN_MS) {
-      lastEvalTime = now;
-      evaluatePendingDecisions()
-        .then((res) => {
-          if (res.evaluated > 0) {
-            log.info(`Auto-Eval: ${res.evaluated} evaluated: ${res.wins}W / ${res.losses}L`);
-          }
-        })
-        .catch((err) => log.warn('Auto-Eval error', { error: (err as Error).message }));
+    // 2. Trigger Phoenix V2 Manager
+    for (const coin of result.coins) {
+      for (const rawSig of coin.signals) {
+         if (rawSig.signal !== 'NEUTRAL') {
+             const signalId = `sol_${coin.symbol}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+             const signalPayload: Signal = {
+               id: signalId,
+               symbol: coin.symbol,
+               timeframe: '1h',
+               signal: rawSig.signal as Signal['signal'],
+               price: coin.price,
+               timestamp: result.timestamp,
+               source: 'Solana Scout V2',
+               message: rawSig.reason,
+             };
+             
+             const routed = routeSignal(signalPayload);
+             const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
+             
+             if (gladiator) {
+               log.info(`[V2 TRIGGER] Processing internal SOL signal with Gladiator: ${gladiator.name}`);
+               manager.processSignal(gladiator, routed).catch(err => {
+                 log.error('[V2 CRITICAL] Phoenix Process Error (SOL)', { error: err.message });
+               });
+             }
+         }
+      }
     }
 
     return NextResponse.json(responseData);

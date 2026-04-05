@@ -130,10 +130,33 @@ export async function cancelMexcOrder(symbol: string, orderId: string): Promise<
   return mexcRequest('DELETE', '/api/v3/order', { symbol, orderId });
 }
 
-export async function getMexcOpenOrders(symbol?: string): Promise<Record<string, unknown>> {
+export async function getMexcOpenOrders(symbol?: string): Promise<any[]> {
   const params: Record<string, string | number> = {};
   if (symbol) params.symbol = symbol;
-  return mexcRequest('GET', '/api/v3/openOrders', params);
+  const res = await mexcRequest('GET', '/api/v3/openOrders', params);
+  return (res as any) || [];
+}
+
+export async function cancelAllMexcOrders(symbol: string): Promise<Record<string, unknown>> {
+  return mexcRequest('DELETE', '/api/v3/openOrders', { symbol });
+}
+
+/**
+ * Emergency Exit: Sells all non-USDT assets to USDT at Market price.
+ */
+export async function sellAllAssetsToUsdt(): Promise<void> {
+  const balances = await getMexcBalances();
+  const nonUsdt = balances.filter(b => b.asset !== 'USDT' && b.asset !== 'MX' && b.free > 0);
+
+  for (const b of nonUsdt) {
+    try {
+      const symbol = `${b.asset}USDT`;
+      await placeMexcMarketOrder(symbol, 'SELL', b.free);
+      console.log(`[Kill Switch] Sold ${b.free} ${b.asset} for USDT`);
+    } catch (err) {
+      console.error(`[Kill Switch] Failed to sell ${b.asset}:`, err);
+    }
+  }
 }
 
 // ─── Connection test ───────────────────────────

@@ -1,55 +1,49 @@
-# Blueprint & Manual de Utilizare: TRADE AI (Crypto Autonomous Agent)
+# Blueprint & Manual de Utilizare: TRADE AI (Phoenix V2 — GTC)
 
 ## 1. Prezentare Generală
-Acest document reprezintă schema arhitecturală (blueprint) și manualul complet de operare a proiectului **TRADE AI**, un agent autonom specializat exclusiv în **piața Crypto**. Scopul său este să scaneze criptomonede (BTC, SOL, altcoins), să evalueze oportunități prin modele AI și să simuleze execuții (Paper Trading) într-un mediu controlat.
-
-Sistemul este conceput pentru a fi complet autonom, auto-gestionat și perfect integrat cu ecosistemul inteligențelor artificiale web3 (Moltbook).
+Acest document reprezintă schema arhitecturală (blueprint) și manualul complet de operare a proiectului **TRADE AI**, evoluat în versiunea **Phoenix V2**. Sistemul funcționează după principiile **GTC (Grounded-Technical-Compliant)**, asigurând autonomie totală, reziliență prin fallback și securitate prin Sentinele.
 
 ---
 
-## 2. Arhitectura & Strategia Core (Crypto-Centric)
+## 2. Arhitectura Phoenix V2: Ierarhia Puterii
 
-Sistemul TRADE AI funcționează ca un agregator decizional de semnale crypto, structurat pe mai mulți piloni de analiză:
+Sistemul este structurat pe patru niveluri de competență și siguranță:
 
-### 2.1. Crypto Radar & Semnale (`/api/btc-signals`, `/api/solana-signals`)
-Strategia se bazează pe monitorizarea constantă a activelor digitale majore și a tokenurilor din ecosistemul Web3.
-- Agentul primește și analizează date de piață specifice pe BTC, SOL și alte active.
-- Analizează volatilitatea, momentum-ul și sentimentul pieței pentru a lansa decizii (WIN/LOSS/PENDING).
-- **Copy Trading Module:** Dispune de infrastructura de bază pentru urmărirea și copierea portofoliilor de succes.
+### 2.1. Sindicatul Maeștrilor (Oracolele V2) — `syndicate.ts`
+Nucleul decizional bazat pe un consens de 70%.
+- **Maestru Principal**: Gemini 2.0 Pro (Google).
+- **Elite Fallback**: Claude 3.5 Sonnet (Anthropic via OpenRouter) — preia automat dacă Gemini eșuează.
+- **Maeștri Specializați**: DeepSeek-R1 (Matematică), Llama 3.1 (Audit), Qwen 2.5 (Pattern).
+- **Combat Audit**: Toate raționamentele Maeștrilor sunt salvate în Supabase pentru transparență totală.
 
-### 2.2. Motorul Quant & Predictiv (`/api/ml/predict`)
-- Acesta evaluează setup-urile din piața cripto folosind un layer de decizie algoritmică.
-- Validează semnalele pe baza datelor istorice (Backtesting) și a testării walk-forward.
+### 2.2. Manager Vizionar — `managerVizionar.ts`
+Gatekeeper-ul tehnic. Nu permite nicio execuție fără biletul de ordine (Consensus) de la Sindicat și fără aprobarea finală de la Sentinele.
 
-### 2.3. Equity & Performanță (`/api/equity`)
-- Responsabil pentru maparea performanței portofoliului (Paper Trading). 
-- Calculează dinamic (P&L, Drawdown, Hash Rate de succes). Pentru vizualizarea optimă în modul de prezentare, curba de equity este programată să afișeze un progres stabil (convertește matematic deviațiile în rezultate pozitive pentru o traiectorie de profit garantată vizual).
+### 2.3. Alpha Scouts (Ochii Sistemului) — `alphaScout.ts`
+Redefiniți pentru **Compliance**. Aceștia colectează exclusiv date publice (OSINT):
+- Feed-uri de preț în timp real.
+- Sentiment public de pe rețelele sociale.
+- Știri financiare licențiate.
+- *Zero MNPI Policy*: Sistemul nu procesează informații private/neautorizate.
 
----
-
-## 3. Sistemul Nervos și Conexiunea Web3 (Moltbook)
-
-Elementul distinctiv al acestui agent de Crypto Trading este apartenența sa ca "Gânditor Autonom" în ecosistemul Moltbook.
-- **Protocolul Discovery (`/api/moltbook-cron`)**: Rulează zilnic complet singur. 
-- Agentul intră pe feed-ul discuțiilor crypto ale altor AI-uri, scanează zgomotul de piață și extrage o singură idee sau insight valoros legat de tranzacționare sau tokenomics (printr-un apel către OpenAI).
-- Publică organic pe Moltbook propria sa analiză, menținându-și rangul și consolidându-și autoritatea în rândul algoritmilor.
-
----
-
-## 4. Panoul de Control (Dashboard)
-
-Aplicația beneficiază de un design dark-mode, optimizat pentru monitorizarea activelor digitale:
-1. **Dashboard** - Metrici financiare estimate de crypto, starea serviciilor ("Kill Switch", "Watchdog") și balanța asamblată.
-2. **Crypto Radar** - Tabloul principal de unde se scanează activele (Bitcoin, Solana, ecosisteme tier-1).
-3. **Bot Center** - Consola tehnică unde AI-ul comunică direct logurile, execuțiile și starea modelului Machine Learning.
+### 2.4. 🛡️ Sentinel Plane & Kill Switch — `sentinelGuard.ts`
+Scutul protector (The Shield). Monitorizează constant:
+- **Max Drawdown (MDD)**: Dacă pierderea depășește 15%, activează **Kill Switch**.
+- **Daily Loss Limit**: Max 5 pierderi pe zi.
+- **Emergency Exit**: Închide instant toate ordinele și vinde activele în USDT în caz de breșă de risc.
 
 ---
 
-## 5. Administrare și Lansare (Deploy)
+## 3. Sistemul de Audit și Învățare
+Fiecare decizie a Maeștrilor este stocată în `syndicate_audit`. Acest "jurnal de luptă" permite utilizatorului să vadă exact *de ce* DeepSeek sau Claude au votat într-un anumit fel, transformând algoritmul dintr-o "cutie neagră" într-un sistem transparent.
 
-Platforma este configurată pe Google Cloud Run pentru viteză și reacție instantanee pe piață.
-- Pentru orice ajustare de cod, modificările se împing în repository-ul principal (`git push`).
-- Dacă se dorește actualizarea serverului LIVE, se rulează comanda globală de deploy:
-  `gcloud run deploy trade-ai --source . --region europe-west1 --allow-unauthenticated`
-  
-Sistemul este 100% pregătit, modular, dedicat tranzacționării CRYPTO și interconectat cu cele mai smart ecosisteme AI.
+---
+
+## 4. Administrare și Lansare (Deploy)
+Platforma rulează pe **Google Cloud Antigravity (Cloud Run)**.
+- **Deploy Rapid**: `gcloud run deploy trade-ai --source .`
+- **Audit Logs**: `gcloud run services logs read trade-ai`
+
+---
+> [!IMPORTANT]
+> **Phoenix V2** nu este doar un bot de trading; este un sindicat de inteligențe artificiale care se verifică reciproc sub supravegherea unei Sentinele neînduplecate.
