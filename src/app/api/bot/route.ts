@@ -18,6 +18,7 @@ import {
 } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState } from '@/lib/core/killSwitch';
+import { getWatchdogState } from '@/lib/core/watchdog';
 import { BotStats } from '@/lib/types/radar';
 
 export const dynamic = 'force-dynamic';
@@ -105,24 +106,26 @@ export async function GET() {
       syndicateAudits: getSyndicateAudits().slice(0, 50),
       v2Entities: {
         masters: [
-          { id: 'master_gemini', name: 'Gemini 2.0 Pro', role: 'Master Principal', status: 'ONLINE', power: 100 },
-          { id: 'master_fallback', name: 'Claude 3.5 Sonnet', role: 'Elite Fallback', status: 'STANDBY', power: 80 },
-          { id: 'master_deepseek', name: 'DeepSeek-R1', role: 'Math Logic', status: 'ACTIVE', power: 85 }
+          { id: 'master_gemini', name: 'Gemini 2.0 Pro', role: 'Master Principal (Architect)', status: process.env.GEMINI_API_KEY ? 'ONLINE' : 'NO_API_KEY', power: 100, reason: process.env.GEMINI_API_KEY ? 'API key configured' : 'Missing GEMINI_API_KEY in env' },
+          { id: 'master_fallback', name: 'Claude 3.5 Sonnet', role: 'Oracle (via OpenRouter)', status: process.env.OPENROUTER_API_KEY ? 'ONLINE' : 'NO_API_KEY', power: 80, reason: process.env.OPENROUTER_API_KEY ? 'API key configured' : 'Missing OPENROUTER_API_KEY in env' },
+          { id: 'master_deepseek', name: 'DeepSeek-R1', role: 'Math Logic', status: 'ACTIVE', power: 85, reason: 'Built-in heuristic engine — no API required' }
         ],
         manager: {
           name: 'Manager Vizionar',
           role: 'Gatekeeper Tehnic',
-          status: 'ORCHESTRATING',
-          description: 'Așteaptă 70% consensus de la Oracole.'
+          status: todayDecisions.length > 0 ? 'ORCHESTRATING' : 'IDLE',
+          description: todayDecisions.length > 0 ? `Processing ${todayDecisions.length} decisions today. Consensus threshold: 70%.` : 'Waiting for market signals to process.'
         },
         sentinels: {
-          riskShield: { name: 'Risk Sentinel', limit: '15% MDD', active: true, triggered: maxDrawdown >= 15 },
-          lossDaily: { name: 'Loss Sentinel', limit: '5 Pierderi/Zi', active: true, triggered: todayEvaluated.filter(d => d.outcome === 'LOSS').length >= 5 }
+          riskShield: { name: 'Risk Sentinel', limit: '15% MDD', active: true, triggered: maxDrawdown >= 15, currentValue: `${maxDrawdown.toFixed(2)}%`, lastIncident: maxDrawdown >= 15 ? 'MDD threshold breached' : null },
+          lossDaily: { name: 'Loss Sentinel', limit: '5 Pierderi/Zi', active: true, triggered: todayEvaluated.filter(d => d.outcome === 'LOSS').length >= 5, currentValue: `${todayEvaluated.filter(d => d.outcome === 'LOSS').length} losses`, lastIncident: todayEvaluated.filter(d => d.outcome === 'LOSS').length >= 5 ? 'Daily loss limit reached' : null },
+          watchdog: { name: 'Neural Watchdog', limit: '5min timeout', active: true, triggered: getKillSwitchState().engaged, currentValue: getWatchdogState().status, lastPing: getWatchdogState().lastPing },
+          killSwitch: { name: 'Kill Switch', limit: 'Manual Override', active: true, triggered: getKillSwitchState().engaged, currentValue: getKillSwitchState().engaged ? 'ENGAGED' : 'SAFE', reason: getKillSwitchState().reason },
         },
         promoter: {
           name: 'Social Broadcaster',
           role: 'Moltbook Network Hook',
-          status: 'AWAITING CRON'
+          status: process.env.MOLTBOOK_API_KEY ? 'READY' : 'NO_API_KEY'
         },
         scouts: {
           name: 'Alpha Scouts',

@@ -9,9 +9,20 @@ import { Signal } from '@/lib/types/radar';
  */
 export async function POST(req: NextRequest) {
   try {
-    const { symbol = 'BTC', signal = 'BUY' } = await req.json();
+    const { symbol = 'BTC', signal = 'BUY', action } = await req.json();
     
-    const manager = new ManagerVizionar();
+    if (action === 'arena_simulate') {
+      const { ArenaSimulator } = await import('@/lib/v2/arena/simulator');
+      const arena = ArenaSimulator.getInstance();
+      await arena.unleashBattles(50);
+      return NextResponse.json({
+         status: 'arena_simulated',
+         battles: 50,
+         timestamp: new Date().toISOString()
+      });
+    }
+
+    const manager = ManagerVizionar.getInstance();
     const gladiator = gladiatorStore.findBestGladiator(symbol);
 
     if (!gladiator) {

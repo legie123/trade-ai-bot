@@ -1,6 +1,6 @@
 import { createLogger } from '@/lib/core/logger';
 import { getBotConfig, saveBotConfig, getDecisions, BotConfig } from '@/lib/store/db';
-import { SyndicateConsensus } from '@/lib/types/gladiator';
+import { DualConsensus } from '@/lib/types/gladiator';
 import { Signal, DecisionSnapshot } from '@/lib/types/radar';
 import { sellAllAssetsToUsdt } from '@/lib/exchange/mexcClient';
 
@@ -24,7 +24,7 @@ export class SentinelGuard {
    * Main gatekeeper for any signal execution.
    * Returns true if the signal is safe to proceed.
    */
-  public async check(signal: Signal, consensus: SyndicateConsensus): Promise<{ safe: boolean; reason?: string }> {
+  public async check(signal: Signal, consensus: DualConsensus): Promise<{ safe: boolean; reason?: string }> {
     const config = getBotConfig();
 
     // 1. System Status Check

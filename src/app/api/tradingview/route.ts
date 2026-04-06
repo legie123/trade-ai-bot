@@ -8,7 +8,7 @@ import { ManagerVizionar } from '@/lib/v2/manager/managerVizionar';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 
 const log = createLogger('TradingViewRoute');
-const manager = new ManagerVizionar();
+const manager = ManagerVizionar.getInstance();
 
 export const dynamic = 'force-dynamic';
 
@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
     if (gladiator) {
       log.info(`[V2 TRIGGER] Processing signal with Gladiator: ${gladiator.name} (${gladiator.arena})`);
       // Run asynchrously to avoid blocking the webhook response
-      manager.processSignal(gladiator, routed).catch(err => {
-        log.error('[V2 CRITICAL] Phoenix Process Error', { error: err.message });
+      manager.processSignal(gladiator, routed).catch((err: unknown) => {
+        log.error('[V2 CRITICAL] Phoenix Process Error', { error: (err as Error).message });
       });
     }
 

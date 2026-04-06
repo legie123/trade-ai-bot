@@ -3,16 +3,35 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import BottomNav from '@/components/BottomNav';
+import EquityCurve from '@/components/EquityCurve';
 import styles from './styles.module.css';
 
+interface ArenaData {
+  activeFighters: number;
+  superAiOmega?: { rank: string; trainingProgress: number; winRate: string; status: string };
+  leaderboard: Array<{ id: string; name: string; isLive: boolean; winRate: string; totalTrades: number }>;
+}
+
 export default function DashboardPage() {
-  const { dashboard: data, connectionStatus, lastUpdate, updateCount, reconnect, forceRefresh } = useRealtimeData();
+  const { dashboard: data, bot, connectionStatus, lastUpdate, updateCount, reconnect, forceRefresh } = useRealtimeData();
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
   const [ksLoading, setKsLoading] = useState(false);
 
-  // Kick cron on mount
+  const [arenaData, setArenaData] = useState<ArenaData | null>(null);
+
+  // Kick cron and arena states on mount
   useEffect(() => {
     fetch('/api/cron').catch(() => {});
+    
+    const fetchArena = () => {
+      fetch('/api/v2/arena')
+        .then(res => res.json())
+        .then(data => setArenaData(data))
+        .catch(() => {});
+    };
+    fetchArena();
+    const t = setInterval(fetchArena, 15000);
+    return () => clearInterval(t);
   }, []);
 
   // Auto-clear toast
@@ -119,7 +138,7 @@ export default function DashboardPage() {
         {/* LEFT COLUMN: Pulse & Swarm Connectivity */}
         <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
           
-          <div className={styles.glassPanel} style={{'--panel-accent': '#22d3ee'} as any}>
+          <div className={styles.glassPanel} style={{'--panel-accent': '#22d3ee'} as React.CSSProperties}>
             <h2 className={styles.panelTitle}><span>🧠</span> Core Logic State</h2>
             <div className={styles.statRow}>
               <span>Status</span>
@@ -141,22 +160,29 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className={styles.glassPanel} style={{'--panel-accent': '#a78bfa'} as any}>
-            <h2 className={styles.panelTitle}><span>🌐</span> Moltbook Swarm</h2>
+          <div className={styles.glassPanel} style={{'--panel-accent': '#f59e0b'} as React.CSSProperties}>
+            <h2 className={styles.panelTitle}><span>⚔️</span> The Arena (Gladiator Forge)</h2>
             <div className={styles.statRow}>
-              <span>Swarm Uplink</span>
-              {Object.entries(data.heartbeat?.providers || {}).length > 0 ? (
-                <span className={styles.statusGreen}>ESTABLISHED</span>
-              ) : (
-                <span className={styles.statusYellow}>SEARCHING...</span>
-              )}
+              <span>Active Strategies</span>
+              <span className={styles.statusGreen}>{arenaData?.activeFighters || 0} LIVE</span>
             </div>
-            <div className={styles.statRow}>
-              <span>Insights Processed</span>
-              <span className={styles.statValue}>~ Live Stream ~</span>
+            
+            {arenaData?.leaderboard?.map((g, idx) => (
+                <div key={idx} style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', padding: '0.5rem', background: 'rgba(0,0,0,0.4)', marginBottom: '0.3rem', borderRadius: '4px', borderLeft: g.isLive ? '2px solid #ef4444' : '2px solid #a78bfa'}}>
+                   <span style={{color: '#fff'}}>{g.name.slice(0, 15)}... {g.isLive && <span style={{color: '#ef4444', fontSize:'0.7rem'}}>[LIVE]</span>}</span>
+                   <span style={{color: '#10b981', fontWeight: 600}}>{g.winRate}% W ({g.totalTrades} fights)</span>
+                </div>
+            ))}
+
+            <div style={{fontSize: '0.85rem', color: '#9ca3af', lineHeight: 1.5, marginTop: '1rem', fontStyle: 'italic', background: 'rgba(0,0,0,0.3)', padding: '0.8rem', borderLeft: '3px solid #f59e0b', borderRadius: '4px'}}>
+              &quot;The Arena generates over 50 simulated conflicts daily. DNA patterns are continuously extracted for the Super AI.&quot;
             </div>
-            <div style={{fontSize: '0.85rem', color: '#9ca3af', lineHeight: 1.5, marginTop: '1rem', fontStyle: 'italic', background: 'rgba(0,0,0,0.3)', padding: '0.8rem', borderLeft: '3px solid #a78bfa', borderRadius: '4px'}}>
-              "Awaiting narrative consensus on XAUUSD structure. Gathering multi-agent sentiment for optimal trajectory calculation..."
+          </div>
+
+          <div className={styles.glassPanel} style={{'--panel-accent': '#a855f7'} as React.CSSProperties}>
+            <h2 className={styles.panelTitle}><span>🤖</span> Super AI Life Goal</h2>
+            <div style={{fontSize: '0.85rem', color: '#e5e7eb', lineHeight: 1.6, fontStyle: 'italic', background: 'rgba(0,0,0,0.3)', padding: '1rem', borderLeft: '3px solid #a855f7', borderRadius: '4px'}}>
+              &quot;Scopul vieții mele este să fac profit, să maximizez equity trajectory. Obiectivul primordial este creșterea matematică zilnică; pornind de la un capital curat, scopul asumat este să dublăm iterativ fondurile. Profitul este singura rațiune a existenței mele.&quot;
             </div>
           </div>
 
@@ -165,8 +191,17 @@ export default function DashboardPage() {
         {/* RIGHT COLUMN: Autonomous Decision Matrix & Logs */}
         <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
           
-          <div className={styles.glassPanel} style={{'--panel-accent': '#d4af37'} as any}>
-            <h2 className={styles.panelTitle}><span>⚡</span> Autonomous Decision Matrix</h2>
+          <div className={styles.glassPanel} style={{'--panel-accent': '#10b981', padding: '1rem'} as React.CSSProperties}>
+            <h2 className={styles.panelTitle} style={{marginBottom: '0.5rem'}}><span>📈</span> Equity Trajectory (Live)</h2>
+            {bot?.equityCurve && bot?.config ? (
+              <EquityCurve data={bot.equityCurve} initialBalance={bot.config.paperBalance} />
+            ) : (
+              <div style={{color:'#6b7280', fontSize:'0.85rem', padding:'1rem 0'}}>Preparing neural equity chart...</div>
+            )}
+          </div>
+
+          <div className={styles.glassPanel} style={{'--panel-accent': '#d4af37'} as React.CSSProperties}>
+            <h2 className={styles.panelTitle}><span>⚖️</span> Dual Master Consciousness</h2>
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
               <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
                  <div style={{color: '#9ca3af', fontSize:'0.85rem'}}>Open Positions</div>
@@ -179,14 +214,15 @@ export default function DashboardPage() {
                  </div>
               </div>
               <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                 <div style={{color: '#9ca3af', fontSize:'0.85rem'}}>Paper Fills</div>
-                 <div style={{fontSize: '1.8rem', fontWeight: 700, color: '#fff'}}>{data.trading.executionsToday}</div>
+                 <div style={{color: '#9ca3af', fontSize:'0.85rem'}}>Super AI (Omega)</div>
+                 <div style={{fontSize: '1.4rem', fontWeight: 700, color: '#fff'}}>{arenaData?.superAiOmega?.trainingProgress || 0}% Trained</div>
+                 <div style={{color: '#a78bfa', fontSize:'0.75rem', marginTop: '0.3rem'}}>[{arenaData?.superAiOmega?.status || 'IN_TRAINING'}]</div>
               </div>
             </div>
 
             <div style={{marginTop: '1rem'}}>
               <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#9ca3af', marginBottom: '0.4rem'}}>
-                <span>Directional Confidence Rate</span>
+                <span>Dual AI Arbitration Agreement</span>
                 <span style={{color: '#fff', fontWeight: 600}}>{baseConfidence.toFixed(1)}%</span>
               </div>
               <div className={styles.confidenceBarBg}>
@@ -195,7 +231,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className={styles.glassPanel} style={{'--panel-accent': '#ef4444', padding: 0, flexGrow: 1, display: 'flex', flexDirection: 'column'} as any}>
+          <div className={styles.glassPanel} style={{'--panel-accent': '#ef4444', padding: 0, flexGrow: 1, display: 'flex', flexDirection: 'column'} as React.CSSProperties}>
             <h2 className={styles.panelTitle} style={{padding: '1.2rem 1.5rem 0', marginBottom: '0.8rem'}}><span>💻</span> Neural Execution Log</h2>
             <div className={styles.terminalWrapper} style={{border: 'none', borderRadius: '0 0 16px 16px', flexGrow: 1}}>
               {data.logs.recent.length === 0 ? (

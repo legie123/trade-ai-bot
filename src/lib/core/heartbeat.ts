@@ -183,3 +183,8 @@ export function getHealthSnapshot(): HealthSnapshot | null {
 export function getSnapshotHistory(limit = 30): HealthSnapshot[] {
   return hb.snapshots.slice(-limit);
 }
+
+// ─── Get a fresh snapshot (for serverless API routes) ─
+export function getFreshHealthSnapshot(): HealthSnapshot {
+  return takeSnapshot();
+}

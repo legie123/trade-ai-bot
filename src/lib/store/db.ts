@@ -32,7 +32,8 @@ interface DbStore {
   optimizer: OptimizationState;
   config: BotConfig;
   strategies: TradingStrategy[];
-  syndicateAudits: any[]; // Stores Master arguments
+  syndicateAudits: Record<string, unknown>[]; // Stores Master arguments
+  gladiatorDna: Record<string, unknown>[]; // Stores battle DNA for Omega Super AI
 }
 
 const cache: DbStore = {
@@ -56,6 +57,7 @@ const cache: DbStore = {
   },
   strategies: [],
   syndicateAudits: [],
+  gladiatorDna: [],
 };
 
 let dbInitialized = false;
@@ -121,6 +123,7 @@ export async function initDB() {
           }
         }
         if (row.id === 'syndicate_audit') cache.syndicateAudits = row.data || [];
+        if (row.id === 'gladiator_dna') cache.gladiatorDna = row.data || [];
       }
       log.info('Supabase database initialized from cloud state');
     }
@@ -221,8 +224,19 @@ export function addSyndicateAudit(audit: any): void {
   syncToCloud('syndicate_audit', cache.syndicateAudits);
 }
 
-export function getSyndicateAudits(): any[] {
+export function getSyndicateAudits(): Record<string, unknown>[] {
   return cache.syndicateAudits;
+}
+
+// ─── DNA Bank (Gladiator Battles) ────────────────
+export function addGladiatorDna(record: Record<string, unknown>): void {
+  cache.gladiatorDna.unshift({ ...record, internalId: `dna-${Date.now()}-${Math.random()}` });
+  if (cache.gladiatorDna.length > 2000) cache.gladiatorDna.length = 2000;
+  syncToCloud('gladiator_dna', cache.gladiatorDna);
+}
+
+export function getGladiatorDna(): Record<string, unknown>[] {
+  return cache.gladiatorDna;
 }
 
 // ─── Performance Records ───────────────────────────

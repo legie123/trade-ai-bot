@@ -71,6 +71,32 @@ class GladiatorStore {
     return this.gladiators;
   }
 
+  public getLeaderboard(): Gladiator[] {
+    return this.gladiators
+      .filter(g => !g.isOmega)
+      .sort((a, b) => b.stats.winRate - a.stats.winRate);
+  }
+
+  public updateGladiatorStats(id: string, tick: { pnlPercent: number, isWin: boolean }) {
+    const gladiator = this.gladiators.find(g => g.id === id);
+    if (!gladiator) return;
+    
+    gladiator.stats.totalTrades += 1;
+    if (tick.isWin) {
+      // rough approx for winrate update
+      const total = gladiator.stats.totalTrades;
+      const prevWins = (gladiator.stats.winRate / 100) * (total - 1);
+      gladiator.stats.winRate = ((prevWins + 1) / total) * 100;
+      gladiator.stats.profitFactor += 0.01; // tiny bump
+    } else {
+      const total = gladiator.stats.totalTrades;
+      const prevWins = (gladiator.stats.winRate / 100) * (total - 1);
+      gladiator.stats.winRate = (prevWins / total) * 100;
+      gladiator.stats.maxDrawdown += Math.abs(tick.pnlPercent) * 0.1;
+    }
+    gladiator.lastUpdated = Date.now();
+  }
+
   /**
    * Finds the best candidate gladiator to handle an incoming signal.
    * Priority: Top Rank (isLive = true) for the given symbol's typical arena.

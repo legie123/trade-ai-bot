@@ -1,0 +1,752 @@
+[
+  {
+    "id": "btl_1775437320133_741",
+    "gladiatorId": "funding_arbitrage",
+    "symbol": "XRPUSDT",
+    "decision": "LONG",
+    "entryPrice": 9370.801905378745,
+    "outcomePrice": 9609.908794643376,
+    "pnlPercent": 2.551616090906632,
+    "isWin": true,
+    "timestamp": 1775437320133,
+    "marketContext": {
+      "volatility": 2.551616090906632,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320133_564",
+    "gladiatorId": "sfp_reversal",
+    "symbol": "SOLUSDT",
+    "decision": "SHORT",
+    "entryPrice": 35875.53614284918,
+    "outcomePrice": 35194.19015986613,
+    "pnlPercent": -1.8991938692430188,
+    "isWin": false,
+    "timestamp": 1775437320133,
+    "marketContext": {
+      "volatility": 1.8991938692430188,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320134_552",
+    "gladiatorId": "trend_following",
+    "symbol": "SOLUSDT",
+    "decision": "SHORT",
+    "entryPrice": 11898.467923886014,
+    "outcomePrice": 12261.0843561818,
+    "pnlPercent": 3.0475892746480318,
+    "isWin": true,
+    "timestamp": 1775437320134,
+    "marketContext": {
+      "volatility": 3.0475892746480318,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320134_771",
+    "gladiatorId": "solana_momentum",
+    "symbol": "BTCUSDT",
+    "decision": "SHORT",
+    "entryPrice": 36736.0998337825,
+    "outcomePrice": 37565.64342032411,
+    "pnlPercent": 2.2581155601574308,
+    "isWin": true,
+    "timestamp": 1775437320134,
+    "marketContext": {
+      "volatility": 2.2581155601574308,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320134_610",
+    "gladiatorId": "sfp_reversal",
+    "symbol": "SOLUSDT",
+    "decision": "SHORT",
+    "entryPrice": 32987.96211113561,
+    "outcomePrice": 33301.53953455401,
+    "pnlPercent": 0.9505813737810265,
+    "isWin": true,
+    "timestamp": 1775437320134,
+    "marketContext": {
+      "volatility": 0.9505813737810265,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320134_500",
+    "gladiatorId": "sfp_reversal",
+    "symbol": "MEMEUSDT",
+    "decision": "SHORT",
+    "entryPrice": 17633.31481802438,
+    "outcomePrice": 17667.82399966979,
+    "pnlPercent": 0.19570444922887398,
+    "isWin": true,
+    "timestamp": 1775437320134,
+    "marketContext": {
+      "volatility": 0.19570444922887398,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320135_452",
+    "gladiatorId": "mean_reversion",
+    "symbol": "SOLUSDT",
+    "decision": "LONG",
+    "entryPrice": 48168.240613043745,
+    "outcomePrice": 46571.79075892715,
+    "pnlPercent": -3.3143204605324184,
+    "isWin": false,
+    "timestamp": 1775437320135,
+    "marketContext": {
+      "volatility": 3.3143204605324184,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320135_159",
+    "gladiatorId": "funding_arbitrage",
+    "symbol": "BTCUSDT",
+    "decision": "LONG",
+    "entryPrice": 6413.343249792546,
+    "outcomePrice": 6258.78657247697,
+    "pnlPercent": -2.4099236746852073,
+    "isWin": false,
+    "timestamp": 1775437320135,
+    "marketContext": {
+      "volatility": 2.4099236746852073,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320135_877",
+    "gladiatorId": "wick_rejection",
+    "symbol": "XRPUSDT",
+    "decision": "LONG",
+    "entryPrice": 23981.34430365274,
+    "outcomePrice": 24570.1370716576,
+    "pnlPercent": 2.455211686841002,
+    "isWin": true,
+    "timestamp": 1775437320135,
+    "marketContext": {
+      "volatility": 2.455211686841002,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320135_14",
+    "gladiatorId": "orderblock_mitigation",
+    "symbol": "XRPUSDT",
+    "decision": "SHORT",
+    "entryPrice": 1569.0405519067076,
+    "outcomePrice": 1515.4698941841073,
+    "pnlPercent": -3.4142302859859788,
+    "isWin": false,
+    "timestamp": 1775437320135,
+    "marketContext": {
+      "volatility": 3.4142302859859788,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320135_67",
+    "gladiatorId": "orderblock_mitigation",
+    "symbol": "BTCUSDT",
+    "decision": "SHORT",
+    "entryPrice": 19710.308657339046,
+    "outcomePrice": 20516.292373495024,
+    "pnlPercent": 4.089148121259242,
+    "isWin": true,
+    "timestamp": 1775437320135,
+    "marketContext": {
+      "volatility": 4.089148121259242,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320136_70",
+    "gladiatorId": "sfp_reversal",
+    "symbol": "MEMEUSDT",
+    "decision": "LONG",
+    "entryPrice": 41876.747928689685,
+    "outcomePrice": 39812.52835044995,
+    "pnlPercent": -4.929273834144931,
+    "isWin": false,
+    "timestamp": 1775437320136,
+    "marketContext": {
+      "volatility": 4.929273834144931,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320136_912",
+    "gladiatorId": "breakout_bb",
+    "symbol": "XRPUSDT",
+    "decision": "LONG",
+    "entryPrice": 34369.60653649932,
+    "outcomePrice": 34439.824639106155,
+    "pnlPercent": 0.20430289922657718,
+    "isWin": true,
+    "timestamp": 1775437320136,
+    "marketContext": {
+      "volatility": 0.20430289922657718,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320136_273",
+    "gladiatorId": "orderblock_mitigation",
+    "symbol": "BTCUSDT",
+    "decision": "LONG",
+    "entryPrice": 35559.94742414192,
+    "outcomePrice": 36838.151952377106,
+    "pnlPercent": 3.5945062375637926,
+    "isWin": true,
+    "timestamp": 1775437320136,
+    "marketContext": {
+      "volatility": 3.5945062375637926,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320136_9",
+    "gladiatorId": "wick_rejection",
+    "symbol": "SOLUSDT",
+    "decision": "SHORT",
+    "entryPrice": 27338.45058682195,
+    "outcomePrice": 27649.06856683962,
+    "pnlPercent": 1.1361945295005071,
+    "isWin": true,
+    "timestamp": 1775437320136,
+    "marketContext": {
+      "volatility": 1.1361945295005071,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320137_866",
+    "gladiatorId": "mean_reversion",
+    "symbol": "SOLUSDT",
+    "decision": "LONG",
+    "entryPrice": 24644.277427981386,
+    "outcomePrice": 25666.228606380628,
+    "pnlPercent": 4.146809259819917,
+    "isWin": true,
+    "timestamp": 1775437320137,
+    "marketContext": {
+      "volatility": 4.146809259819917,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320137_947",
+    "gladiatorId": "funding_arbitrage",
+    "symbol": "MEMEUSDT",
+    "decision": "LONG",
+    "entryPrice": 16885.25674943022,
+    "outcomePrice": 17340.709241715835,
+    "pnlPercent": 2.697338269973195,
+    "isWin": true,
+    "timestamp": 1775437320137,
+    "marketContext": {
+      "volatility": 2.697338269973195,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320137_297",
+    "gladiatorId": "orderblock_mitigation",
+    "symbol": "MEMEUSDT",
+    "decision": "LONG",
+    "entryPrice": 5691.81827476206,
+    "outcomePrice": 5848.155009859994,
+    "pnlPercent": 2.746692314319695,
+    "isWin": true,
+    "timestamp": 1775437320137,
+    "marketContext": {
+      "volatility": 2.746692314319695,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320138_423",
+    "gladiatorId": "solana_momentum",
+    "symbol": "MEMEUSDT",
+    "decision": "LONG",
+    "entryPrice": 25144.373019760646,
+    "outcomePrice": 26086.88726035467,
+    "pnlPercent": 3.748410190436311,
+    "isWin": true,
+    "timestamp": 1775437320138,
+    "marketContext": {
+      "volatility": 3.748410190436311,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320138_175",
+    "gladiatorId": "orderblock_mitigation",
+    "symbol": "SOLUSDT",
+    "decision": "SHORT",
+    "entryPrice": 17319.9469336178,
+    "outcomePrice": 17775.07443937847,
+    "pnlPercent": 2.6277650128204044,
+    "isWin": true,
+    "timestamp": 1775437320138,
+    "marketContext": {
+      "volatility": 2.6277650128204044,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320138_250",
+    "gladiatorId": "funding_arbitrage",
+    "symbol": "XRPUSDT",
+    "decision": "LONG",
+    "entryPrice": 5958.002954620222,
+    "outcomePrice": 6159.410133480928,
+    "pnlPercent": 3.380447784177778,
+    "isWin": true,
+    "timestamp": 1775437320138,
+    "marketContext": {
+      "volatility": 3.380447784177778,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320138_343",
+    "gladiatorId": "momentum_vwap",
+    "symbol": "ETHUSDT",
+    "decision": "SHORT",
+    "entryPrice": 23434.41202992369,
+    "outcomePrice": 23700.385038165674,
+    "pnlPercent": 1.1349677043416273,
+    "isWin": true,
+    "timestamp": 1775437320138,
+    "marketContext": {
+      "volatility": 1.1349677043416273,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320139_378",
+    "gladiatorId": "sfp_reversal",
+    "symbol": "MEMEUSDT",
+    "decision": "SHORT",
+    "entryPrice": 1402.5315805871398,
+    "outcomePrice": 1383.333379027638,
+    "pnlPercent": -1.3688249038545552,
+    "isWin": false,
+    "timestamp": 1775437320139,
+    "marketContext": {
+      "volatility": 1.3688249038545552,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320139_29",
+    "gladiatorId": "momentum_vwap",
+    "symbol": "SOLUSDT",
+    "decision": "LONG",
+    "entryPrice": 11686.384813105044,
+    "outcomePrice": 12124.480483360734,
+    "pnlPercent": 3.7487698485199172,
+    "isWin": true,
+    "timestamp": 1775437320139,
+    "marketContext": {
+      "volatility": 3.7487698485199172,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320139_758",
+    "gladiatorId": "sfp_reversal",
+    "symbol": "XRPUSDT",
+    "decision": "LONG",
+    "entryPrice": 39465.45214991812,
+    "outcomePrice": 41055.8218244972,
+    "pnlPercent": 4.029776900915038,
+    "isWin": true,
+    "timestamp": 1775437320139,
+    "marketContext": {
+      "volatility": 4.029776900915038,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320139_391",
+    "gladiatorId": "breakout_bb",
+    "symbol": "ETHUSDT",
+    "decision": "LONG",
+    "entryPrice": 33559.07994050559,
+    "outcomePrice": 34104.73040944393,
+    "pnlPercent": 1.6259398943763914,
+    "isWin": true,
+    "timestamp": 1775437320139,
+    "marketContext": {
+      "volatility": 1.6259398943763914,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320140_716",
+    "gladiatorId": "trend_following",
+    "symbol": "ETHUSDT",
+    "decision": "SHORT",
+    "entryPrice": 22749.509853533124,
+    "outcomePrice": 22503.110457438834,
+    "pnlPercent": -1.083097603775507,
+    "isWin": false,
+    "timestamp": 1775437320140,
+    "marketContext": {
+      "volatility": 1.083097603775507,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320140_237",
+    "gladiatorId": "orderblock_mitigation",
+    "symbol": "MEMEUSDT",
+    "decision": "SHORT",
+    "entryPrice": 18826.242347630327,
+    "outcomePrice": 18860.935367733036,
+    "pnlPercent": 0.18428010997679212,
+    "isWin": true,
+    "timestamp": 1775437320140,
+    "marketContext": {
+      "volatility": 0.18428010997679212,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320140_254",
+    "gladiatorId": "mean_reversion",
+    "symbol": "MEMEUSDT",
+    "decision": "LONG",
+    "entryPrice": 39173.23140091279,
+    "outcomePrice": 37861.56071384898,
+    "pnlPercent": -3.348385211420788,
+    "isWin": false,
+    "timestamp": 1775437320140,
+    "marketContext": {
+      "volatility": 3.348385211420788,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320140_63",
+    "gladiatorId": "sfp_reversal",
+    "symbol": "SOLUSDT",
+    "decision": "SHORT",
+    "entryPrice": 15568.128187634999,
+    "outcomePrice": 15037.74253182397,
+    "pnlPercent": -3.406868503512761,
+    "isWin": false,
+    "timestamp": 1775437320140,
+    "marketContext": {
+      "volatility": 3.406868503512761,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320141_297",
+    "gladiatorId": "wick_rejection",
+    "symbol": "ETHUSDT",
+    "decision": "SHORT",
+    "entryPrice": 11676.399872323194,
+    "outcomePrice": 11702.358048912434,
+    "pnlPercent": 0.22231318619677642,
+    "isWin": true,
+    "timestamp": 1775437320141,
+    "marketContext": {
+      "volatility": 0.22231318619677642,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320141_628",
+    "gladiatorId": "orderblock_mitigation",
+    "symbol": "ETHUSDT",
+    "decision": "SHORT",
+    "entryPrice": 8200.86726438185,
+    "outcomePrice": 8359.983046563857,
+    "pnlPercent": 1.9402311615636259,
+    "isWin": true,
+    "timestamp": 1775437320141,
+    "marketContext": {
+      "volatility": 1.9402311615636259,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320141_723",
+    "gladiatorId": "solana_momentum",
+    "symbol": "ETHUSDT",
+    "decision": "SHORT",
+    "entryPrice": 38709.81752274843,
+    "outcomePrice": 38873.93572912926,
+    "pnlPercent": 0.42397049865806724,
+    "isWin": true,
+    "timestamp": 1775437320141,
+    "marketContext": {
+      "volatility": 0.42397049865806724,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320141_858",
+    "gladiatorId": "breakout_bb",
+    "symbol": "XRPUSDT",
+    "decision": "LONG",
+    "entryPrice": 18070.681159563683,
+    "outcomePrice": 18676.13397820984,
+    "pnlPercent": 3.35047037408287,
+    "isWin": true,
+    "timestamp": 1775437320141,
+    "marketContext": {
+      "volatility": 3.35047037408287,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320141_418",
+    "gladiatorId": "mean_reversion",
+    "symbol": "SOLUSDT",
+    "decision": "LONG",
+    "entryPrice": 18741.95055225255,
+    "outcomePrice": 18197.30571913678,
+    "pnlPercent": -2.9060200089489143,
+    "isWin": false,
+    "timestamp": 1775437320141,
+    "marketContext": {
+      "volatility": 2.9060200089489143,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320141_332",
+    "gladiatorId": "orderblock_mitigation",
+    "symbol": "XRPUSDT",
+    "decision": "LONG",
+    "entryPrice": 29943.430046062225,
+    "outcomePrice": 30544.45701040411,
+    "pnlPercent": 2.0072081368678143,
+    "isWin": true,
+    "timestamp": 1775437320141,
+    "marketContext": {
+      "volatility": 2.0072081368678143,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320142_211",
+    "gladiatorId": "mean_reversion",
+    "symbol": "ETHUSDT",
+    "decision": "SHORT",
+    "entryPrice": 42247.67830397148,
+    "outcomePrice": 41746.14745211361,
+    "pnlPercent": -1.187120504585738,
+    "isWin": false,
+    "timestamp": 1775437320142,
+    "marketContext": {
+      "volatility": 1.187120504585738,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320142_774",
+    "gladiatorId": "breakout_bb",
+    "symbol": "MEMEUSDT",
+    "decision": "SHORT",
+    "entryPrice": 46928.58550179344,
+    "outcomePrice": 46997.698915311536,
+    "pnlPercent": 0.14727359194633305,
+    "isWin": true,
+    "timestamp": 1775437320142,
+    "marketContext": {
+      "volatility": 0.14727359194633305,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320142_658",
+    "gladiatorId": "breakout_bb",
+    "symbol": "BTCUSDT",
+    "decision": "SHORT",
+    "entryPrice": 5915.999830670558,
+    "outcomePrice": 5700.129486576282,
+    "pnlPercent": -3.648924108738656,
+    "isWin": false,
+    "timestamp": 1775437320142,
+    "marketContext": {
+      "volatility": 3.648924108738656,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320142_115",
+    "gladiatorId": "mean_reversion",
+    "symbol": "XRPUSDT",
+    "decision": "LONG",
+    "entryPrice": 10998.481117145442,
+    "outcomePrice": 10941.795366851262,
+    "pnlPercent": -0.5153961687110942,
+    "isWin": false,
+    "timestamp": 1775437320142,
+    "marketContext": {
+      "volatility": 0.5153961687110942,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320146_903",
+    "gladiatorId": "wick_rejection",
+    "symbol": "ETHUSDT",
+    "decision": "SHORT",
+    "entryPrice": 15694.030327513152,
+    "outcomePrice": 15904.80524231044,
+    "pnlPercent": 1.343026044927288,
+    "isWin": true,
+    "timestamp": 1775437320146,
+    "marketContext": {
+      "volatility": 1.343026044927288,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320149_838",
+    "gladiatorId": "orderblock_mitigation",
+    "symbol": "BTCUSDT",
+    "decision": "LONG",
+    "entryPrice": 35585.815736785495,
+    "outcomePrice": 34516.496844193956,
+    "pnlPercent": -3.004902010679966,
+    "isWin": false,
+    "timestamp": 1775437320149,
+    "marketContext": {
+      "volatility": 3.004902010679966,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320150_865",
+    "gladiatorId": "solana_momentum",
+    "symbol": "SOLUSDT",
+    "decision": "SHORT",
+    "entryPrice": 42333.40504477509,
+    "outcomePrice": 43844.29600371924,
+    "pnlPercent": 3.569027715455709,
+    "isWin": true,
+    "timestamp": 1775437320150,
+    "marketContext": {
+      "volatility": 3.569027715455709,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320151_76",
+    "gladiatorId": "wick_rejection",
+    "symbol": "BTCUSDT",
+    "decision": "SHORT",
+    "entryPrice": 15721.407230418981,
+    "outcomePrice": 15452.787140878156,
+    "pnlPercent": -1.7086262419376719,
+    "isWin": false,
+    "timestamp": 1775437320151,
+    "marketContext": {
+      "volatility": 1.7086262419376719,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320152_594",
+    "gladiatorId": "sfp_reversal",
+    "symbol": "ETHUSDT",
+    "decision": "LONG",
+    "entryPrice": 15016.052164760962,
+    "outcomePrice": 15514.946846939814,
+    "pnlPercent": 3.3224090906505843,
+    "isWin": true,
+    "timestamp": 1775437320152,
+    "marketContext": {
+      "volatility": 3.3224090906505843,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320153_31",
+    "gladiatorId": "funding_arbitrage",
+    "symbol": "MEMEUSDT",
+    "decision": "SHORT",
+    "entryPrice": 28692.1882843578,
+    "outcomePrice": 27502.531159305712,
+    "pnlPercent": -4.1462753320235795,
+    "isWin": false,
+    "timestamp": 1775437320153,
+    "marketContext": {
+      "volatility": 4.1462753320235795,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320153_339",
+    "gladiatorId": "trend_following",
+    "symbol": "BTCUSDT",
+    "decision": "LONG",
+    "entryPrice": 19921.61203910656,
+    "outcomePrice": 19155.186122413255,
+    "pnlPercent": -3.84720832425004,
+    "isWin": false,
+    "timestamp": 1775437320153,
+    "marketContext": {
+      "volatility": 3.84720832425004,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320153_636",
+    "gladiatorId": "funding_arbitrage",
+    "symbol": "XRPUSDT",
+    "decision": "SHORT",
+    "entryPrice": 29881.42663123214,
+    "outcomePrice": 31091.503703571685,
+    "pnlPercent": 4.049596049322385,
+    "isWin": true,
+    "timestamp": 1775437320153,
+    "marketContext": {
+      "volatility": 4.049596049322385,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320154_708",
+    "gladiatorId": "wick_rejection",
+    "symbol": "MEMEUSDT",
+    "decision": "SHORT",
+    "entryPrice": 1490.867910107584,
+    "outcomePrice": 1416.7140266080207,
+    "pnlPercent": -4.973873473084027,
+    "isWin": false,
+    "timestamp": 1775437320154,
+    "marketContext": {
+      "volatility": 4.973873473084027,
+      "dummySentiment": "NEUTRAL"
+    }
+  },
+  {
+    "id": "btl_1775437320154_703",
+    "gladiatorId": "trend_following",
+    "symbol": "MEMEUSDT",
+    "decision": "LONG",
+    "entryPrice": 37188.7727601462,
+    "outcomePrice": 35591.96511867459,
+    "pnlPercent": -4.2937895578604515,
+    "isWin": false,
+    "timestamp": 1775437320154,
+    "marketContext": {
+      "volatility": 4.2937895578604515,
+      "dummySentiment": "NEUTRAL"
+    }
+  }
+]

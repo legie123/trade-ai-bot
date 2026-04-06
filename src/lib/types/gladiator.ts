@@ -42,18 +42,18 @@ export interface PromoterData {
   timestamp: number;
 }
 
-export type MasterSeat = 'GEMINI_CLAUDE' | 'DEEPSEEK_R1' | 'LLAMA_4' | 'SONAR' | 'QWEN_3';
+export type DualMasterIdentity = 'ARCHITECT' | 'ORACLE';
 
-export interface SyndicateOpinion {
-  seat: MasterSeat;
+export interface MasterOpinion {
+  identity: DualMasterIdentity;
   direction: 'LONG' | 'SHORT' | 'FLAT';
   confidence: number; // 0 to 1
   reasoning: string;
 }
 
-export interface SyndicateConsensus {
+export interface DualConsensus {
   finalDirection: 'LONG' | 'SHORT' | 'FLAT';
   weightedConfidence: number;
-  opinions: SyndicateOpinion[];
+  opinions: MasterOpinion[];
   timestamp: number;
 }

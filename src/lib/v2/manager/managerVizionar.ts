@@ -1,19 +1,27 @@
-import { Gladiator, SyndicateConsensus } from '../../types/gladiator';
-import { MasterSyndicate } from '../master/syndicate';
+import { Gladiator, DualConsensus } from '../../types/gladiator';
+import { DualMasterConsciousness } from '../master/dualMaster';
 import { AlphaScout } from '../intelligence/alphaScout';
 import { SentinelGuard } from '../safety/sentinelGuard';
 import { executeMexcTrade } from '@/lib/v2/scouts/executionMexc';
 import { Signal } from '../../types/radar';
 
 export class ManagerVizionar {
-  private syndicate: MasterSyndicate;
+  private static instance: ManagerVizionar;
+  private syndicate: DualMasterConsciousness;
   private scouts: AlphaScout;
   private sentinel: SentinelGuard;
 
-  constructor() {
-    this.syndicate = new MasterSyndicate();
+  private constructor() {
+    this.syndicate = new DualMasterConsciousness();
     this.scouts = AlphaScout.getInstance();
     this.sentinel = SentinelGuard.getInstance();
+  }
+
+  public static getInstance(): ManagerVizionar {
+    if (!ManagerVizionar.instance) {
+      ManagerVizionar.instance = new ManagerVizionar();
+    }
+    return ManagerVizionar.instance;
   }
 
   /**
@@ -26,10 +34,10 @@ export class ManagerVizionar {
     // 1. Get Public Context (Alpha Scouts)
     const context = await this.scouts.analyzeToken(payload.symbol);
     
-    // 2. The Ritual of Consensus (Master Syndicate)
-    // We pass the scout context in the payload for the Masters to consider
     const enrichPayload = { ...payload, alphaContext: context };
-    const consensus: SyndicateConsensus = await this.syndicate.getConsensus(enrichPayload as any, gladiator.arena);
+    // The DNA context (gladiator memory) would be passed here ideally. For now we pass empty object until DNA Bank is ready.
+    const dnaContext = {}; 
+    const consensus = await this.syndicate.getConsensus(enrichPayload as Record<string, unknown>, dnaContext, gladiator.arena);
 
     // 3. The Shield Check (Sentinel Guard)
     const safetyCheck = await this.sentinel.check(payload, consensus);
@@ -47,7 +55,7 @@ export class ManagerVizionar {
     }
   }
 
-  private async routeSignal(gladiator: Gladiator, payload: Signal, consensus: SyndicateConsensus) {
+  private async routeSignal(gladiator: Gladiator, payload: Signal, consensus: DualConsensus) {
     if (gladiator.isLive) {
       await this.executeLiveCapital(gladiator.id, payload, consensus);
     } else {
@@ -55,7 +63,7 @@ export class ManagerVizionar {
     }
   }
 
-  private async executeLiveCapital(id: string, payload: Signal, consensus: SyndicateConsensus) {
+  private async executeLiveCapital(id: string, payload: Signal, consensus: DualConsensus) {
     console.log(`[LIVE EXECUTION] Gladiator ${id} deployed real funds on ${payload.symbol}.`);
     console.log(`[MASTERS] Confidence: ${(consensus.weightedConfidence * 100).toFixed(2)}% Reasoning summarized in Combat Audit.`);
     
@@ -73,8 +81,9 @@ export class ManagerVizionar {
     }
   }
 
-  private async executeShadowMode(id: string, payload: Signal, consensus: SyndicateConsensus) {
+  private async executeShadowMode(id: string, payload: Signal, consensus: DualConsensus) {
     console.log(`[PAPER TRADING] Gladiator ${id} is in shadow mode. Tracking virtual performance for ${payload.symbol}.`);
+    console.log(`[PAPER TRADING CONSENSUS] ${consensus.finalDirection} with ${consensus.weightedConfidence}`);
     // Logs fake execution for leaderboard updates
   }
 }

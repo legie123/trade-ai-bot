@@ -6,9 +6,10 @@ import { ManagerVizionar } from '@/lib/v2/manager/managerVizionar';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { Signal } from '@/lib/types/radar';
 import { routeSignal } from '@/lib/router/signalRouter';
+import { signalStore } from '@/lib/store/signalStore';
 
 const log = createLogger('BtcSignalsRoute');
-const manager = new ManagerVizionar();
+const manager = ManagerVizionar.getInstance();
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +63,10 @@ export async function GET() {
          };
          
          const routed = routeSignal(signalPayload);
+         
+         // Register the signal in the store for Today's Activity count
+         signalStore.addSignal(routed);
+         
          const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
          
          if (gladiator) {

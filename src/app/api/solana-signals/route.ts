@@ -8,7 +8,7 @@ import { Signal } from '@/lib/types/radar';
 import { routeSignal } from '@/lib/router/signalRouter';
 
 const log = createLogger('SolanaSignalsRoute');
-const manager = new ManagerVizionar();
+const manager = ManagerVizionar.getInstance();
 
 export const dynamic = 'force-dynamic';
 
@@ -56,8 +56,8 @@ export async function GET() {
              
              if (gladiator) {
                log.info(`[V2 TRIGGER] Processing internal SOL signal with Gladiator: ${gladiator.name}`);
-               manager.processSignal(gladiator, routed).catch(err => {
-                 log.error('[V2 CRITICAL] Phoenix Process Error (SOL)', { error: err.message });
+               manager.processSignal(gladiator, routed).catch((err: unknown) => {
+                 log.error('[V2 CRITICAL] Phoenix Process Error (SOL)', { error: (err as Error).message });
                });
              }
          }
