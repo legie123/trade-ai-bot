@@ -145,19 +145,36 @@ export async function initDB() {
 
 // ─── Atomic Sync Queue (Ensures sequential Cloud writes) ───
 let syncQueue = Promise.resolve();
+let syncQueueLength = 0;
+let totalSyncsCompleted = 0;
+let lastSyncComplete = new Date().toISOString();
+
+export function getSyncQueueStats() {
+  return {
+    pending: syncQueueLength,
+    totalCompleted: totalSyncsCompleted,
+    lastSyncComplete,
+  };
+}
 
 function syncToCloud(id: string, data: unknown) {
   if (!supabaseUrl || !dbInitialized) return;
 
+  syncQueueLength++;
   syncQueue = syncQueue.then(async () => {
     try {
       const { error } = await supabase.from('json_store').upsert({ id, data });
       if (error) log.error(`Supabase sync failed for ${id}`, { error: error.message });
-      
+      else {
+          totalSyncsCompleted++;
+          lastSyncComplete = new Date().toISOString();
+      }
       // Artificial delay to prevent Supabase rate limits (100ms)
       await new Promise(r => setTimeout(r, 100));
     } catch (err) {
       log.error(`Critical error in syncQueue for ${id}`, { error: String(err) });
+    } finally {
+        syncQueueLength--;
     }
   });
 }

@@ -4,8 +4,9 @@ import { getWatchdogState, watchdogPing } from '@/lib/core/watchdog';
 import { getFreshHealthSnapshot, startHeartbeat } from '@/lib/core/heartbeat';
 import { getKillSwitchState } from '@/lib/core/killSwitch';
 import { getRecentLogs } from '@/lib/core/logger';
-import { getDecisions } from '@/lib/store/db';
+import { getDecisions, getSyncQueueStats } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+import { getMoltbookTelemetry } from '@/lib/moltbook/moltbookClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,6 +62,8 @@ export async function GET() {
         status: systemStatus, 
         uptime: uptimeSeconds, 
         memoryUsageRssMB: memUsageMB,
+        syncQueue: getSyncQueueStats(),
+        moltbook: getMoltbookTelemetry(),
         modulesActive: activeGladiators,
         feedsLive: heartbeat?.providers ? Object.values(heartbeat.providers).filter((p: { ok: boolean }) => p.ok).length : 0,
         sentinelsActive: 2, // Risk + Loss sentinels
