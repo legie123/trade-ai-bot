@@ -25,6 +25,17 @@ const supabase = createClient(
   supabaseKey || 'placeholder'
 );
 
+
+
+export interface PhantomTrade {
+  id: string;
+  gladiatorId: string;
+  symbol: string;
+  signal: string;
+  entryPrice: number;
+  timestamp: string;
+}
+
 // ─── Singleton Memory Cache ─────────────────────
 interface DbStore {
   decisions: DecisionSnapshot[];
@@ -34,6 +45,7 @@ interface DbStore {
   strategies: TradingStrategy[];
   syndicateAudits: Record<string, unknown>[]; // Stores Master arguments
   gladiatorDna: Record<string, unknown>[]; // Stores battle DNA for Omega Super AI
+  phantomTrades: PhantomTrade[]; // Shadow trades for Gladiator Combat Engine
 }
 
 const cache: DbStore = {
@@ -58,6 +70,7 @@ const cache: DbStore = {
   strategies: [],
   syndicateAudits: [],
   gladiatorDna: [],
+  phantomTrades: [],
 };
 
 let dbInitialized = false;
@@ -237,6 +250,22 @@ export function addGladiatorDna(record: Record<string, unknown>): void {
 
 export function getGladiatorDna(): Record<string, unknown>[] {
   return cache.gladiatorDna;
+}
+
+// ─── Phantom Trades (Arena Combat Engine) ───────
+export function getPhantomTrades(): PhantomTrade[] {
+  return cache.phantomTrades;
+}
+
+export function addPhantomTrade(trade: PhantomTrade): void {
+  cache.phantomTrades.unshift(trade);
+  if (cache.phantomTrades.length > 500) cache.phantomTrades.length = 500;
+  syncToCloud('phantom_trades', cache.phantomTrades);
+}
+
+export function removePhantomTrade(id: string): void {
+  cache.phantomTrades = cache.phantomTrades.filter(t => t.id !== id);
+  syncToCloud('phantom_trades', cache.phantomTrades);
 }
 
 // ─── Performance Records ───────────────────────────

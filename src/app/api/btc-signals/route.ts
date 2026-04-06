@@ -7,6 +7,7 @@ import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { Signal } from '@/lib/types/radar';
 import { routeSignal } from '@/lib/router/signalRouter';
 import { signalStore } from '@/lib/store/signalStore';
+import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 
 const log = createLogger('BtcSignalsRoute');
 const manager = ManagerVizionar.getInstance();
@@ -66,6 +67,9 @@ export async function GET() {
          
          // Register the signal in the store for Today's Activity count
          signalStore.addSignal(routed);
+         
+         // Deploy signal to all Gladiators via Phantom Trade Combat Engine
+         ArenaSimulator.getInstance().distributeSignalToGladiators(routed);
          
          const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
          

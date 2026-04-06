@@ -1,7 +1,7 @@
 // GET /api/v2/arena — Full gladiator details + Omega progress + real stats
 import { NextResponse } from 'next/server';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
-import { getDecisions } from '@/lib/store/db';
+import { getGladiatorDna } from '@/lib/store/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,21 +9,18 @@ export async function GET() {
   try {
     const gladiators = gladiatorStore.getLeaderboard();
     const omega = gladiatorStore.getGladiators().find(g => g.isOmega);
-    const decisions = getDecisions();
     
-    // Calculate real Omega progress from wins
-    const evaluated = decisions.filter(d => d.outcome !== 'PENDING');
-    const wins = evaluated.filter(d => d.outcome === 'WIN').length;
-    const targetWins = 100; // Genesis target
-    const realProgress = Math.min(100, Math.round((wins / targetWins) * 100));
+    // Calculate real Omega progress from extracted DNA
+    const dnaBank = getGladiatorDna();
+    const targetWins = 100; // Genesis target for Omega to awaken
+    const realProgress = Math.min(100, Math.round((dnaBank.length / targetWins) * 100));
     
-    // Update Omega in store with real progress
+    // Update Omega in store with real progress based on DNA bank
     if (omega) {
-      const winRate = evaluated.length > 0 ? (wins / evaluated.length) * 100 : 0;
       gladiatorStore.updateOmegaProgress(realProgress, {
-        winRate,
-        totalTrades: evaluated.length,
-        profitFactor: wins > 0 ? (wins / Math.max(1, evaluated.length - wins)) : 0,
+        winRate: 0, // Omega doesn't trade yet, it learns
+        totalTrades: dnaBank.length, // Extracted DNA traits
+        profitFactor: 0,
       });
     }
 
@@ -69,11 +66,11 @@ export async function GET() {
       superAiOmega: omega ? {
         rank: 'God',
         trainingProgress: realProgress,
-        winRate: evaluated.length > 0 ? ((wins / evaluated.length) * 100).toFixed(2) : '0.00',
+        winRate: '0.00', // Still learning, doesn't trade yet
         status: realProgress >= 100 ? 'ACTIVE' : 'IN_TRAINING',
-        totalWinsAssimilated: wins,
+        totalWinsAssimilated: dnaBank.length,
         targetWins,
-        totalTradesAnalyzed: evaluated.length,
+        totalTradesAnalyzed: dnaBank.length,
       } : null,
       leaderboard,
       timestamp: Date.now(),

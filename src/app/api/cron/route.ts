@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { watchdogPing } from '@/lib/core/watchdog';
 import { startHeartbeat } from '@/lib/core/heartbeat';
 import { createLogger } from '@/lib/core/logger';
+import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 
 const log = createLogger('CronLoop');
 
@@ -32,6 +33,9 @@ export async function GET() {
     gScan.__autoScan.running = true;
     gScan.__autoScan.lastScanAt = new Date().toISOString();
     gScan.__autoScan.scanCount++;
+
+    // Evaluate Phantom Trades for the Arena Combat Engine
+    await ArenaSimulator.getInstance().evaluatePhantomTrades();
 
     return NextResponse.json({
       status: 'ok',

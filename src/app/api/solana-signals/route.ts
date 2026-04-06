@@ -6,6 +6,8 @@ import { ManagerVizionar } from '@/lib/v2/manager/managerVizionar';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { Signal } from '@/lib/types/radar';
 import { routeSignal } from '@/lib/router/signalRouter';
+import { signalStore } from '@/lib/store/signalStore';
+import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 
 const log = createLogger('SolanaSignalsRoute');
 const manager = ManagerVizionar.getInstance();
@@ -52,6 +54,9 @@ export async function GET() {
              };
              
              const routed = routeSignal(signalPayload);
+             signalStore.addSignal(routed);
+             ArenaSimulator.getInstance().distributeSignalToGladiators(routed);
+             
              const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
              
              if (gladiator) {
