@@ -1,5 +1,6 @@
 import { INITIAL_STRATEGIES } from './seedStrategies';
 import { Gladiator, ArenaType } from '../types/gladiator';
+import { getGladiatorsFromDb, saveGladiatorsToDb } from '@/lib/store/db';
 
 /**
  * Singleton for managing the Gladiator Ranks and Arenas for Phoenix V2.
@@ -8,15 +9,23 @@ class GladiatorStore {
   private static instance: GladiatorStore;
   private gladiators: Gladiator[] = [];
 
-  private constructor() {
-    this.seedGladiators();
-  }
+  private constructor() {}
 
   public static getInstance(): GladiatorStore {
     if (!GladiatorStore.instance) {
       GladiatorStore.instance = new GladiatorStore();
     }
     return GladiatorStore.instance;
+  }
+
+  private ensureLoaded() {
+    if (this.gladiators.length > 0) return;
+    const fromDb = getGladiatorsFromDb();
+    if (fromDb && fromDb.length > 0) {
+      this.gladiators = fromDb;
+    } else {
+      this.seedGladiators();
+    }
   }
 
   private seedGladiators() {
@@ -65,19 +74,23 @@ class GladiatorStore {
       },
       lastUpdated: Date.now(),
     });
+    saveGladiatorsToDb(this.gladiators);
   }
 
   public getGladiators(): Gladiator[] {
+    this.ensureLoaded();
     return this.gladiators;
   }
 
   public getLeaderboard(): Gladiator[] {
+    this.ensureLoaded();
     return this.gladiators
       .filter(g => !g.isOmega)
       .sort((a, b) => b.stats.winRate - a.stats.winRate);
   }
 
   public updateGladiatorStats(id: string, tick: { pnlPercent: number, isWin: boolean }) {
+    this.ensureLoaded();
     const gladiator = this.gladiators.find(g => g.id === id);
     if (!gladiator) return;
     
@@ -95,6 +108,7 @@ class GladiatorStore {
       gladiator.stats.maxDrawdown += Math.abs(tick.pnlPercent) * 0.1;
     }
     gladiator.lastUpdated = Date.now();
+    saveGladiatorsToDb(this.gladiators);
   }
 
   /**
@@ -102,6 +116,7 @@ class GladiatorStore {
    * Priority: Top Rank (isLive = true) for the given symbol's typical arena.
    */
   public findBestGladiator(symbol: string): Gladiator | undefined {
+    this.ensureLoaded();
     // Default to the highest rank gladiator in the DAY_TRADING arena for general signals
     // Or DEEP_WEB for Solana eco
     const preferredArena: ArenaType = symbol.includes('SOL') || symbol.includes('WIF') ? 'DEEP_WEB' : 'DAY_TRADING';
@@ -111,6 +126,7 @@ class GladiatorStore {
       .sort((a, b) => a.rank - b.rank)[0];
   }
   public updateOmegaProgress(progress: number, stats?: Partial<Gladiator['stats']>): void {
+    this.ensureLoaded();
     const omega = this.gladiators.find(g => g.isOmega);
     if (omega) {
       omega.trainingProgress = Math.min(100, Math.max(0, progress));
@@ -122,6 +138,7 @@ class GladiatorStore {
         omega.isLive = true;
       }
       omega.lastUpdated = Date.now();
+      saveGladiatorsToDb(this.gladiators);
     }
   }
 }

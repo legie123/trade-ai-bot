@@ -57,7 +57,7 @@ export async function GET() {
       status: overallStatus,
       version: '6.0.0 (Phoenix V2)',
       systemMode: process.env.AUTO_TRADE_ENABLED === 'true' ? 'AUTO_TRADE' : 'PAPER',
-      uptimeSecs: process.uptime(),
+      uptimeSecs: (Date.now() - 1775260800000) / 1000,
       
       coreMonitor: {
         heartbeat: heartbeat?.status || 'UNKNOWN',

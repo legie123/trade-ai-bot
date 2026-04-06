@@ -101,7 +101,12 @@ interface BotData {
   v2Entities: {
     masters: Array<{ id: string; name: string; role: string; status: string; power: number }>;
     manager: { name: string; role: string; status: string; description: string };
-    sentinels: { riskShield: { name: string; limit: string; active: boolean; triggered: boolean }; lossDaily: { name: string; limit: string; active: boolean; triggered: boolean } };
+    sentinels: { 
+      riskShield: { name: string; limit: string; active: boolean; triggered: boolean }; 
+      lossDaily: { name: string; limit: string; active: boolean; triggered: boolean };
+      watchdog?: { name: string; limit: string; active: boolean; triggered: boolean };
+      killSwitch?: { name: string; limit: string; active: boolean; triggered: boolean; reason: string | null };
+    };
     promoter: { name: string; role: string; status: string };
     scouts: { name: string; role: string; status: string };
   } | null;
@@ -166,14 +171,14 @@ export default function BotCenterPage() {
     return () => clearTimeout(t);
   }, [actionStatus]);
 
-  const botAction = async (action: string) => {
+  const botAction = async (action: string, payload: Record<string, unknown> = {}) => {
     setEvalLoading(true);
     setActionStatus(`Running ${action}...`);
     try {
       const res = await fetch('/api/bot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, ...payload }),
       });
       const json = await res.json();
       if (json.status === 'error') throw new Error(json.error);
@@ -283,7 +288,7 @@ export default function BotCenterPage() {
       ) : (
         <div className="bento-grid">
           {/* ================= PHOENIX V2 CORE ARCHITECTURE ================= */}
-          <div className="bento-col-12" style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(300px, 1fr) minmax(300px, 1fr)', gap: 16 }}>
+          <div className="bento-col-12 grid-3">
             
             {/* LEVEL 1: THE MASTERS */}
             <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -372,7 +377,7 @@ export default function BotCenterPage() {
                   
                   {/* KILL SWITCH */}
                   <button 
-                    onClick={() => botAction('killswitch')} 
+                    onClick={() => botAction('killswitch', { engage: !(data.v2Entities?.sentinels?.killSwitch?.triggered) })} 
                     disabled={evalLoading}
                     style={{ 
                       marginTop: 6, width: '100%', padding: '12px', borderRadius: 8, 
@@ -380,7 +385,7 @@ export default function BotCenterPage() {
                       color: 'var(--accent-red)', fontSize: 14, fontWeight: 800, letterSpacing: '0.1em', cursor: 'pointer',
                       transition: 'all 0.2s', opacity: evalLoading ? 0.6 : 1
                     }}>
-                    ⚠️ ENGAGE EMEREGENCY EXIT ⚠️
+                    ⚠️ {data.v2Entities?.sentinels?.killSwitch?.triggered ? 'DISENGAGE EXIT' : 'ENGAGE EMEREGENCY EXIT'} ⚠️
                   </button>
                 </div>
               </div>
@@ -397,12 +402,12 @@ export default function BotCenterPage() {
             
           </div>
           
-          <div className="bento-col-12" style={{ display: 'flex', gap: 16 }}>
+          <div className="bento-col-12 bento-grid">
              {/* ================= COLUMN 1 (Logs) ================= */}
              <div className="bento-col-8 glass-card" style={{ padding: '16px 20px' }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: 12 }}>RECENT DECISIONS (SINDICAT CONSENSUS)</div>
                 {data.decisions.length > 0 ? (
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                   <div className="table-wrap" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                      {data.decisions.slice(0, 7).map((d) => (
                        <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '80px 100px 100px 1fr 100px 80px', gap: 12, alignItems: 'center', background: 'rgba(0,0,0,0.15)', padding: '8px 12px', borderRadius: 6, borderLeft: d.outcome === 'WIN' ? '2px solid var(--accent-green)' : d.outcome === 'LOSS' ? '2px solid var(--accent-red)' : '2px solid var(--border)' }}>
                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(d.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>

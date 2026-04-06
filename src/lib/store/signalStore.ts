@@ -2,7 +2,7 @@
 // Signal Store — in-memory with deduplication
 // Uses globalThis to persist across Next.js hot reloads
 // ============================================================
-import { Signal, WatchlistItem, TradeEntry, DashboardStats } from '@/lib/types/radar';
+import { Signal, TradeEntry, DashboardStats } from '@/lib/types/radar';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('SignalStore');

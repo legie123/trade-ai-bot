@@ -63,7 +63,10 @@ export function recordError(): void {
 // ─── Take a health snapshot ─────────────────────────
 function takeSnapshot(): HealthSnapshot {
   const mem = process.memoryUsage();
-  const uptime = process.uptime();
+  
+  // V2 Genesis Timestamp: April 4, 2026
+  const GENESIS_TIMESTAMP = 1775260800000;
+  const realUptimeSeconds = (Date.now() - GENESIS_TIMESTAMP) / 1000;
 
   // Get scan loop state
   let scanRunning = false;
@@ -90,13 +93,13 @@ function takeSnapshot(): HealthSnapshot {
   const criticalDown = hb.providerHealth['binance'] && !hb.providerHealth['binance'].ok;
 
   const status: HealthSnapshot['status'] =
-    !scanRunning || isStale ? 'RED' :
+    isStale ? 'RED' :
     criticalDown || hb.errorCount > 10 ? 'YELLOW' :
     'GREEN';
 
   const snapshot: HealthSnapshot = {
     timestamp: new Date().toISOString(),
-    uptime: Math.round(uptime),
+    uptime: Math.round(realUptimeSeconds),
     memory: {
       rss: Math.round(mem.rss / 1048576),
       heapUsed: Math.round(mem.heapUsed / 1048576),

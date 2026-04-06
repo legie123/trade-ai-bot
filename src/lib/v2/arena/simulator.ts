@@ -86,7 +86,7 @@ export class ArenaSimulator {
 
     // Determine pseudo-market price since we don't always have a strict numerical feed
     // Ideally signal contains 'price' or we fetch it.
-    const currentPrice = routedSignal.price || parseFloat((routedSignal as any).metadata?.price) || (Math.random() * 50000 + 1000);
+    const currentPrice = routedSignal.price || parseFloat((routedSignal as unknown as { metadata?: { price?: string } })?.metadata?.price || '') || (Math.random() * 50000 + 1000);
 
     allGladiators.forEach(g => {
       // For massive combat, all gladiators take the trade to measure their metrics

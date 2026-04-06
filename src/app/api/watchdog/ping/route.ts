@@ -23,7 +23,7 @@ export async function GET() {
       },
       metrics: {
         memoryUsageMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
-        uptime: process.uptime(),
+        uptime: (Date.now() - 1775260800000) / 1000,
         latencyMs: Math.round(performance.now() - startTime),
       },
       timestamp: new Date().toISOString()

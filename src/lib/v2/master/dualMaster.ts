@@ -1,8 +1,7 @@
 import { 
   DualMasterIdentity, 
   MasterOpinion, 
-  DualConsensus, 
-  ArenaType 
+  DualConsensus 
 } from '../../types/gladiator';
 import { addSyndicateAudit } from '@/lib/store/db';
 
@@ -119,7 +118,7 @@ export class DualMasterConsciousness {
     };
   }
 
-  public async getConsensus(marketData: Record<string, unknown>, gladiatorDnaContext: Record<string, unknown>, _arena: ArenaType): Promise<DualConsensus> {
+  public async getConsensus(marketData: Record<string, unknown>, gladiatorDnaContext: Record<string, unknown>): Promise<DualConsensus> {
     const prompt = `Market State: ${JSON.stringify(marketData)}. Gladiator DNA/Experience Context: ${JSON.stringify(gladiatorDnaContext)}`;
     
     // Both masters analyze simultaneously
@@ -128,7 +127,7 @@ export class DualMasterConsciousness {
       this.oracle.invoke(prompt, this.timeoutMs)
     ]);
     
-    const consensus = this.arbitrate(architectOpinion, oracleOpinion, _arena);
+    const consensus = this.arbitrate(architectOpinion, oracleOpinion);
     
     addSyndicateAudit({
       ...consensus,
@@ -139,7 +138,7 @@ export class DualMasterConsciousness {
     return consensus;
   }
 
-  private arbitrate(architect: MasterOpinion, oracle: MasterOpinion, _arena: ArenaType): DualConsensus {
+  private arbitrate(architect: MasterOpinion, oracle: MasterOpinion): DualConsensus {
     let finalDirection: 'LONG' | 'SHORT' | 'FLAT' = 'FLAT';
     let finalConfidence = 0;
 

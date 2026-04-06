@@ -311,3 +311,122 @@
  POST /api/v2/test-live-cycle 200 in 51ms (compile: 45ms, render: 6ms)
 [2026-04-06T02:35:16.502Z] [INFO] [Heartbeat] Heartbeat started {"intervalMs":30000}
  GET /api/dashboard 200 in 34ms (compile: 31ms, render: 3ms)
+[2026-04-06T02:40:16.514Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":300012}
+[2026-04-06T02:40:46.515Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":330013}
+[2026-04-06T02:41:16.516Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":360014}
+[2026-04-06T02:41:46.517Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":390015}
+[2026-04-06T02:42:16.517Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":420015}
+[2026-04-06T02:42:46.519Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":450017}
+[2026-04-06T02:43:16.519Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":480017}
+[2026-04-06T02:43:46.520Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":510018}
+[2026-04-06T02:44:16.521Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":540019}
+[2026-04-06T02:44:46.522Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":570020}
+[2026-04-06T02:45:16.522Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":600020}
+[2026-04-06T02:45:46.524Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":630022}
+[2026-04-06T02:46:16.524Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":660022}
+[2026-04-06T02:46:46.526Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":690023}
+[2026-04-06T02:47:16.526Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":720024}
+[2026-04-06T02:47:46.526Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":750024}
+[2026-04-06T02:48:16.527Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":780024}
+[2026-04-06T02:48:46.527Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":810025}
+[2026-04-06T02:49:16.528Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":840026}
+[2026-04-06T02:49:46.529Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":870027}
+[2026-04-06T02:50:16.530Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":900028}
+[2026-04-06T02:50:46.538Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":930032}
+[2026-04-06T02:51:16.532Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":960030}
+[2026-04-06T02:51:46.532Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":990030}
+[2026-04-06T02:52:16.534Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1020032}
+[2026-04-06T02:52:46.536Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1050034}
+[2026-04-06T02:53:16.536Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1080034}
+[2026-04-06T02:53:46.538Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1110036}
+[2026-04-06T02:54:16.539Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1140037}
+[2026-04-06T02:54:46.540Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1170038}
+[2026-04-06T02:55:16.541Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1200039}
+[2026-04-06T02:55:46.542Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1230040}
+[2026-04-06T02:56:16.542Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1260039}
+[2026-04-06T02:56:46.542Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1290040}
+[2026-04-06T02:57:16.543Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1320040}
+[2026-04-06T02:57:46.543Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1350041}
+[2026-04-06T02:58:16.543Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1380041}
+[2026-04-06T02:58:46.543Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1410041}
+[2026-04-06T02:59:16.544Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1440042}
+[2026-04-06T02:59:46.545Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1470043}
+[2026-04-06T03:00:16.546Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1500044}
+[2026-04-06T03:00:46.547Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1530045}
+[2026-04-06T03:01:16.547Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1560045}
+[2026-04-06T03:01:46.548Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1590046}
+[2026-04-06T03:02:16.550Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1620048}
+[2026-04-06T03:02:46.550Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1650048}
+[2026-04-06T03:03:16.551Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1680049}
+[2026-04-06T03:03:46.552Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1710050}
+[2026-04-06T03:04:16.552Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1740050}
+[2026-04-06T03:04:46.553Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1770051}
+[2026-04-06T03:05:16.554Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1800052}
+[2026-04-06T03:05:46.555Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1830053}
+[2026-04-06T03:06:16.555Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1860053}
+[2026-04-06T03:06:46.557Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1890055}
+[2026-04-06T03:07:16.556Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1920054}
+[2026-04-06T03:07:46.557Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1950055}
+[2026-04-06T03:08:16.558Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":1980056}
+[2026-04-06T03:08:46.558Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":2010056}
+[2026-04-06T03:09:16.561Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":2040059}
+[2026-04-06T03:09:46.561Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":2070059}
+[2026-04-06T03:10:16.562Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":2100060}
+ GET /api/health 200 in 1199ms (compile: 51ms, render: 1148ms)
+[2026-04-06T03:10:46.563Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":2130061}
+ GET /api/watchdog/ping 200 in 80ms (compile: 77ms, render: 3ms)
+[2026-04-06T03:11:16.563Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":2160061}
+[2026-04-06T03:11:38.360Z] [INFO] [VWAPFilter] VWAP Check: RAY {"vwap":0.61,"price":0.6189,"volumeRatio":1.39,"proposedSignal":"BUY","confirmed":true}
+[2026-04-06T03:11:38.363Z] [INFO] [RSI] RSI analysis {"rsi":50,"zone":"NEUTRAL","divergence":"NONE","proposedSignal":"BUY","confirmsSignal":true}
+[2026-04-06T03:11:38.363Z] [INFO] [Cooldown] COOLDOWN SET: RAY:BUY for 10min
+[2026-04-06T03:11:38.364Z] [INFO] [SignalStore] Added: BUY RAY @ 0.6189 (Solana Engine)
+[2026-04-06T03:11:38.638Z] [INFO] [VWAPFilter] VWAP Check: RNDR {"vwap":6.94,"price":1.96,"volumeRatio":1.74,"proposedSignal":"BUY","confirmed":true}
+[2026-04-06T03:11:38.638Z] [INFO] [RSI] RSI analysis {"rsi":66,"zone":"BULLISH","divergence":"BEAR_DIV","proposedSignal":"BUY","confirmsSignal":false}
+[2026-04-06T03:11:38.638Z] [INFO] [SolanaEngine] RNDR signal BUY REJECTED by RSI {"rsi":65.7,"zone":"BULLISH"}
+[2026-04-06T03:11:38.910Z] [INFO] [VWAPFilter] VWAP Check: RNDR {"vwap":6.94,"price":1.96,"volumeRatio":1.74,"proposedSignal":"SELL","confirmed":true}
+[2026-04-06T03:11:38.911Z] [INFO] [RSI] RSI analysis {"rsi":66,"zone":"BULLISH","divergence":"BEAR_DIV","proposedSignal":"SELL","confirmsSignal":true}
+[2026-04-06T03:11:38.911Z] [INFO] [Cooldown] COOLDOWN SET: RNDR:SELL for 10min
+[2026-04-06T03:11:38.911Z] [INFO] [SignalStore] Added: SELL RNDR @ 1.96 (Solana Engine)
+[2026-04-06T03:11:38.911Z] [INFO] [SignalStore] Added: BUY RAY @ 0.6189 (Solana Scout V2)
+[2026-04-06T03:11:38.912Z] [INFO] [ArenaSimulator] [Combat Engine] Deployed Phantom Trades for 9 Gladiators on RAY
+[2026-04-06T03:11:38.912Z] [INFO] [SolanaSignalsRoute] [V2 TRIGGER] Processing internal SOL signal with Gladiator: Momentum VWAP Scalp
+[2026-04-06T03:11:38.912Z] [INFO] [AlphaScout] 🔍 [AlphaScout] Deep dive: RAY
+[2026-04-06T03:11:38.912Z] [INFO] [SignalStore] Added: SELL RNDR @ 1.96 (Solana Scout V2)
+[2026-04-06T03:11:38.912Z] [INFO] [ArenaSimulator] [Combat Engine] Deployed Phantom Trades for 9 Gladiators on RNDR
+[2026-04-06T03:11:38.912Z] [INFO] [SolanaSignalsRoute] [V2 TRIGGER] Processing internal SOL signal with Gladiator: Momentum VWAP Scalp
+[2026-04-06T03:11:38.912Z] [INFO] [AlphaScout] 🔍 [AlphaScout] Deep dive: RNDR
+ GET /api/solana-signals 200 in 5.0s (compile: 40ms, render: 5.0s)
+[2026-04-06T03:11:41.062Z] [INFO] [SentinelGuard] 🛡️ [Sentinel] Signal sol_RAY_1775445098911_s85x for RAY APPROVED. Consensus: LONG
+[LIVE EXECUTION] Gladiator momentum_vwap deployed real funds on RAY.
+[MASTERS] Confidence: 85.00% Reasoning summarized in Combat Audit.
+[2026-04-06T03:11:41.708Z] [INFO] [SentinelGuard] 🛡️ [Sentinel] Signal sol_RNDR_1775445098912_n6en for RNDR APPROVED. Consensus: SHORT
+[LIVE EXECUTION] Gladiator momentum_vwap deployed real funds on RNDR.
+[MASTERS] Confidence: 80.00% Reasoning summarized in Combat Audit.
+[2026-04-06T03:11:41.856Z] [ERROR] [ExecutionMexc] [EXECUTION V2] Trade failed {"error":"MEXC Error 700006: IP [178.132.108.196] not in the ip white list"}
+[EXECUTION FAILED] MEXC Error 700006: IP [178.132.108.196] not in the ip white list
+[2026-04-06T03:11:42.019Z] [ERROR] [ExecutionMexc] [EXECUTION V2] Trade failed {"error":"MEXC Error -1121: invalid symbol"}
+[EXECUTION FAILED] MEXC Error -1121: invalid symbol
+ GET /api/solana-signals 200 in 9ms (compile: 3ms, render: 6ms)
+[2026-04-06T03:11:46.565Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":2190063}
+[2026-04-06T03:11:58.156Z] [INFO] [FundingRate] Funding rate BTCUSDT: 0.0060% → NEUTRAL
+[2026-04-06T03:11:58.484Z] [INFO] [OpenInterest] OI BTCUSDT: NONE | OI 0.0% | Price +3.0%
+ GET /api/btc-signals 200 in 1082ms (compile: 38ms, render: 1044ms)
+[2026-04-06T03:12:16.566Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":2220064}
+ GET /api/moltbook-cron 401 in 32ms (compile: 29ms, render: 4ms)
+[2026-04-06T03:12:46.569Z] [WARN] [Heartbeat] System health RED {"scanRunning":true,"staleSince":2250067}
+[2026-04-06T03:12:55.894Z] [INFO] [CronLoop] Cron loop initialized — heartbeat started
+[2026-04-06T03:12:55.895Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for funding_arbitrage on RNDR (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.895Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for mean_reversion on RNDR (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.895Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for breakout_bb on RNDR (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.896Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for sfp_reversal on RNDR (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.897Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for wick_rejection on RNDR (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.897Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for trend_following on RNDR (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.897Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for funding_arbitrage on RAY (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.897Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for breakout_bb on RAY (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.897Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for orderblock_mitigation on RAY (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.897Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for sfp_reversal on RAY (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.897Z] [INFO] [DNAExtractor] [DNA Bank] Logged battle for momentum_vwap on RAY (Win: true) -> Syncing to Supabase...
+[2026-04-06T03:12:55.897Z] [INFO] [ArenaSimulator] [Combat Engine] Closed 18 shadow battles. Winning vectors sent to The Forge.
+ GET /api/cron 200 in 68ms (compile: 61ms, render: 7ms)
+ GET /api/health 200 in 637ms (compile: 1796µs, render: 635ms)
+ GET /api/dashboard 200 in 60ms (compile: 54ms, render: 7ms)

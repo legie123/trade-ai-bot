@@ -70,6 +70,10 @@ export interface BotRuleSet {
     signalTypes: SignalType[];
     trailingStop: boolean;
     trailingStopPercent: number;
+    asymmetricTakeProfit: boolean; 
+    partialTakeProfitPercent: number; // Target for partial exit (e.g. 1%)
+    partialTakeProfitAmount: number; // How much of position to exit (e.g. 30%)
+    trailingStopWidePercent: number; // Wide trailing percent for remaining position
   };
   riskManagement: {
     stopLossPercent: number;

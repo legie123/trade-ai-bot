@@ -37,10 +37,48 @@ export async function GET() {
     // Evaluate Phantom Trades for the Arena Combat Engine
     await ArenaSimulator.getInstance().evaluatePhantomTrades();
 
+    // Evaluate Real/Shadow Main System Decisions
+    const { getPendingDecisions, updateDecision, recalculatePerformance } = await import('@/lib/store/db');
+    const { getMexcPrice } = await import('@/lib/exchange/mexcClient');
+    
+    const pending = getPendingDecisions();
+    let mainDecisionsEvaluated = 0;
+
+    for (const dec of pending) {
+      const elapsedMin = (Date.now() - new Date(dec.timestamp).getTime()) / 60000;
+      if (elapsedMin > 10) { // Keep pending for 10 minutes to accumulate profit offset
+         try {
+            const currentPrice = await getMexcPrice(dec.symbol);
+            if (!currentPrice || !dec.price) continue;
+            
+            const pnlDiff = (currentPrice - dec.price) / dec.price;
+            const pnlPercent = (dec.action === 'LONG' || dec.action === 'BUY') ? pnlDiff * 100 : -pnlDiff * 100;
+            const outcome = pnlPercent > 0.05 ? 'WIN' : (pnlPercent < -0.05 ? 'LOSS' : 'NEUTRAL');
+
+            updateDecision(dec.id, {
+               priceAfter15m: currentPrice, // Approximate
+               pnlPercent: parseFloat(pnlPercent.toFixed(2)),
+               outcome,
+               evaluatedAt: new Date().toISOString()
+            });
+
+            mainDecisionsEvaluated++;
+         } catch {
+           log.warn(`Could not resolve main decision ${dec.id} due to price fetch error`);
+         }
+      }
+    }
+
+    if (mainDecisionsEvaluated > 0) {
+      recalculatePerformance();
+      log.info(`[Trade AI] Resolved ${mainDecisionsEvaluated} main real/paper decisions. PnL recalibrated.`);
+    }
+
     return NextResponse.json({
       status: 'ok',
       message: 'Cron tick processed',
       scanCount: gScan.__autoScan.scanCount,
+      mainDecisionsEvaluated,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

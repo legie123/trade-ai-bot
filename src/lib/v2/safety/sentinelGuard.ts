@@ -32,7 +32,7 @@ export class SentinelGuard {
       return { safe: false, reason: 'AI Credits Exhausted' };
     }
 
-    if (config.mode === 'LIVE' && this.isHalted(config)) {
+    if (config.mode === 'LIVE' && this.isHalted()) {
       return { safe: false, reason: 'System is HALTED due to previous risk breach' };
     }
 
@@ -58,7 +58,7 @@ export class SentinelGuard {
     return { safe: true };
   }
 
-  private isHalted(config: BotConfig): boolean {
+  private isHalted(): boolean {
     // Logic to check if we are in a cooldown period
     return false; // Placeholder
   }

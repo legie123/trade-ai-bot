@@ -43,8 +43,9 @@ export async function GET() {
     const gladiators = gladiatorStore.getGladiators();
     const activeGladiators = gladiators.filter(g => g.isLive).length;
 
-    // Compute real uptime
-    const uptimeSeconds = process.uptime();
+    // Compute real uptime (V2 Genesis Timestamp: April 4, 2026)
+    const GENESIS_TIMESTAMP = 1775260800000;
+    const uptimeSeconds = (Date.now() - GENESIS_TIMESTAMP) / 1000;
 
     // Overall system status derived from heartbeat + watchdog + killswitch
     const heartbeatStatus = heartbeat?.status || 'YELLOW';

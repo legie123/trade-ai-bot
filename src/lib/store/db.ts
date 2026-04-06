@@ -42,7 +42,8 @@ interface DbStore {
   performance: PerformanceRecord[];
   optimizer: OptimizationState;
   config: BotConfig;
-  strategies: TradingStrategy[];
+  strategies: TradingStrategy[]; // legacy
+  gladiators: any[]; // V2 Gladiators
   syndicateAudits: Record<string, unknown>[]; // Stores Master arguments
   gladiatorDna: Record<string, unknown>[]; // Stores battle DNA for Omega Super AI
   phantomTrades: PhantomTrade[]; // Shadow trades for Gladiator Combat Engine
@@ -51,6 +52,7 @@ interface DbStore {
 const cache: DbStore = {
   decisions: [],
   performance: [],
+  gladiators: [],
   optimizer: {
     version: 0,
     weights: { volumeWeight: 0.25, liquidityWeight: 0.20, momentumWeight: 0.20, holderWeight: 0.15, socialWeight: 0.10, emaWeight: 0.10 },
@@ -135,6 +137,7 @@ export async function initDB() {
             }));
           }
         }
+        if (row.id === 'gladiators') cache.gladiators = row.data || [];
         if (row.id === 'syndicate_audit') cache.syndicateAudits = row.data || [];
         if (row.id === 'gladiator_dna') cache.gladiatorDna = row.data || [];
       }
@@ -251,6 +254,16 @@ export function addSyndicateAudit(audit: any): void {
 
 export function getSyndicateAudits(): Record<string, unknown>[] {
   return cache.syndicateAudits;
+}
+
+// ─── Gladiators (V2 Memory) ──────────────────────
+export function getGladiatorsFromDb(): any[] {
+  return cache.gladiators;
+}
+
+export function saveGladiatorsToDb(gladiators: any[]): void {
+  cache.gladiators = gladiators;
+  syncToCloud('gladiators', cache.gladiators);
 }
 
 // ─── DNA Bank (Gladiator Battles) ────────────────

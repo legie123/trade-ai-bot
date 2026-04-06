@@ -53,25 +53,25 @@ export async function getAggregatedTokens(): Promise<NormalizedToken[]> {
     }
   }
 
-  // Get pair data for boosted tokens
-  const boostPairPromises = Array.from(boostAddresses).slice(0, 20).map(async (addr) => {
+  // Get pair data for boosted tokens in a SINGLE batch call to avoid 429 rate limit
+  const addrsToFetch = Array.from(boostAddresses).slice(0, 20);
+  if (addrsToFetch.length > 0) {
     try {
-      const res = await getTokenPairs('solana', addr);
+      // Use getTokensByAddress to fetch up to 30 addresses at once
+      const { getTokensByAddress } = await import('@/lib/providers/dexScreenerProvider');
+      const res = await getTokensByAddress('solana', addrsToFetch);
       if (res.data?.pairs) {
         for (const pair of res.data.pairs) {
           const token = normalizeDexScreenerPair(pair);
-          // Find boost amount
           if (boostsRes.status === 'fulfilled' && boostsRes.value.data) {
-            const boost = boostsRes.value.data.find(
-              (b) => b.tokenAddress === addr
-            );
+            const boost = boostsRes.value.data.find(b => b.tokenAddress === pair.baseToken.address);
             if (boost) token.boostLevel = boost.totalAmount || boost.amount;
           }
           allTokens.push(token);
         }
       }
     } catch { /* skip failed */ }
-  });
+  }
 
   // Process search results
   if (trendingSearch.status === 'fulfilled' && trendingSearch.value.data?.pairs) {
@@ -82,7 +82,7 @@ export async function getAggregatedTokens(): Promise<NormalizedToken[]> {
     }
   }
 
-  await Promise.allSettled(boostPairPromises);
+  
 
   // --- Pump tokens ---
   try {

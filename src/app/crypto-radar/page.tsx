@@ -228,7 +228,11 @@ export default function CryptoRadarPage() {
 
   // ---- Forge/Moltbook cron loop: triggers Forge Extraction & background sweep ----
   const triggerCron = useCallback(async () => {
-    try { await fetch('/api/moltbook-cron'); } catch { /* background, non-blocking */ }
+    try { 
+      await fetch('/api/cron'); // Trigger main heartbeat
+      // Silently try moltbook (may fail without secret, which is fine since it's a Vercel cron)
+      await fetch('/api/moltbook-cron'); 
+    } catch { /* background, non-blocking */ }
   }, []);
 
   // ---- Initial + polling ----
@@ -476,7 +480,7 @@ export default function CryptoRadarPage() {
            )}
 
            {/* Watchlist & Top Movers (Split Grid) */}
-           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+           <div className="grid-2">
               {/* Top Movers */}
               <div className="glass-card" style={{ padding: 0 }}>
                 <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -616,7 +620,7 @@ export default function CryptoRadarPage() {
         </div>
 
         {/* ================= COLUMN 3: ENGINE MODULES (Span 12) ================= */}
-        <div className="bento-col-12" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="bento-col-12 grid-2">
            
            {/* BTC Reality Engine */}
            {btcData && (
@@ -625,7 +629,7 @@ export default function CryptoRadarPage() {
                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-amber)', letterSpacing: '0.05em' }}>₿ THE BITCOIN ENGINE</span>
                  <span style={{ fontSize: 16, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#fff' }}>${btcData.price.toLocaleString()}</span>
                </div>
-               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, padding: 20 }}>
+               <div className="grid-4" style={{ padding: 20 }}>
                  <div>
                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>EMA 50 / 200</div>
                    <div style={{ fontSize: 14, fontFamily: 'var(--font-mono)', color: 'var(--accent-blue)', fontWeight: 600 }}>${btcData.ema50?.toLocaleString()}</div>

@@ -3,7 +3,8 @@ import { DualMasterConsciousness } from '../master/dualMaster';
 import { AlphaScout } from '../intelligence/alphaScout';
 import { SentinelGuard } from '../safety/sentinelGuard';
 import { executeMexcTrade } from '@/lib/v2/scouts/executionMexc';
-import { Signal } from '../../types/radar';
+import { Signal, DecisionSnapshot } from '../../types/radar';
+import { addDecision, addSyndicateAudit } from '@/lib/store/db';
 
 export class ManagerVizionar {
   private static instance: ManagerVizionar;
@@ -35,9 +36,16 @@ export class ManagerVizionar {
     const context = await this.scouts.analyzeToken(payload.symbol);
     
     const enrichPayload = { ...payload, alphaContext: context };
-    // The DNA context (gladiator memory) would be passed here ideally. For now we pass empty object until DNA Bank is ready.
-    const dnaContext = {}; 
-    const consensus = await this.syndicate.getConsensus(enrichPayload as Record<string, unknown>, dnaContext, gladiator.arena);
+    const dnaContext = {};
+    const consensus = await this.syndicate.getConsensus(enrichPayload as Record<string, unknown>, dnaContext);
+
+    // Save the audit so we can see the Masters debating in the dashboard
+    addSyndicateAudit({
+      timestamp: new Date().toISOString(),
+      symbol: payload.symbol,
+      gladiator: gladiator.name,
+      consensus: consensus
+    });
 
     // 3. The Shield Check (Sentinel Guard)
     const safetyCheck = await this.sentinel.check(payload, consensus);
@@ -67,6 +75,25 @@ export class ManagerVizionar {
     console.log(`[LIVE EXECUTION] Gladiator ${id} deployed real funds on ${payload.symbol}.`);
     console.log(`[MASTERS] Confidence: ${(consensus.weightedConfidence * 100).toFixed(2)}% Reasoning summarized in Combat Audit.`);
     
+    // Log in database
+    const snapshot: DecisionSnapshot = {
+      id: `dev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      signalId: payload.id,
+      symbol: payload.symbol,
+      signal: payload.signal,
+      direction: consensus.finalDirection,
+      action: consensus.finalDirection,
+      confidence: Math.round(consensus.weightedConfidence * 100),
+      price: payload.price,
+      timestamp: new Date().toISOString(),
+      source: `V2 Live Execution`,
+      ema50: 0, ema200: 0, ema800: 0, psychHigh: 0, psychLow: 0, dailyOpen: 0,
+      priceAfter5m: null, priceAfter15m: null, priceAfter1h: null, priceAfter4h: null,
+      outcome: 'PENDING',
+      pnlPercent: null,
+      evaluatedAt: null
+    };
+
     // Real Execution on MEXC
     try {
       const side = consensus.finalDirection === 'LONG' ? 'BUY' : 'SELL';
@@ -75,16 +102,40 @@ export class ManagerVizionar {
         console.log(`[EXECUTION SUCCESS] Trade placed on MEXC for ${payload.symbol} @ ${result.price}`);
       } else {
         console.error(`[EXECUTION FAILED] ${result.error}`);
+        snapshot.outcome = 'NEUTRAL'; // Treat execution fail as neutral skip
       }
     } catch (err) {
       console.error('[CRITICAL] Live Execution logic crashed:', err);
+      snapshot.outcome = 'NEUTRAL';
     }
+
+    addDecision(snapshot);
   }
 
   private async executeShadowMode(id: string, payload: Signal, consensus: DualConsensus) {
     console.log(`[PAPER TRADING] Gladiator ${id} is in shadow mode. Tracking virtual performance for ${payload.symbol}.`);
     console.log(`[PAPER TRADING CONSENSUS] ${consensus.finalDirection} with ${consensus.weightedConfidence}`);
+    
     // Logs fake execution for leaderboard updates
+    const snapshot: DecisionSnapshot = {
+      id: `dev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      signalId: payload.id,
+      symbol: payload.symbol,
+      signal: payload.signal,
+      direction: consensus.finalDirection,
+      action: consensus.finalDirection,
+      confidence: Math.round(consensus.weightedConfidence * 100),
+      price: payload.price,
+      timestamp: new Date().toISOString(),
+      source: `V2 Shadow (${id})`,
+      ema50: 0, ema200: 0, ema800: 0, psychHigh: 0, psychLow: 0, dailyOpen: 0,
+      priceAfter5m: null, priceAfter15m: null, priceAfter1h: null, priceAfter4h: null,
+      outcome: 'PENDING',
+      pnlPercent: null,
+      evaluatedAt: null
+    };
+    
+    addDecision(snapshot);
   }
 }
 

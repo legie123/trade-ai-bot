@@ -44,7 +44,7 @@ export interface AnalysisResult {
   psychLow: number;
   prevHigh: number;
   prevLow: number;
-  signals: { signal: string; reason: string; sourceId?: string }[];
+  signals: { signal: string; reason: string; sourceId?: string; weight?: number }[];
   timestamp: string;
 }
 
@@ -201,7 +201,7 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
   const dailyOpen = c4h[c4h.length - 1].o; // Macro open
   const dailyClose = price;
 
-  const signals: { signal: string; reason: string; sourceId?: string }[] = [];
+  const signals: { signal: string; reason: string; sourceId?: string; weight?: number }[] = [];
 
   // ── MTF Confluence Logic ──
   const isBullish15m = price > ema50_15m && ema50_15m > ema200_15m;
@@ -225,7 +225,7 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
   // ── Swing Failure Pattern (76% win rate backtested) ──
   const sfp1h = detectSFP(c1h);
   if (sfp1h.detected && sfp1h.strength >= 0.3) {
-    signals.push({ signal: sfp1h.signal, reason: sfp1h.reason });
+    signals.push({ signal: sfp1h.signal, reason: sfp1h.reason, weight: 1.5 }); // High weight for SFP
   }
 
   // ── 9/21 EMA Scalping Cross (proven 15m BTC entry) ──
@@ -238,21 +238,21 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
 
     // Golden cross on 15m + aligned with 1h and 4h trend
     if (prevEma9 <= prevEma21 && ema9 > ema21 && isBullish1h && isBullish4h) {
-      signals.push({ signal: 'BUY', reason: `⚡ 9/21 EMA Golden Cross (15m) — scalp BUY aligned with 1h/4h trend` });
+      signals.push({ signal: 'BUY', reason: `⚡ 9/21 EMA Golden Cross (15m) — scalp BUY aligned with 1h/4h trend`, weight: 0.8 }); // Lower weight for simple EMA
     }
     // Death cross on 15m + aligned with 1h and 4h trend
     else if (prevEma9 >= prevEma21 && ema9 < ema21 && isBearish1h && isBearish4h) {
-      signals.push({ signal: 'SELL', reason: `⚡ 9/21 EMA Death Cross (15m) — scalp SELL aligned with 1h/4h trend` });
+      signals.push({ signal: 'SELL', reason: `⚡ 9/21 EMA Death Cross (15m) — scalp SELL aligned with 1h/4h trend`, weight: 0.8 });
     }
   }
 
   // Liquidity Grabs on 1H
   if (last.l < dailyOpen && price > dailyOpen && price > last.o) {
-    signals.push({ signal: 'BUY', reason: 'Liquidity grab at Daily Open (1H sweep & reclaim)' });
+    signals.push({ signal: 'BUY', reason: 'Liquidity grab at Daily Open (1H sweep & reclaim)', weight: 1.5 }); // High weight
   }
   
   if (last.l <= psychLow && price > psychLow && price > last.o) {
-    signals.push({ signal: 'BUY', reason: `Bounce off Psych Low ($${psychLow.toLocaleString()})` });
+    signals.push({ signal: 'BUY', reason: `Bounce off Psych Low ($${psychLow.toLocaleString()})`, weight: 1.5 }); // High weight
   }
 
   // ── Bollinger Bands Signals ──
@@ -266,13 +266,13 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
   // ── Market Structure Break (5-bar pivot detection on 1H) ──
   const msb = detectMarketStructure(c1h);
   if (msb.breakOfStructure && msb.signal !== 'NEUTRAL') {
-    signals.push({ signal: msb.signal, reason: msb.reason });
+    signals.push({ signal: msb.signal, reason: msb.reason, weight: 1.2 });
   }
 
   // ── Rejection Wick Patterns (on 1H candles) ──
   const wick = analyzeWicks(c1h);
   if (wick.signal !== 'NEUTRAL' && wick.strength >= 0.5) {
-    signals.push({ signal: wick.signal, reason: wick.reason });
+    signals.push({ signal: wick.signal, reason: wick.reason, weight: 1.3 });
   }
 
   // ── Volume Spike Detection (3x avg on 15m = whale entry) ──
@@ -287,9 +287,9 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
       const lastCandle = c15m[c15m.length - 1];
       const isBullishCandle = lastCandle.c > lastCandle.o;
       if (isBullishCandle && isBullish15m) {
-        signals.push({ signal: 'BUY', reason: `🐋 Volume Spike ${(lastVol / avgVol).toFixed(1)}x + bullish candle — whale entry` });
+        signals.push({ signal: 'BUY', reason: `🐋 Volume Spike ${(lastVol / avgVol).toFixed(1)}x + bullish candle — whale entry`, weight: 1.4 });
       } else if (!isBullishCandle && isBearish15m) {
-        signals.push({ signal: 'SELL', reason: `🐋 Volume Spike ${(lastVol / avgVol).toFixed(1)}x + bearish candle — whale exit` });
+        signals.push({ signal: 'SELL', reason: `🐋 Volume Spike ${(lastVol / avgVol).toFixed(1)}x + bearish candle — whale exit`, weight: 1.4 });
       }
     }
   }
@@ -300,9 +300,9 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
     const roc10 = ((closes15m[closes15m.length - 1] - closes15m[closes15m.length - 11]) / closes15m[closes15m.length - 11]) * 100;
     // Accelerating momentum: ROC5 > ROC10 and both positive = strong trend
     if (roc5 > 0.5 && roc10 > 0 && roc5 > roc10 && isBullish1h) {
-      signals.push({ signal: 'BUY', reason: `🚀 Momentum accelerating: ROC5 ${roc5.toFixed(2)}% > ROC10 ${roc10.toFixed(2)}%` });
+      signals.push({ signal: 'BUY', reason: `🚀 Momentum accelerating: ROC5 ${roc5.toFixed(2)}% > ROC10 ${roc10.toFixed(2)}%`, weight: 1.1 });
     } else if (roc5 < -0.5 && roc10 < 0 && roc5 < roc10 && isBearish1h) {
-      signals.push({ signal: 'SELL', reason: `📉 Momentum accelerating down: ROC5 ${roc5.toFixed(2)}% < ROC10 ${roc10.toFixed(2)}%` });
+      signals.push({ signal: 'SELL', reason: `📉 Momentum accelerating down: ROC5 ${roc5.toFixed(2)}% < ROC10 ${roc10.toFixed(2)}%`, weight: 1.1 });
     }
   }
 
@@ -366,7 +366,7 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
   }
 
   // ── VWAP + RSI Double Gate (Institutional Filter) ──
-  const confirmedSignals: { signal: string; reason: string; sourceId?: string }[] = [];
+  const confirmedSignals: { signal: string; reason: string; sourceId?: string; weight?: number }[] = [];
   for (const sig of trendFiltered) {
     if (sig.signal === 'NEUTRAL') {
       confirmedSignals.push(sig);
@@ -399,6 +399,7 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
     confirmedSignals.push({
       signal: sig.signal,
       reason: `${sig.reason} | VWAP ✅ Vol ${vwap.volumeRatio}x | RSI ✅ ${rsi.rsi} ${rsi.zone}`,
+      weight: sig.weight, // Propagate the weight!
     });
   }
 
@@ -491,7 +492,12 @@ export async function generateBTCSignals(): Promise<AnalysisResult> {
     signalStore.addSignal(routed);
 
     // Apply session timing filter to confidence
-    const baseConfidence = (routed as unknown as { confidence: number }).confidence || 0;
+    let baseConfidence = (routed as unknown as { confidence: number }).confidence || 50;
+    if (sig.weight) {
+      baseConfidence = Math.min(baseConfidence * sig.weight, 100);
+      log.debug(`[Weight] ${sig.signal} confidence boosted to ${baseConfidence.toFixed(1)}% due to weight ${sig.weight}`);
+    }
+
     const { adjustedConfidence, sessionInfo } = applySessionFilter(
       baseConfidence, sig.signal as 'BUY' | 'SELL' | 'LONG' | 'SHORT'
     );

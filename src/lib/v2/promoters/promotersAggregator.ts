@@ -1,6 +1,7 @@
 import { PromoterData } from '../../types/gladiator';
 import { AlphaScout } from '../intelligence/alphaScout';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+import { saveGladiatorsToDb } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PromoterRecruiter');
@@ -59,6 +60,7 @@ export class PromotersAggregator {
         g.status = 'ACTIVE';
         log.info(`[Promoters] Recruited: ${g.name} to the Arena.`);
       });
+      saveGladiatorsToDb(gladiatorStore.getGladiators());
     } else {
       log.info(`[Promoters] Arena crop is healthy. No new recruitment needed today.`);
     }
