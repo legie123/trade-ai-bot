@@ -63,4 +63,26 @@ export class PromotersAggregator {
       log.info(`[Promoters] Arena crop is healthy. No new recruitment needed today.`);
     }
   }
+
+  /**
+   * Generates a broadcast message for Moltbook tracking the Top 3 Gladiators.
+   */
+  public async broadcastArenaStatus(): Promise<string> {
+    const gladiators = gladiatorStore.getLeaderboard().slice(0, 3);
+    
+    let message = `🏆 [Trade AI Arena] Daily Broadcast 🏆\n\n`;
+    message += `Top Gladiators performing right now:\n`;
+    
+    gladiators.forEach((g, idx) => {
+      const mode = g.isLive ? '🔴 LIVE' : '👻 SHADOW';
+      message += `${idx + 1}. ${g.name} (${mode})\n`;
+      message += `   WR: ${g.stats.winRate.toFixed(1)}% | PF: ${g.stats.profitFactor.toFixed(2)}\n`;
+      const rankReason = (g as unknown as Record<string, unknown>).rankReason;
+      if (rankReason) message += `   💡 ${rankReason}\n\n`;
+    });
+
+    log.info(`[Promoters] Broadcasting to Moltbook:\n${message}`);
+    // Future: Integrate molbook / openclaw API endpoint here
+    return message;
+  }
 }

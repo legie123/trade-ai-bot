@@ -20,7 +20,7 @@ import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState } from '@/lib/core/killSwitch';
 import { getWatchdogState } from '@/lib/core/watchdog';
 import { BotStats } from '@/lib/types/radar';
-
+import { PromotersAggregator } from '@/lib/v2/promoters/promotersAggregator';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
@@ -172,6 +172,11 @@ export async function POST(request: Request) {
           disengageKillSwitch();
         }
         return NextResponse.json({ status: 'ok', killSwitch: getKillSwitchState() });
+      }
+      case 'trigger-promoter': {
+        const promoter = PromotersAggregator.getInstance();
+        const message = await promoter.broadcastArenaStatus();
+        return NextResponse.json({ status: 'ok', message });
       }
       default:
         return NextResponse.json(
