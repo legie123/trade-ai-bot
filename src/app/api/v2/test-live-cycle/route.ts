@@ -12,12 +12,9 @@ export async function POST(req: NextRequest) {
     const { symbol = 'BTC', signal = 'BUY', action } = await req.json();
     
     if (action === 'arena_simulate') {
-      const { ArenaSimulator } = await import('@/lib/v2/arena/simulator');
-      const arena = ArenaSimulator.getInstance();
-      await arena.unleashBattles(50);
       return NextResponse.json({
-         status: 'arena_simulated',
-         battles: 50,
+         status: 'deprecated',
+         message: 'unleashBattles removed — phantom trades now use real MEXC prices via evaluatePhantomTrades()',
          timestamp: new Date().toISOString()
       });
     }

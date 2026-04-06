@@ -77,8 +77,10 @@ REASONING: [Brief breakdown]`;
     const text = await callOpenAI(fullPrompt, timeout);
     return parseResponse(identity, text);
   } catch (err) {
-    console.warn(`[DualMaster] ${identity} failed:`, (err as Error).message);
-    return { identity, direction: 'FLAT', confidence: 0, reasoning: `${identity} API Failure` };
+    const errorMsg = (err as Error).message;
+    console.error(`🚨 [DualMaster] ${identity} CRITICAL FAILURE:`, errorMsg);
+    // Throw error so ManagerVizionar knows the system is BLIND
+    throw new Error(`Master ${identity} is offline: ${errorMsg}`);
   }
 }
 

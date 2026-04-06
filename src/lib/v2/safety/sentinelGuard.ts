@@ -71,7 +71,12 @@ export class SentinelGuard {
       return true;
     }
 
-    // Cooldown expired
+    // Cooldown expired - AUTO RESUME
+    log.info('🛡️ [Sentinel] Cooldown expired. Restoring system to PAPER mode.');
+    saveBotConfig({ 
+      mode: 'PAPER', 
+      haltedUntil: null 
+    });
     return false;
   }
 

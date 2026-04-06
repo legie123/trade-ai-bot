@@ -3,8 +3,30 @@ import { DNAExtractor } from '../superai/dnaExtractor';
 import { createLogger } from '@/lib/core/logger';
 import { RoutedSignal } from '@/lib/router/signalRouter';
 import { addPhantomTrade, getPhantomTrades, removePhantomTrade, PhantomTrade } from '@/lib/store/db';
+import { getMexcPrice } from '@/lib/exchange/mexcClient';
 
 const log = createLogger('ArenaSimulator');
+
+// In-memory price cache to avoid hammering MEXC per phantom trade
+const priceCache: Map<string, { price: number; expiresAt: number }> = new Map();
+const PRICE_CACHE_TTL = 10_000; // 10s — fast enough for phantom evaluations
+
+async function getCachedPrice(symbol: string): Promise<number> {
+  const cached = priceCache.get(symbol);
+  if (cached && Date.now() < cached.expiresAt) return cached.price;
+
+  const mexcSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
+  try {
+    const price = await getMexcPrice(mexcSymbol);
+    if (price > 0) {
+      priceCache.set(symbol, { price, expiresAt: Date.now() + PRICE_CACHE_TTL });
+      return price;
+    }
+  } catch {
+    log.warn(`[Arena] Failed to fetch price for ${symbol}`);
+  }
+  return 0;
+}
 
 export class ArenaSimulator {
   private static instance: ArenaSimulator;
@@ -22,61 +44,6 @@ export class ArenaSimulator {
   }
 
   /**
-   * Triggers a wave of simulation battles across all registered gladiators.
-   * In a real deployment, this might pull historical candles and run backtests.
-   * Here we simulate battles taking place across live market ticks.
-   */
-  public async unleashBattles(numberOfBattles = 50): Promise<void> {
-    log.info(`[Arena] Unleashing ${numberOfBattles} chaotic battles across the Colosseum...`);
-    const allGladiators = gladiatorStore.getLeaderboard(); // all active gladiators
-    
-    if (allGladiators.length === 0) {
-      log.warn('[Arena] No gladiators available for battle.');
-      return;
-    }
-
-    // Simulate battles
-    for (let i = 0; i < numberOfBattles; i++) {
-       // Pick a random gladiator and a random symbol to fight on
-       const gladiator = allGladiators[Math.floor(Math.random() * allGladiators.length)];
-       const mockupSymbols = ['BTCUSDT', 'SOLUSDT', 'ETHUSDT', 'XRPUSDT', 'MEMEUSDT'];
-       const symbol = mockupSymbols[Math.floor(Math.random() * mockupSymbols.length)];
-       
-       // Simulate chaotic outcome
-       const entryPrice = Math.random() * 50000 + 1000;
-       // 50-50 win chance, heavily influenced by their original specs later
-       const isWin = Math.random() > 0.45; // slight edge to simulating 55% win rate for testing
-       
-       const volatility = Math.random() * 5; 
-       const pnlPercent = isWin ? volatility : -volatility;
-       const outcomePrice = entryPrice * (1 + (pnlPercent / 100));
-       
-       const decision = Math.random() > 0.5 ? 'LONG' : 'SHORT';
-
-       await this.dnaBank.logBattle({
-         id: `btl_${Date.now()}_${Math.floor(Math.random()*1000)}`,
-         gladiatorId: gladiator.id,
-         symbol,
-         decision,
-         entryPrice,
-         outcomePrice,
-         pnlPercent,
-         isWin,
-         timestamp: Date.now(),
-         marketContext: { volatility, dummySentiment: 'NEUTRAL' }
-       });
-       
-       // Update pseudo-stats on the gladiator (in-memory)
-       gladiatorStore.updateGladiatorStats(gladiator.id, {
-          pnlPercent,
-          isWin
-       });
-    }
-
-    log.info(`[Arena] The dust settles. The Super AI has consumed ${numberOfBattles} new experiences.`);
-  }
-
-  /**
    * Called when a live signal hits the system. Distributes it to all gladiators
    * to enter Phantom Trades for real-time testing.
    */
@@ -84,12 +51,14 @@ export class ArenaSimulator {
     const allGladiators = gladiatorStore.getLeaderboard();
     if (!allGladiators.length) return;
 
-    // Determine pseudo-market price since we don't always have a strict numerical feed
-    // Ideally signal contains 'price' or we fetch it.
-    const currentPrice = routedSignal.price || parseFloat((routedSignal as unknown as { metadata?: { price?: string } })?.metadata?.price || '') || (Math.random() * 50000 + 1000);
+    // Only accept signals with a real price — refuse to track against random noise
+    const currentPrice = routedSignal.price;
+    if (!currentPrice || currentPrice <= 0) {
+      log.warn(`[Combat Engine] Skipping phantom distribution for ${routedSignal.symbol} — no valid price`);
+      return;
+    }
 
     allGladiators.forEach(g => {
-      // For massive combat, all gladiators take the trade to measure their metrics
       const trade: PhantomTrade = {
         id: `phantom_${Date.now()}_${g.id.substring(0, 5)}`,
         gladiatorId: g.id,
@@ -102,56 +71,67 @@ export class ArenaSimulator {
       addPhantomTrade(trade);
     });
     
-    log.info(`[Combat Engine] Deployed Phantom Trades for ${allGladiators.length} Gladiators on ${routedSignal.symbol}`);
+    log.info(`[Combat Engine] Deployed Phantom Trades for ${allGladiators.length} Gladiators on ${routedSignal.symbol} @ $${currentPrice}`);
   }
 
   /**
-   * Invoked continually by the cron/heartbeat to evaluate open shadow positions.
-   * Extracts winning DNA and updates Gladiator stats dynamically.
+   * Evaluates open phantom trades using REAL market data from MEXC.
+   * Replaces previous Math.random() outcome logic.
    */
   public async evaluatePhantomTrades(): Promise<void> {
     const activePhantoms = getPhantomTrades();
     if (!activePhantoms.length) return;
 
+    // Filter to eligible trades (minimum 60s hold — to let price actually move)
+    const now = Date.now();
+    const eligible = activePhantoms.filter(t => {
+      const elapsed = (now - new Date(t.timestamp).getTime()) / 1000;
+      return elapsed >= 60;
+    });
+
+    if (!eligible.length) return;
+
+    // Batch: get unique symbols and prefetch prices in parallel
+    const uniqueSymbols = [...new Set(eligible.map(t => t.symbol))];
+    await Promise.all(uniqueSymbols.map(sym => getCachedPrice(sym)));
+
     let totalClosed = 0;
 
-    for (const trade of activePhantoms) {
-      // Allow trade to breathe (simulate hold duration)
-      const elapsedSec = (Date.now() - new Date(trade.timestamp).getTime()) / 1000;
-      if (elapsedSec < 15) continue; 
+    for (const trade of eligible) {
+      const currentPrice = await getCachedPrice(trade.symbol);
+      if (currentPrice <= 0) continue; // Can't evaluate without a real price
 
-      // Resolve combat with slight noise/volatility
-      const isWin = Math.random() > 0.48;
-      const volatility = (Math.random() * 2) + 0.5;
-      const pnlPercent = isWin ? volatility : -volatility;
-      const outcomePrice = trade.entryPrice * (1 + (pnlPercent / 100));
+      // Calculate real PnL based on signal direction
+      const isLongSignal = trade.signal === 'BUY' || trade.signal === 'LONG';
+      const rawPnl = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+      const pnlPercent = isLongSignal ? rawPnl : -rawPnl;
+      const isWin = pnlPercent > 0;
 
       // 1. Clean up phantom position
       removePhantomTrade(trade.id);
       
-      // 2. DNA Extraction (The Forge) if victorious
-      if (isWin) {
-         await this.dnaBank.logBattle({
-           id: trade.id,
-           gladiatorId: trade.gladiatorId,
-           symbol: trade.symbol,
-           decision: (trade.signal === 'BUY' ? 'LONG' : trade.signal === 'SELL' ? 'SHORT' : 'FLAT'),
-           entryPrice: trade.entryPrice,
-           outcomePrice,
-           pnlPercent,
-           isWin: true,
-           timestamp: Date.now(),
-           marketContext: {
-             source: 'Phantom Engine Live Entry',
-             volatility,
-             holdTimeMs: elapsedSec * 1000
-           }
-         });
-      }
+      // 2. DNA Extraction (The Forge) — log regardless of win/loss for learning
+      await this.dnaBank.logBattle({
+        id: trade.id,
+        gladiatorId: trade.gladiatorId,
+        symbol: trade.symbol,
+        decision: isLongSignal ? 'LONG' : 'SHORT',
+        entryPrice: trade.entryPrice,
+        outcomePrice: currentPrice,
+        pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+        isWin,
+        timestamp: Date.now(),
+        marketContext: {
+          source: 'Phantom Engine — REAL MEXC Price',
+          holdTimeSec: (now - new Date(trade.timestamp).getTime()) / 1000,
+          entryPrice: trade.entryPrice,
+          exitPrice: currentPrice,
+        }
+      });
 
-      // 3. Update Gladiator's lifetime record
+      // 3. Update Gladiator's lifetime record with real data
       gladiatorStore.updateGladiatorStats(trade.gladiatorId, {
-         pnlPercent,
+         pnlPercent: parseFloat(pnlPercent.toFixed(4)),
          isWin
       });
 
@@ -159,7 +139,8 @@ export class ArenaSimulator {
     }
 
     if (totalClosed > 0) {
-      log.info(`[Combat Engine] Closed ${totalClosed} shadow battles. Winning vectors sent to The Forge.`);
+      log.info(`[Combat Engine] Evaluated ${totalClosed} phantom trades using LIVE MEXC prices. ${eligible.length - totalClosed} skipped (no price).`);
     }
   }
 }
+

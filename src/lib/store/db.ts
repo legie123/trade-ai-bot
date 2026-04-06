@@ -26,8 +26,6 @@ const supabase = createClient(
   supabaseKey || 'placeholder'
 );
 
-
-
 export interface PhantomTrade {
   id: string;
   gladiatorId: string;
@@ -132,14 +130,6 @@ export async function initDB() {
           const sorted = deduped.sort((a: DecisionSnapshot, b: DecisionSnapshot) =>
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           cache.decisions = sorted.slice(0, 100);
-          if (raw.length !== cache.decisions.length) {
-            log.warn(`Cleaned decisions: ${raw.length} → ${cache.decisions.length} (dedup+cap100)`);
-            // Sync clean set back to Supabase
-            supabase.from('json_store').upsert({ id: 'decisions', data: cache.decisions }).then(({ error: syncErr }) => {
-              if (syncErr) log.error('Failed to sync clean decisions', { error: syncErr.message });
-              else log.info(`Clean decisions synced: ${cache.decisions.length} entries`);
-            });
-          }
         }
         if (row.id === 'performance') cache.performance = row.data || [];
         if (row.id === 'optimizer') cache.optimizer = row.data || cache.optimizer;
@@ -197,33 +187,34 @@ function decryptConditions(data: unknown): StrategyCondition[] {
   }
 }
 
-// ─── Debounced Sync (batches rapid writes per key) ───
-const syncTimers: Record<string, ReturnType<typeof setTimeout>> = {};
-const SYNC_DEBOUNCE_MS = 500; // Coalesce writes within 500ms window
+// ─── Atomic Sync Queue (Ensures sequential Cloud writes) ───
+let syncQueue = Promise.resolve();
 
 function syncToCloud(id: string, data: unknown) {
   if (!supabaseUrl || !dbInitialized) return;
 
-  // Clear previous pending sync for this key
-  if (syncTimers[id]) clearTimeout(syncTimers[id]);
+  syncQueue = syncQueue.then(async () => {
+    try {
+      let payload = data;
+      
+      // Obfuscate strict logic formulas for Premium Core Protection 
+      if (id === 'strategies' && Array.isArray(data)) {
+        payload = (data as TradingStrategy[]).map((s: TradingStrategy) => ({
+          ...s,
+          entryConditions: encryptConditions(s.entryConditions as StrategyCondition[]),
+          exitConditions: encryptConditions(s.exitConditions as StrategyCondition[])
+        }));
+      }
 
-  syncTimers[id] = setTimeout(() => {
-    let payload = data;
-    
-    // Obfuscate strict logic formulas for Premium Core Protection 
-    if (id === 'strategies' && Array.isArray(data)) {
-      payload = (data as TradingStrategy[]).map((s: TradingStrategy) => ({
-        ...s,
-        entryConditions: encryptConditions(s.entryConditions as StrategyCondition[]),
-        exitConditions: encryptConditions(s.exitConditions as StrategyCondition[])
-      }));
-    }
-
-    supabase.from('json_store').upsert({ id, data: payload }).then(({ error }) => {
+      const { error } = await supabase.from('json_store').upsert({ id, data: payload });
       if (error) log.error(`Supabase sync failed for ${id}`, { error: error.message });
-    });
-    delete syncTimers[id];
-  }, SYNC_DEBOUNCE_MS);
+      
+      // Artificial delay to prevent Supabase rate limits (100ms)
+      await new Promise(r => setTimeout(r, 100));
+    } catch (err) {
+      log.error(`Critical error in syncQueue for ${id}`, { error: String(err) });
+    }
+  });
 }
 
 // ─── Decision Snapshots ────────────────────────────

@@ -38,8 +38,14 @@ export class ManagerVizionar {
     
     const enrichPayload = { ...payload, alphaContext: context };
     const dnaContext = {};
-    // DualMaster.getConsensus() already writes the syndicate audit
-    const consensus = await this.syndicate.getConsensus(enrichPayload as Record<string, unknown>, dnaContext);
+    let consensus: DualConsensus;
+    try {
+      consensus = await this.syndicate.getConsensus(enrichPayload as Record<string, unknown>, dnaContext);
+    } catch (err) {
+      console.error('🚨 [MANAGER VIZIONAR] Masters are OFFLINE/FAILING. Triggering emergency halt.');
+      await this.sentinel.triggerKillSwitch(`MASTER_DISCONNECTED: ${(err as Error).message}`);
+      return;
+    }
 
     // 3. The Shield Check (Sentinel Guard)
     const safetyCheck = await this.sentinel.check(payload, consensus);
