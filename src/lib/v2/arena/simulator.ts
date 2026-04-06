@@ -82,12 +82,25 @@ export class ArenaSimulator {
     const activePhantoms = getPhantomTrades();
     if (!activePhantoms.length) return;
 
-    // Filter to eligible trades (minimum 60s hold — to let price actually move)
     const now = Date.now();
-    const eligible = activePhantoms.filter(t => {
-      const elapsed = (now - new Date(t.timestamp).getTime()) / 1000;
-      return elapsed >= 60;
-    });
+    const MIN_HOLD_SEC = 60;     // Minimum 60s for price to move
+    const MAX_HOLD_SEC = 900;    // Maximum 15min — force-close stale phantoms
+
+    // Separate: eligible (60s-15min) + expired (>15min)
+    const eligible: PhantomTrade[] = [];
+    const expired: PhantomTrade[] = [];
+
+    for (const t of activePhantoms) {
+      const elapsedSec = (now - new Date(t.timestamp).getTime()) / 1000;
+      if (elapsedSec >= MAX_HOLD_SEC) expired.push(t);
+      else if (elapsedSec >= MIN_HOLD_SEC) eligible.push(t);
+    }
+
+    // Force-close expired phantoms as NEUTRAL (prevents infinite accumulation)
+    for (const trade of expired) {
+      removePhantomTrade(trade.id);
+      log.warn(`[Combat Engine] Force-closed stale phantom ${trade.id} (${trade.symbol}) — held > ${MAX_HOLD_SEC}s`);
+    }
 
     if (!eligible.length) return;
 

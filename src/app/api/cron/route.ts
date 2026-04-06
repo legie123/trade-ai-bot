@@ -75,11 +75,16 @@ export async function GET() {
       
       const pnlDiff = (currentPrice - dec.price) / dec.price;
       const pnlPercent = (dec.action === 'LONG' || dec.action === 'BUY') ? pnlDiff * 100 : -pnlDiff * 100;
-      const outcome = pnlPercent > 0.05 ? 'WIN' : (pnlPercent < -0.05 ? 'LOSS' : 'NEUTRAL');
+      
+      // BUG FIX: Previous threshold was 0.05% — any micro-movement was a WIN.
+      // In crypto, 0.05% moves in seconds → inflated win rates to ~80%+.
+      // 0.3% is the minimum meaningful edge after fees (~0.1% MEXC taker).
+      const WIN_THRESHOLD = 0.3;
+      const outcome = pnlPercent > WIN_THRESHOLD ? 'WIN' : (pnlPercent < -WIN_THRESHOLD ? 'LOSS' : 'NEUTRAL');
 
       updateDecision(dec.id, {
          priceAfter15m: currentPrice,
-         pnlPercent: parseFloat(pnlPercent.toFixed(2)),
+         pnlPercent: parseFloat(pnlPercent.toFixed(4)),
          outcome,
          evaluatedAt: new Date().toISOString()
       });

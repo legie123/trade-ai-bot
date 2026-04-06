@@ -163,7 +163,22 @@ export class DualMasterConsciousness {
   private timeoutMs = 12000;
 
   public async getConsensus(marketData: Record<string, unknown>, gladiatorDnaContext: Record<string, unknown>): Promise<DualConsensus> {
-    const prompt = `Market State: ${JSON.stringify(marketData)}. Gladiator DNA/Experience Context: ${JSON.stringify(gladiatorDnaContext)}`;
+    // Build a context-rich prompt that the LLM can actually reason about
+    const dnaDigest = gladiatorDnaContext.digest || 'No historical data available';
+    const confMod = Number(gladiatorDnaContext.confidenceModifier) || 1.0;
+    
+    const prompt = [
+      `Market State: ${JSON.stringify(marketData)}.`,
+      ``,
+      `GLADIATOR INTELLIGENCE (Historical Performance):`,
+      `${dnaDigest}`,
+      `Confidence Modifier from RL: ${confMod}x`,
+      confMod < 0.9 ? `⚠️ WARNING: This gladiator is underperforming. Be MORE conservative.` : '',
+      confMod > 1.1 ? `✅ This gladiator is on a hot streak. Confidence is justified.` : '',
+      ``,
+      `IMPORTANT: Factor the gladiator's historical performance into your confidence score.`,
+      `If the gladiator historically loses on this asset, lower your confidence.`,
+    ].filter(Boolean).join('\n');
     
     // Both masters analyze simultaneously (parallel)
     const [architectOpinion, oracleOpinion] = await Promise.all([

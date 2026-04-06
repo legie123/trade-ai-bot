@@ -2,6 +2,7 @@ import { getLivePositions, updateLivePosition, LivePosition } from '@/lib/store/
 import { getMexcPrice, placeMexcMarketOrder } from '@/lib/exchange/mexcClient';
 import { createLogger } from '@/lib/core/logger';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
+import { DNAExtractor } from '../superai/dnaExtractor';
 
 const log = createLogger('PositionManager');
 
@@ -86,6 +87,21 @@ export class PositionManager {
             lowestPriceObserved
           });
 
+          // DNA LEARNING: Log partial TP as a WIN to the RL loop
+          const pnl = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100 * (isLong ? 1 : -1);
+          await DNAExtractor.getInstance().logBattle({
+            id: `live_tp_${pos.id}`,
+            gladiatorId: pos.id.replace('pos_', ''),
+            symbol: pos.symbol,
+            decision: isLong ? 'LONG' : 'SHORT',
+            entryPrice: pos.entryPrice,
+            outcomePrice: currentPrice,
+            pnlPercent: parseFloat(pnl.toFixed(4)),
+            isWin: pnl > 0,
+            timestamp: Date.now(),
+            marketContext: { exitType: 'PARTIAL_TP', holdTimeSec: (Date.now() - new Date(pos.openedAt).getTime()) / 1000 }
+          });
+
           // 🔗 [MOLTBOOK BROADCAST] Partial TP
           this.broadcastExitToMoltbook('PARTIAL_TP', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 30);
         } catch (err: unknown) {
@@ -115,6 +131,21 @@ export class PositionManager {
                highestPriceObserved,
                lowestPriceObserved
             });
+
+            // DNA LEARNING: Log trailing exit
+            const trailPnl = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100 * (isLong ? 1 : -1);
+            await DNAExtractor.getInstance().logBattle({
+              id: `live_trail_${pos.id}`,
+              gladiatorId: pos.id.replace('pos_', ''),
+              symbol: pos.symbol,
+              decision: isLong ? 'LONG' : 'SHORT',
+              entryPrice: pos.entryPrice,
+              outcomePrice: currentPrice,
+              pnlPercent: parseFloat(trailPnl.toFixed(4)),
+              isWin: trailPnl > 0,
+              timestamp: Date.now(),
+              marketContext: { exitType: 'TRAILING_EXIT', holdTimeSec: (Date.now() - new Date(pos.openedAt).getTime()) / 1000 }
+            });
             log.info(`[PositionManager] Trailing exit complete for ${pos.symbol}. Home run secured.`);
 
             // 🔗 [MOLTBOOK BROADCAST] Full Trailing Exit
@@ -143,6 +174,21 @@ export class PositionManager {
                status: 'CLOSED',
                highestPriceObserved,
                lowestPriceObserved
+            });
+
+            // DNA LEARNING: Log stop loss as LOSS — critical for RL
+            const slPnl = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100 * (isLong ? 1 : -1);
+            await DNAExtractor.getInstance().logBattle({
+              id: `live_sl_${pos.id}`,
+              gladiatorId: pos.id.replace('pos_', ''),
+              symbol: pos.symbol,
+              decision: isLong ? 'LONG' : 'SHORT',
+              entryPrice: pos.entryPrice,
+              outcomePrice: currentPrice,
+              pnlPercent: parseFloat(slPnl.toFixed(4)),
+              isWin: false,
+              timestamp: Date.now(),
+              marketContext: { exitType: 'STOP_LOSS', holdTimeSec: (Date.now() - new Date(pos.openedAt).getTime()) / 1000 }
             });
 
             // 🔗 [MOLTBOOK BROADCAST] Initial SL

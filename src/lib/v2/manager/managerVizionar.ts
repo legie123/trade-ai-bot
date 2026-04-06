@@ -69,7 +69,7 @@ export class ManagerVizionar {
     }
 
     // 4. Apply RL Confidence Modifier (learned from past performance)
-    consensus = this.applyRLModifier(consensus, intelligence);
+    consensus = this.applyRLModifier(consensus, intelligence, payload.symbol);
 
     // 5. The Shield Check (Sentinel Guard)
     const safetyCheck = await this.sentinel.check(payload, consensus);
@@ -92,20 +92,43 @@ export class ManagerVizionar {
   /**
    * Reinforcement Learning modifier:
    * Adjusts the Dual Master's confidence based on historical gladiator performance.
-   * Hot hand → boost. Cold streak → dampen. Worst symbol → extra caution.
+   * Order: 1) Streak circuit-breaker 2) Symbol-specific edge check 3) Apply modifier
    */
-  private applyRLModifier(consensus: DualConsensus, intelligence: IntelligenceDigest): DualConsensus {
-    const mod = intelligence.confidenceModifier;
-    const adjusted = consensus.weightedConfidence * mod;
-
-    // If gladiator is on a 4+ loss streak, require higher base confidence
-    if (intelligence.currentStreak <= -4 && consensus.weightedConfidence < 0.8) {
+  private applyRLModifier(consensus: DualConsensus, intelligence: IntelligenceDigest, symbol?: string): DualConsensus {
+    // 1. CIRCUIT BREAKER: 4+ loss streak AND base confidence < 85% → refuse trade
+    if (intelligence.currentStreak <= -4 && consensus.weightedConfidence < 0.85) {
+      console.warn(`[RL] CIRCUIT BREAKER: ${intelligence.gladiatorId} on ${intelligence.currentStreak} loss streak. Forcing FLAT.`);
       return { ...consensus, weightedConfidence: 0, finalDirection: 'FLAT' };
     }
 
+    // 2. SYMBOL EDGE CHECK: if gladiator has negative expectancy on THIS symbol, dampen extra
+    let symbolPenalty = 1.0;
+    if (symbol) {
+      const cleanSymbol = symbol.replace('USDT', '');
+      const edge = intelligence.symbolEdges.find(e => e.symbol === cleanSymbol || e.symbol === symbol);
+      if (edge && edge.totalTrades >= 5) {
+        if (edge.expectancy < -0.5) {
+          symbolPenalty = 0.6; // Heavy dampen — gladiator historically loses on this asset
+          console.warn(`[RL] Symbol penalty for ${cleanSymbol}: expectancy ${edge.expectancy.toFixed(2)}% → penalty 0.6x`);
+        } else if (edge.expectancy < 0) {
+          symbolPenalty = 0.85;
+        } else if (edge.expectancy > 0.5) {
+          symbolPenalty = 1.1; // Slight boost — gladiator historically profits on this asset
+        }
+      }
+    }
+
+    // 3. Apply modifiers
+    const mod = intelligence.confidenceModifier;
+    const adjusted = consensus.weightedConfidence * mod * symbolPenalty;
+    const final = Math.min(Math.max(adjusted, 0), 1);
+
+    console.log(`[RL] ${intelligence.gladiatorId}: confidence ${(consensus.weightedConfidence * 100).toFixed(1)}% → ${(final * 100).toFixed(1)}% (mod: ${mod}, symbolPenalty: ${symbolPenalty})`);
+
     return {
       ...consensus,
-      weightedConfidence: Math.min(adjusted, 1),
+      weightedConfidence: final,
+      finalDirection: final < 0.5 ? 'FLAT' : consensus.finalDirection, // Auto-FLAT if RL drops below 50%
     };
   }
 
