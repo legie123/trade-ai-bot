@@ -4,7 +4,7 @@ import { AlphaScout } from '../intelligence/alphaScout';
 import { SentinelGuard } from '../safety/sentinelGuard';
 import { executeMexcTrade } from '@/lib/v2/scouts/executionMexc';
 import { Signal, DecisionSnapshot } from '../../types/radar';
-import { addDecision, addSyndicateAudit } from '@/lib/store/db';
+import { addDecision, addLivePosition } from '@/lib/store/db';
 
 export class ManagerVizionar {
   private static instance: ManagerVizionar;
@@ -37,15 +37,8 @@ export class ManagerVizionar {
     
     const enrichPayload = { ...payload, alphaContext: context };
     const dnaContext = {};
+    // DualMaster.getConsensus() already writes the syndicate audit
     const consensus = await this.syndicate.getConsensus(enrichPayload as Record<string, unknown>, dnaContext);
-
-    // Save the audit so we can see the Masters debating in the dashboard
-    addSyndicateAudit({
-      timestamp: new Date().toISOString(),
-      symbol: payload.symbol,
-      gladiator: gladiator.name,
-      consensus: consensus
-    });
 
     // 3. The Shield Check (Sentinel Guard)
     const safetyCheck = await this.sentinel.check(payload, consensus);
@@ -100,6 +93,21 @@ export class ManagerVizionar {
       const result = await executeMexcTrade(payload.symbol, side);
       if (result.executed) {
         console.log(`[EXECUTION SUCCESS] Trade placed on MEXC for ${payload.symbol} @ ${result.price}`);
+        
+        // Register LivePosition for Asymmetric Trailing TP/SL Engine
+        addLivePosition({
+          id: `pos_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          symbol: result.symbol,
+          side: consensus.finalDirection === 'LONG' ? 'LONG' : 'SHORT',
+          entryPrice: result.price,
+          quantity: result.quantity,
+          partialTPHit: false,
+          highestPriceObserved: result.price,
+          lowestPriceObserved: result.price,
+          status: 'OPEN',
+          openedAt: new Date().toISOString(),
+        });
+        console.log(`[POSITION MANAGER] LivePosition registered for ${result.symbol} — Trailing Engine armed.`);
       } else {
         console.error(`[EXECUTION FAILED] ${result.error}`);
         snapshot.outcome = 'NEUTRAL'; // Treat execution fail as neutral skip

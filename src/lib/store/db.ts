@@ -13,6 +13,7 @@ import {
 } from '@/lib/types/radar';
 import { TradingStrategy, StrategyCondition } from '@/lib/types/strategy';
 import { createLogger } from '@/lib/core/logger';
+import type { Gladiator } from '@/lib/types/gladiator';
 
 const log = createLogger('Database-Supabase');
 
@@ -36,6 +37,19 @@ export interface PhantomTrade {
   timestamp: string;
 }
 
+export interface LivePosition {
+  id: string;
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  quantity: number;
+  partialTPHit: boolean;
+  highestPriceObserved: number;
+  lowestPriceObserved: number;
+  status: 'OPEN' | 'CLOSED';
+  openedAt: string;
+}
+
 // ─── Singleton Memory Cache ─────────────────────
 interface DbStore {
   decisions: DecisionSnapshot[];
@@ -43,10 +57,11 @@ interface DbStore {
   optimizer: OptimizationState;
   config: BotConfig;
   strategies: TradingStrategy[]; // legacy
-  gladiators: any[]; // V2 Gladiators
+  gladiators: Gladiator[]; // V2 Gladiators
   syndicateAudits: Record<string, unknown>[]; // Stores Master arguments
   gladiatorDna: Record<string, unknown>[]; // Stores battle DNA for Omega Super AI
   phantomTrades: PhantomTrade[]; // Shadow trades for Gladiator Combat Engine
+  livePositions: LivePosition[]; // Real live trades for Trailing Stop Engine
 }
 
 const cache: DbStore = {
@@ -73,6 +88,7 @@ const cache: DbStore = {
   syndicateAudits: [],
   gladiatorDna: [],
   phantomTrades: [],
+  livePositions: [],
 };
 
 let dbInitialized = false;
@@ -140,6 +156,7 @@ export async function initDB() {
         if (row.id === 'gladiators') cache.gladiators = row.data || [];
         if (row.id === 'syndicate_audit') cache.syndicateAudits = row.data || [];
         if (row.id === 'gladiator_dna') cache.gladiatorDna = row.data || [];
+        if (row.id === 'live_positions') cache.livePositions = row.data || [];
       }
       log.info('Supabase database initialized from cloud state');
     }
@@ -174,29 +191,38 @@ function decryptConditions(data: unknown): StrategyCondition[] {
     const xor = Buffer.from(data as string, 'base64').toString('utf-8');
     const jsonStr = xorCipher(xor, OBFUSCATION_KEY);
     return JSON.parse(jsonStr) as StrategyCondition[];
-  } catch (_e) { // Ignore err
+  } catch { // Ignore err
     return [];
   }
 }
 
-// ─── Fire-and-Forget Sync ──────────────────────
+// ─── Debounced Sync (batches rapid writes per key) ───
+const syncTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+const SYNC_DEBOUNCE_MS = 500; // Coalesce writes within 500ms window
+
 function syncToCloud(id: string, data: unknown) {
   if (!supabaseUrl || !dbInitialized) return;
-  
-  let payload = data;
-  
-  // Obfuscate strict logic formulas for Premium Core Protection 
-  if (id === 'strategies' && Array.isArray(data)) {
-    payload = (data as TradingStrategy[]).map((s: TradingStrategy) => ({
-      ...s,
-      entryConditions: encryptConditions(s.entryConditions as StrategyCondition[]),
-      exitConditions: encryptConditions(s.exitConditions as StrategyCondition[])
-    }));
-  }
 
-  supabase.from('json_store').upsert({ id, data: payload }).then(({ error }) => {
-    if (error) log.error(`Supabase sync failed for ${id}`, { error: error.message });
-  });
+  // Clear previous pending sync for this key
+  if (syncTimers[id]) clearTimeout(syncTimers[id]);
+
+  syncTimers[id] = setTimeout(() => {
+    let payload = data;
+    
+    // Obfuscate strict logic formulas for Premium Core Protection 
+    if (id === 'strategies' && Array.isArray(data)) {
+      payload = (data as TradingStrategy[]).map((s: TradingStrategy) => ({
+        ...s,
+        entryConditions: encryptConditions(s.entryConditions as StrategyCondition[]),
+        exitConditions: encryptConditions(s.exitConditions as StrategyCondition[])
+      }));
+    }
+
+    supabase.from('json_store').upsert({ id, data: payload }).then(({ error }) => {
+      if (error) log.error(`Supabase sync failed for ${id}`, { error: error.message });
+    });
+    delete syncTimers[id];
+  }, SYNC_DEBOUNCE_MS);
 }
 
 // ─── Decision Snapshots ────────────────────────────
@@ -246,7 +272,7 @@ export function clearSystemHealthData(): void {
 }
 
 // ─── Syndicate Audit (Combat Logs) ────────────────
-export function addSyndicateAudit(audit: any): void {
+export function addSyndicateAudit(audit: Record<string, unknown>): void {
   cache.syndicateAudits.unshift({ ...audit, id: `audit-${Date.now()}` });
   if (cache.syndicateAudits.length > 500) cache.syndicateAudits.length = 500;
   syncToCloud('syndicate_audit', cache.syndicateAudits);
@@ -257,11 +283,11 @@ export function getSyndicateAudits(): Record<string, unknown>[] {
 }
 
 // ─── Gladiators (V2 Memory) ──────────────────────
-export function getGladiatorsFromDb(): any[] {
+export function getGladiatorsFromDb(): Gladiator[] {
   return cache.gladiators;
 }
 
-export function saveGladiatorsToDb(gladiators: any[]): void {
+export function saveGladiatorsToDb(gladiators: Gladiator[]): void {
   cache.gladiators = gladiators;
   syncToCloud('gladiators', cache.gladiators);
 }
@@ -291,6 +317,24 @@ export function addPhantomTrade(trade: PhantomTrade): void {
 export function removePhantomTrade(id: string): void {
   cache.phantomTrades = cache.phantomTrades.filter(t => t.id !== id);
   syncToCloud('phantom_trades', cache.phantomTrades);
+}
+
+// ─── Live Positions (Real Time Manager) ─────────
+export function getLivePositions(): LivePosition[] {
+  return cache.livePositions;
+}
+
+export function addLivePosition(pos: LivePosition): void {
+  cache.livePositions.unshift(pos);
+  syncToCloud('live_positions', cache.livePositions);
+}
+
+export function updateLivePosition(id: string, updates: Partial<LivePosition>): void {
+  const idx = cache.livePositions.findIndex((p) => p.id === id);
+  if (idx > -1) {
+    cache.livePositions[idx] = { ...cache.livePositions[idx], ...updates };
+    syncToCloud('live_positions', cache.livePositions);
+  }
 }
 
 // ─── Performance Records ───────────────────────────

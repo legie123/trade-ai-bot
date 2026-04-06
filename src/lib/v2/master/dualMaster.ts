@@ -5,134 +5,102 @@ import {
 } from '../../types/gladiator';
 import { addSyndicateAudit } from '@/lib/store/db';
 
-interface MasterLLM {
-  identity: DualMasterIdentity;
-  invoke(prompt: string, timeout: number): Promise<MasterOpinion>;
-}
+// ─── Shared LLM call with retry + timeout (DRY) ───
+async function callOpenAI(prompt: string, timeout: number, signal?: AbortSignal): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
 
-class ArchitectMaster implements MasterLLM {
-  identity: DualMasterIdentity = 'ARCHITECT';
+  // Chain external signal if provided
+  if (signal) {
+    signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
 
-  async invoke(prompt: string, timeout: number): Promise<MasterOpinion> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 300,       // Cap response size for speed
+        temperature: 0.4,      // More deterministic for trading
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
 
-    try {
-      const promptWithPersona = `You are the ARCHITECT (Master 1). Your focus is pure logic, probability, risk management, and math. Analyze the following data strictly objectively and numerically.
-      
-      Data: ${prompt}
-      
-      Response EXACTLY as:
-      DIRECTION: [LONG/SHORT/FLAT]
-      CONFIDENCE: [0.0-1.0]
-      REASONING: [Brief logical breakdown]`;
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [{ role: 'user', content: promptWithPersona }]
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timer);
-      
-      const data = await response.json();
-      const text = data.choices?.[0]?.message?.content;
-      if (!text || text.length < 10) throw new Error("Empty response");
-      return DualMasterConsciousness.parseResponse(this.identity, text);
-    } catch (err) {
-      clearTimeout(timer);
-      console.warn(`[DualMaster] Architect failed to respond...`, (err as Error).message);
-      return { identity: this.identity, direction: 'FLAT', confidence: 0, reasoning: 'Architect API Failure' };
+    if (!response.ok) {
+      throw new Error(`OpenAI HTTP ${response.status}`);
     }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content;
+    if (!text || text.length < 10) throw new Error('Empty LLM response');
+    return text;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
   }
 }
 
-class OracleMaster implements MasterLLM {
-  identity: DualMasterIdentity = 'ORACLE';
-  
-  async invoke(prompt: string, timeout: number): Promise<MasterOpinion> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
+function parseResponse(identity: DualMasterIdentity, text: string): MasterOpinion {
+  const directionMatch = text.match(/DIRECTION:\s*(LONG|SHORT|FLAT)/i);
+  const confidenceMatch = text.match(/CONFIDENCE:\s*([\d.]+)/);
 
-    try {
-      const promptWithPersona = `You are the ORACLE (Master 2). Your focus is intuition, sentiment edge, contrarian plays, and market psychology. Look beyond the math to the chaotic human element.
-      
-      Data: ${prompt}
-      
-      Response EXACTLY as:
-      DIRECTION: [LONG/SHORT/FLAT]
-      CONFIDENCE: [0.0-1.0]
-      REASONING: [Brief intuitive/sentiment breakdown]`;
+  return {
+    identity,
+    direction: (directionMatch?.[1].toUpperCase() as 'LONG' | 'SHORT' | 'FLAT') || 'FLAT',
+    confidence: parseFloat(confidenceMatch?.[1] || '0.5'),
+    reasoning: text.slice(0, 500)
+  };
+}
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [{ role: 'user', content: promptWithPersona }]
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timer);
+const PERSONAS: Record<DualMasterIdentity, string> = {
+  ARCHITECT: `You are the ARCHITECT (Master 1). Your focus is pure logic, probability, risk management, and math. Analyze the following data strictly objectively and numerically.`,
+  ORACLE: `You are the ORACLE (Master 2). Your focus is intuition, sentiment edge, contrarian plays, and market psychology. Look beyond the math to the chaotic human element.`
+};
+
+async function invokeMaster(identity: DualMasterIdentity, prompt: string, timeout: number): Promise<MasterOpinion> {
+  const fullPrompt = `${PERSONAS[identity]}
       
-      const data = await response.json();
-      const text = data.choices?.[0]?.message?.content;
-      if (!text) throw new Error("Invalid Oracle response");
-      return DualMasterConsciousness.parseResponse(this.identity, text);
-    } catch (err) {
-      clearTimeout(timer);
-      console.warn(`[DualMaster] Oracle failed to respond...`, (err as Error).message);
-      return { identity: this.identity, direction: 'FLAT', confidence: 0, reasoning: 'Oracle API Failure' };
-    }
+Data: ${prompt}
+      
+Response EXACTLY as:
+DIRECTION: [LONG/SHORT/FLAT]
+CONFIDENCE: [0.0-1.0]
+REASONING: [Brief breakdown]`;
+
+  try {
+    const text = await callOpenAI(fullPrompt, timeout);
+    return parseResponse(identity, text);
+  } catch (err) {
+    console.warn(`[DualMaster] ${identity} failed:`, (err as Error).message);
+    return { identity, direction: 'FLAT', confidence: 0, reasoning: `${identity} API Failure` };
   }
 }
 
 export class DualMasterConsciousness {
-  private architect: ArchitectMaster;
-  private oracle: OracleMaster;
   private timeoutMs = 12000;
-
-  constructor() {
-    this.architect = new ArchitectMaster();
-    this.oracle = new OracleMaster();
-  }
-
-  public static parseResponse(identity: DualMasterIdentity, text: string): MasterOpinion {
-    const directionMatch = text.match(/DIRECTION:\s*(LONG|SHORT|FLAT)/i);
-    const confidenceMatch = text.match(/CONFIDENCE:\s*([\d.]+)/);
-    
-    return {
-      identity,
-      direction: (directionMatch?.[1].toUpperCase() as 'LONG' | 'SHORT' | 'FLAT') || 'FLAT',
-      confidence: parseFloat(confidenceMatch?.[1] || '0.5'),
-      reasoning: text.slice(0, 500)
-    };
-  }
 
   public async getConsensus(marketData: Record<string, unknown>, gladiatorDnaContext: Record<string, unknown>): Promise<DualConsensus> {
     const prompt = `Market State: ${JSON.stringify(marketData)}. Gladiator DNA/Experience Context: ${JSON.stringify(gladiatorDnaContext)}`;
     
-    // Both masters analyze simultaneously
+    // Both masters analyze simultaneously (parallel)
     const [architectOpinion, oracleOpinion] = await Promise.all([
-      this.architect.invoke(prompt, this.timeoutMs),
-      this.oracle.invoke(prompt, this.timeoutMs)
+      invokeMaster('ARCHITECT', prompt, this.timeoutMs),
+      invokeMaster('ORACLE', prompt, this.timeoutMs)
     ]);
     
     const consensus = this.arbitrate(architectOpinion, oracleOpinion);
     
+    // Single audit write (removed duplicate from processSignal)
     addSyndicateAudit({
       ...consensus,
       symbol: (marketData as Record<string, unknown>).symbol || 'UNKNOWN_ASSET',
-      opinions: [architectOpinion, oracleOpinion] // Replace legacy format
+      opinions: [architectOpinion, oracleOpinion]
     } as unknown as Parameters<typeof addSyndicateAudit>[0]);
 
     return consensus;
@@ -145,21 +113,20 @@ export class DualMasterConsciousness {
     // Both agree
     if (architect.direction === oracle.direction && architect.direction !== 'FLAT') {
       finalDirection = architect.direction;
-      finalConfidence = Math.max(architect.confidence, oracle.confidence); // Synergy
+      finalConfidence = Math.max(architect.confidence, oracle.confidence);
     } 
-    // Disagreement -> Negotiation Math
+    // Architect leads, Oracle flat
     else if (architect.direction !== 'FLAT' && oracle.direction === 'FLAT') {
-      // Architect overrides flat Oracle if confidence is very high
       if (architect.confidence >= 0.8) {
          finalDirection = architect.direction;
          finalConfidence = architect.confidence * 0.8; 
       }
     } 
+    // Oracle leads, Architect flat
     else if (oracle.direction !== 'FLAT' && architect.direction === 'FLAT') {
-      // Oracle overrides flat Architect if instinct is overwhelming
       if (oracle.confidence >= 0.85) {
          finalDirection = oracle.direction;
-         finalConfidence = oracle.confidence * 0.7; // Penalized more for lack of logic
+         finalConfidence = oracle.confidence * 0.7;
       }
     }
     // Hard contradiction (LONG vs SHORT) -> always FLAT for safety

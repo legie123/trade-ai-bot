@@ -37,6 +37,10 @@ export async function GET() {
     // Evaluate Phantom Trades for the Arena Combat Engine
     await ArenaSimulator.getInstance().evaluatePhantomTrades();
 
+    // Evaluate Live Positions (Asymmetric TP/SL Engine)
+    const { PositionManager } = await import('@/lib/v2/manager/positionManager');
+    await PositionManager.getInstance().evaluateLivePositions();
+
     // Evaluate Real/Shadow Main System Decisions
     const { getPendingDecisions, updateDecision, recalculatePerformance } = await import('@/lib/store/db');
     const { getMexcPrice } = await import('@/lib/exchange/mexcClient');
@@ -44,29 +48,43 @@ export async function GET() {
     const pending = getPendingDecisions();
     let mainDecisionsEvaluated = 0;
 
-    for (const dec of pending) {
+    // Batch: fetch unique symbols once instead of per-decision
+    const eligibleDecisions = pending.filter(dec => {
       const elapsedMin = (Date.now() - new Date(dec.timestamp).getTime()) / 60000;
-      if (elapsedMin > 10) { // Keep pending for 10 minutes to accumulate profit offset
-         try {
-            const currentPrice = await getMexcPrice(dec.symbol);
-            if (!currentPrice || !dec.price) continue;
-            
-            const pnlDiff = (currentPrice - dec.price) / dec.price;
-            const pnlPercent = (dec.action === 'LONG' || dec.action === 'BUY') ? pnlDiff * 100 : -pnlDiff * 100;
-            const outcome = pnlPercent > 0.05 ? 'WIN' : (pnlPercent < -0.05 ? 'LOSS' : 'NEUTRAL');
+      return elapsedMin > 10;
+    });
 
-            updateDecision(dec.id, {
-               priceAfter15m: currentPrice, // Approximate
-               pnlPercent: parseFloat(pnlPercent.toFixed(2)),
-               outcome,
-               evaluatedAt: new Date().toISOString()
-            });
+    const uniqueSymbols = [...new Set(eligibleDecisions.map(d => d.symbol))];
+    const priceCache: Record<string, number> = {};
 
-            mainDecisionsEvaluated++;
-         } catch {
-           log.warn(`Could not resolve main decision ${dec.id} due to price fetch error`);
-         }
-      }
+    // Fetch all unique prices in parallel
+    await Promise.all(
+      uniqueSymbols.map(async (sym) => {
+        try {
+          const price = await getMexcPrice(sym);
+          if (price > 0) priceCache[sym] = price;
+        } catch {
+          log.warn(`Could not fetch price for ${sym}`);
+        }
+      })
+    );
+
+    for (const dec of eligibleDecisions) {
+      const currentPrice = priceCache[dec.symbol];
+      if (!currentPrice || !dec.price) continue;
+      
+      const pnlDiff = (currentPrice - dec.price) / dec.price;
+      const pnlPercent = (dec.action === 'LONG' || dec.action === 'BUY') ? pnlDiff * 100 : -pnlDiff * 100;
+      const outcome = pnlPercent > 0.05 ? 'WIN' : (pnlPercent < -0.05 ? 'LOSS' : 'NEUTRAL');
+
+      updateDecision(dec.id, {
+         priceAfter15m: currentPrice,
+         pnlPercent: parseFloat(pnlPercent.toFixed(2)),
+         outcome,
+         evaluatedAt: new Date().toISOString()
+      });
+
+      mainDecisionsEvaluated++;
     }
 
     if (mainDecisionsEvaluated > 0) {
@@ -79,6 +97,7 @@ export async function GET() {
       message: 'Cron tick processed',
       scanCount: gScan.__autoScan.scanCount,
       mainDecisionsEvaluated,
+      pricesFetched: Object.keys(priceCache).length,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
@@ -86,3 +105,4 @@ export async function GET() {
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });
   }
 }
+
