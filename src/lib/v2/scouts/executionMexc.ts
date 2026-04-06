@@ -49,10 +49,12 @@ function getSymbolFilters(exchangeInfo: Record<string, unknown>, symbol: string)
   return defaults;
 }
 
-function roundToStep(quantity: number, stepSize: number): number {
+export function roundToStep(quantity: number, stepSize: number): number {
   if (stepSize <= 0) return quantity;
-  const precision = Math.max(0, Math.ceil(-Math.log10(stepSize)));
-  return parseFloat((Math.floor(quantity / stepSize) * stepSize).toFixed(precision));
+  const precision = Math.max(0, Math.ceil(-Math.log10(stepSize + Number.EPSILON)));
+  // Use EPSILON to avoid floating-point floor errors (e.g., 0.9999999 → 0 instead of 1)
+  const stepped = Math.floor((quantity + Number.EPSILON * 10) / stepSize) * stepSize;
+  return parseFloat(stepped.toFixed(precision));
 }
 
 /**
@@ -71,7 +73,8 @@ function getPositionSize(balance: number, riskPercent: number = 1.5): number {
 export async function executeMexcTrade(
   symbol: string,
   side: 'BUY' | 'SELL',
-  usdAmount?: number
+  usdAmount?: number,
+  dryRun: boolean = false
 ): Promise<MexcTradeResult> {
   try {
     const mexcSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
@@ -111,12 +114,17 @@ export async function executeMexcTrade(
       return { symbol: mexcSymbol, side, price, quantity, usdAmount: tradeAmount, executed: false, error: `Notional $${notional.toFixed(2)} below min $${filters.minNotional}` };
     }
 
-    await placeMexcMarketOrder(mexcSymbol, side, quantity);
+    // OMEGA: Dry Run support — validate everything but skip actual order
+    if (dryRun) {
+      log.info(`[DRY RUN] Would execute ${side} ${mexcSymbol}: ${quantity} @ $${price} ($${tradeAmount.toFixed(2)}) | Balance: $${usdtBalance.toFixed(2)}`);
+    } else {
+      await placeMexcMarketOrder(mexcSymbol, side, quantity);
 
-    const telegramMsg = `[TRADE EXECUTION V2]\nPair: ${mexcSymbol}\nSide: ${side}\nPrice: $${price}\nQty: ${quantity}\nValue: $${tradeAmount.toFixed(2)}\nBalance: $${usdtBalance.toFixed(2)}`;
-    await sendMessage(telegramMsg).catch(() => {}); // Don't block on telegram
+      const telegramMsg = `[TRADE EXECUTION V2]\nPair: ${mexcSymbol}\nSide: ${side}\nPrice: $${price}\nQty: ${quantity}\nValue: $${tradeAmount.toFixed(2)}\nBalance: $${usdtBalance.toFixed(2)}`;
+      await sendMessage(telegramMsg).catch(() => {}); // Don't block on telegram
+    }
 
-    log.info(`[EXECUTION V2] ${side} ${mexcSymbol}: ${quantity} @ $${price} ($${tradeAmount.toFixed(2)}) | Balance: $${usdtBalance.toFixed(2)}`);
+    log.info(`[EXECUTION V2${dryRun ? ' DRY' : ''}] ${side} ${mexcSymbol}: ${quantity} @ $${price} ($${tradeAmount.toFixed(2)}) | Balance: $${usdtBalance.toFixed(2)}`);
 
     return {
       symbol: mexcSymbol,

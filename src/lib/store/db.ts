@@ -360,17 +360,7 @@ export function getBotConfig(): BotConfig {
 export function saveBotConfig(config: Partial<BotConfig>): void {
   cache.config = { ...cache.config, ...config };
   syncToCloud('config', cache.config);
-}// ─── Strategies (Legacy) ───────────────────────────
-export function getStrategies(): any[] {
-  return (cache as any).strategies || [];
-}
-
-export function saveStrategies(strats: any[]): void {
-  (cache as any).strategies = strats;
-  syncToCloud('strategies', (cache as any).strategies);
-}
-
-// ─── Equity Curve (for chart) ──────────────────────
+}// ─── Equity Curve (for chart) ──────────────────────
 export interface EquityPoint {
   timestamp: string;
   pnl: number;        
@@ -407,3 +397,80 @@ export function getEquityCurve(): EquityPoint[] {
     };
   });
 }
+
+// ─── OMEGA: Distributed Trade Lock ─────────────────
+// Prevents duplicate trade execution across Cloud Run instances.
+// Uses Supabase `trade_locks` table with row-level insert conflict detection.
+// Schema: CREATE TABLE trade_locks (symbol TEXT PRIMARY KEY, instance_id TEXT, expires_at TIMESTAMPTZ);
+// If Supabase is unavailable, defaults to in-memory lock (single-instance fallback).
+
+const instanceId = `cr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+const localLocks = new Map<string, number>(); // symbol -> expiry timestamp
+const LOCK_TTL_MS = 30_000; // 30 seconds
+
+export async function acquireTradeLock(symbol: string): Promise<boolean> {
+  // Cleanup expired local locks
+  const now = Date.now();
+  for (const [sym, exp] of localLocks) {
+    if (exp < now) localLocks.delete(sym);
+  }
+
+  // Check local lock first (protects within same instance)
+  if (localLocks.has(symbol) && localLocks.get(symbol)! > now) {
+    log.warn(`[TradeLock] LOCAL lock active for ${symbol} — skipping.`);
+    return false;
+  }
+
+  // Set local lock immediately
+  localLocks.set(symbol, now + LOCK_TTL_MS);
+
+  // Try Supabase distributed lock (cross-instance protection)
+  if (!supabaseUrl || !dbInitialized) return true; // Fallback: local-only
+
+  try {
+    const expiresAt = new Date(now + LOCK_TTL_MS).toISOString();
+    
+    // First: cleanup expired locks from other instances
+    await supabase.from('trade_locks').delete().lt('expires_at', new Date().toISOString());
+    
+    // Then: attempt to acquire lock via INSERT (conflict = another instance has it)
+    const { error } = await supabase.from('trade_locks').insert({
+      symbol,
+      instance_id: instanceId,
+      expires_at: expiresAt,
+    });
+
+    if (error) {
+      // Conflict = another instance already locked this symbol
+      if (error.code === '23505') { // unique_violation
+        log.warn(`[TradeLock] DISTRIBUTED lock conflict for ${symbol} — another instance is handling it.`);
+        localLocks.delete(symbol); // Release local lock since we can't get distributed
+        return false;
+      }
+      // Other Supabase error — treat as lock acquired (graceful degradation)
+      log.warn(`[TradeLock] Supabase error (${error.message}), proceeding with local lock only.`);
+    }
+
+    return true;
+  } catch (err) {
+    log.warn(`[TradeLock] Distributed lock failed (${(err as Error).message}), local lock only.`);
+    return true; // Graceful degradation to local-only
+  }
+}
+
+export async function releaseTradeLock(symbol: string): Promise<void> {
+  localLocks.delete(symbol);
+
+  if (!supabaseUrl || !dbInitialized) return;
+
+  try {
+    await supabase.from('trade_locks')
+      .delete()
+      .eq('symbol', symbol)
+      .eq('instance_id', instanceId);
+  } catch {
+    // Non-critical, TTL will expire it
+  }
+}
+
+export { supabase }; // Export for diagnostics endpoint

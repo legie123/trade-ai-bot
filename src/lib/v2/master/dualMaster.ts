@@ -4,6 +4,9 @@ import {
   DualConsensus 
 } from '../../types/gladiator';
 import { addSyndicateAudit } from '@/lib/store/db';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('DualMaster');
 
 // ─── Shared LLM call with retry + timeout (DRY) ───
 async function callOpenAI(prompt: string, timeout: number, signal?: AbortSignal): Promise<string> {
@@ -59,8 +62,8 @@ function parseResponse(identity: DualMasterIdentity, text: string): MasterOpinio
 }
 
 const PERSONAS: Record<DualMasterIdentity, string> = {
-  ARCHITECT: `You are the ARCHITECT (Master 1). Your focus is pure logic, probability, risk management, and math. Analyze the following data strictly objectively and numerically.`,
-  ORACLE: `You are the ORACLE (Master 2). Your focus is intuition, sentiment edge, contrarian plays, and market psychology. Look beyond the math to the chaotic human element.`
+  ARCHITECT: `You are the ARCHITECT (Master 1). Your focus is pure logic, probability, risk management, and math. Analyze the following data strictly objectively and numerically. You MUST reference specific numbers from the data (price, volume, percentages) in your reasoning.`,
+  ORACLE: `You are the ORACLE (Master 2). Your focus is intuition, sentiment edge, contrarian plays, and market psychology. Look beyond the math to the chaotic human element. You MUST reference specific market conditions from the data in your reasoning.`
 };
 
 async function invokeMaster(identity: DualMasterIdentity, prompt: string, timeout: number): Promise<MasterOpinion> {
@@ -71,17 +74,89 @@ Data: ${prompt}
 Response EXACTLY as:
 DIRECTION: [LONG/SHORT/FLAT]
 CONFIDENCE: [0.0-1.0]
-REASONING: [Brief breakdown]`;
+REASONING: [Brief breakdown referencing specific data points]`;
 
   try {
     const text = await callOpenAI(fullPrompt, timeout);
     return parseResponse(identity, text);
   } catch (err) {
     const errorMsg = (err as Error).message;
-    console.error(`🚨 [DualMaster] ${identity} CRITICAL FAILURE:`, errorMsg);
+    log.error(`🚨 [DualMaster] ${identity} CRITICAL FAILURE: ${errorMsg}`);
     // Throw error so ManagerVizionar knows the system is BLIND
     throw new Error(`Master ${identity} is offline: ${errorMsg}`);
   }
+}
+
+// ─── OMEGA: Hallucination Defense System ───
+
+/**
+ * Jaccard Similarity between two texts.
+ * Tokenizes to lowercase words, computes |intersection| / |union|.
+ * Score 0.0 = completely different, 1.0 = identical.
+ */
+function jaccardSimilarity(textA: string, textB: string): number {
+  const tokenize = (t: string): Set<string> => {
+    const words = t.toLowerCase().replace(/[^a-z0-9\s.%]/g, '').split(/\s+/).filter(w => w.length > 2);
+    return new Set(words);
+  };
+
+  const setA = tokenize(textA);
+  const setB = tokenize(textB);
+
+  if (setA.size === 0 && setB.size === 0) return 1.0;
+
+  let intersection = 0;
+  for (const word of setA) {
+    if (setB.has(word)) intersection++;
+  }
+
+  const union = setA.size + setB.size - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+/**
+ * Check if AI reasoning actually references data from the market prompt.
+ * Extracts key numbers (prices, percentages, volumes) from market data
+ * and verifies at least some appear in the reasoning.
+ */
+function checkMarketDataAnchoring(reasoning: string, marketDataStr: string): { anchored: boolean; matchedDataPoints: number; totalDataPoints: number } {
+  // Extract numbers from market data (prices, volumes, percentages)
+  const dataNumbers = marketDataStr.match(/\d+\.?\d*/g) || [];
+  // Filter to meaningful numbers (skip tiny ones like "0" or "1")
+  const significantNumbers = dataNumbers.filter(n => {
+    const num = parseFloat(n);
+    return num > 1 && n.length >= 2;
+  });
+  
+  // Deduplicate
+  const uniqueNumbers = [...new Set(significantNumbers)].slice(0, 20); // Cap at 20 data points
+  
+  if (uniqueNumbers.length === 0) return { anchored: true, matchedDataPoints: 0, totalDataPoints: 0 };
+
+  let matched = 0;
+  for (const num of uniqueNumbers) {
+    // Check if this number (or a rounded version) appears in reasoning
+    if (reasoning.includes(num)) {
+      matched++;
+    }
+  }
+
+  // At least 15% of key data points should be referenced
+  const anchorThreshold = 0.15;
+  return {
+    anchored: matched / uniqueNumbers.length >= anchorThreshold,
+    matchedDataPoints: matched,
+    totalDataPoints: uniqueNumbers.length,
+  };
+}
+
+interface HallucinationReport {
+  similarity: number;
+  isRedundant: boolean;            // Jaccard > 0.7 → both AIs said same thing
+  isUnanchored: boolean;           // Reasoning ignores market data
+  confidencePenalty: number;       // 0 to 0.3 penalty applied
+  architectAnchoring: { anchored: boolean; matchedDataPoints: number; totalDataPoints: number };
+  oracleAnchoring: { anchored: boolean; matchedDataPoints: number; totalDataPoints: number };
 }
 
 export class DualMasterConsciousness {
@@ -95,22 +170,72 @@ export class DualMasterConsciousness {
       invokeMaster('ARCHITECT', prompt, this.timeoutMs),
       invokeMaster('ORACLE', prompt, this.timeoutMs)
     ]);
+
+    // ─── OMEGA: Hallucination Defense ───
+    const hallucinationReport = this.runHallucinationDefense(architectOpinion, oracleOpinion, prompt);
     
-    const consensus = this.arbitrate(architectOpinion, oracleOpinion);
+    const consensus = this.arbitrate(architectOpinion, oracleOpinion, hallucinationReport);
     
-    // Single audit write (removed duplicate from processSignal)
+    // Single audit write with hallucination report attached
     addSyndicateAudit({
       ...consensus,
       symbol: (marketData as Record<string, unknown>).symbol || 'UNKNOWN_ASSET',
-      opinions: [architectOpinion, oracleOpinion]
+      opinions: [architectOpinion, oracleOpinion],
+      hallucinationReport,
     } as unknown as Parameters<typeof addSyndicateAudit>[0]);
 
     return consensus;
   }
 
-  private arbitrate(architect: MasterOpinion, oracle: MasterOpinion): DualConsensus {
+  /**
+   * OMEGA: Hallucination Defense System
+   * 1. Jaccard similarity check — if both AIs give identical reasoning, we're wasting credit
+   * 2. Market data anchoring — if AI ignores the actual numbers, it's hallucinating
+   */
+  private runHallucinationDefense(architect: MasterOpinion, oracle: MasterOpinion, marketPrompt: string): HallucinationReport {
+    const similarity = jaccardSimilarity(architect.reasoning, oracle.reasoning);
+    const isRedundant = similarity > 0.70;
+
+    const architectAnchoring = checkMarketDataAnchoring(architect.reasoning, marketPrompt);
+    const oracleAnchoring = checkMarketDataAnchoring(oracle.reasoning, marketPrompt);
+    const isUnanchored = !architectAnchoring.anchored && !oracleAnchoring.anchored;
+
+    let confidencePenalty = 0;
+
+    if (isRedundant) {
+      confidencePenalty += 0.15;
+      log.warn(`⚠️ [Hallucination] REDUNDANT reasoning detected! Jaccard: ${(similarity * 100).toFixed(1)}% — AI credit waste suspected.`);
+    }
+
+    if (isUnanchored) {
+      confidencePenalty += 0.15;
+      log.warn(`⚠️ [Hallucination] UNANCHORED reasoning! Neither AI referenced market data. Arch: ${architectAnchoring.matchedDataPoints}/${architectAnchoring.totalDataPoints}, Oracle: ${oracleAnchoring.matchedDataPoints}/${oracleAnchoring.totalDataPoints}`);
+    }
+
+    return {
+      similarity,
+      isRedundant,
+      isUnanchored,
+      confidencePenalty: Math.min(confidencePenalty, 0.30),
+      architectAnchoring,
+      oracleAnchoring,
+    };
+  }
+
+  private arbitrate(architect: MasterOpinion, oracle: MasterOpinion, hallucinationReport: HallucinationReport): DualConsensus {
     let finalDirection: 'LONG' | 'SHORT' | 'FLAT' = 'FLAT';
     let finalConfidence = 0;
+
+    // OMEGA: If both AIs are unanchored from data → force FLAT (they're guessing)
+    if (hallucinationReport.isUnanchored) {
+      log.warn('🛡️ [DualMaster] Forcing FLAT — AI reasoning is disconnected from market data.');
+      return {
+        finalDirection: 'FLAT',
+        weightedConfidence: 0,
+        opinions: [architect, oracle],
+        timestamp: Date.now()
+      };
+    }
 
     // Both agree
     if (architect.direction === oracle.direction && architect.direction !== 'FLAT') {
@@ -135,6 +260,13 @@ export class DualMasterConsciousness {
     else if (architect.direction !== 'FLAT' && oracle.direction !== 'FLAT' && architect.direction !== oracle.direction) {
        finalDirection = 'FLAT';
        finalConfidence = 0;
+    }
+
+    // OMEGA: Apply hallucination confidence penalty
+    if (hallucinationReport.confidencePenalty > 0 && finalConfidence > 0) {
+      const originalConfidence = finalConfidence;
+      finalConfidence = Math.max(0, finalConfidence - hallucinationReport.confidencePenalty);
+      log.info(`[DualMaster] Confidence penalized: ${(originalConfidence * 100).toFixed(1)}% → ${(finalConfidence * 100).toFixed(1)}% (hallucination penalty: -${(hallucinationReport.confidencePenalty * 100).toFixed(0)}%)`);
     }
 
     return {

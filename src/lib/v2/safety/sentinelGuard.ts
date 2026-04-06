@@ -1,5 +1,5 @@
 import { createLogger } from '@/lib/core/logger';
-import { getBotConfig, saveBotConfig, getDecisions, getEquityCurve, BotConfig } from '@/lib/store/db';
+import { getBotConfig, saveBotConfig, getDecisions, getEquityCurve } from '@/lib/store/db';
 import { DualConsensus } from '@/lib/types/gladiator';
 import { Signal, DecisionSnapshot } from '@/lib/types/radar';
 import { sellAllAssetsToUsdt } from '@/lib/exchange/mexcClient';

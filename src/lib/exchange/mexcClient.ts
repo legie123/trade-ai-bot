@@ -141,11 +141,11 @@ export async function cancelMexcOrder(symbol: string, orderId: string): Promise<
   return mexcRequest('DELETE', '/api/v3/order', { symbol, orderId });
 }
 
-export async function getMexcOpenOrders(symbol?: string): Promise<any[]> {
+export async function getMexcOpenOrders(symbol?: string): Promise<Record<string, unknown>[]> {
   const params: Record<string, string | number> = {};
   if (symbol) params.symbol = symbol;
   const res = await mexcRequest('GET', '/api/v3/openOrders', params);
-  return (res as any) || [];
+  return (res as unknown as Record<string, unknown>[]) || [];
 }
 
 export async function cancelAllMexcOrders(symbol: string): Promise<Record<string, unknown>> {
@@ -154,16 +154,74 @@ export async function cancelAllMexcOrders(symbol: string): Promise<Record<string
 
 /**
  * Emergency Exit: Sells all non-USDT assets to USDT at Market price.
+ * OMEGA FIX: Now applies roundToStep + minNotional validation per symbol.
  */
 export async function sellAllAssetsToUsdt(): Promise<void> {
   const balances = await getMexcBalances();
   const nonUsdt = balances.filter(b => b.asset !== 'USDT' && b.asset !== 'MX' && b.free > 0);
 
+  if (nonUsdt.length === 0) {
+    console.log('[Kill Switch] No non-USDT assets to sell.');
+    return;
+  }
+
+  // Fetch exchange info once for all symbols
+  let exchangeInfo: Record<string, unknown> = {};
+  try {
+    exchangeInfo = await getMexcExchangeInfo();
+  } catch (err) {
+    console.error('[Kill Switch] Failed to fetch exchange info, proceeding with raw quantities:', err);
+  }
+
   for (const b of nonUsdt) {
     try {
       const symbol = `${b.asset}USDT`;
-      await placeMexcMarketOrder(symbol, 'SELL', b.free);
-      console.log(`[Kill Switch] Sold ${b.free} ${b.asset} for USDT`);
+      let quantity = b.free;
+
+      // Apply exchange filters if available
+      if (exchangeInfo && (exchangeInfo as { symbols?: unknown[] }).symbols) {
+        const symbols = (exchangeInfo as { symbols?: { symbol: string; filters?: { filterType: string; minQty?: string; stepSize?: string; minNotional?: string }[] }[] }).symbols || [];
+        const found = symbols.find(s => s.symbol === symbol);
+        
+        if (found?.filters) {
+          let stepSize = 0.00001;
+          let minQty = 0.00001;
+          let minNotional = 5;
+
+          for (const f of found.filters) {
+            if (f.filterType === 'LOT_SIZE') {
+              stepSize = parseFloat(f.stepSize || '0.00001');
+              minQty = parseFloat(f.minQty || '0.00001');
+            }
+            if (f.filterType === 'MIN_NOTIONAL') {
+              minNotional = parseFloat(f.minNotional || '5');
+            }
+          }
+
+          // Round to step size
+          const precision = Math.max(0, Math.ceil(-Math.log10(stepSize + Number.EPSILON)));
+          quantity = parseFloat((Math.floor((quantity + Number.EPSILON * 10) / stepSize) * stepSize).toFixed(precision));
+
+          if (quantity < minQty) {
+            console.log(`[Kill Switch] Skipping ${b.asset}: qty ${quantity} below minQty ${minQty} (dust)`);
+            continue;
+          }
+
+          // Estimate notional (need price)
+          try {
+            const price = await getMexcPrice(symbol);
+            if (price > 0 && quantity * price < minNotional) {
+              console.log(`[Kill Switch] Skipping ${b.asset}: notional $${(quantity * price).toFixed(2)} below min $${minNotional}`);
+              continue;
+            }
+          } catch {
+            // Can't check notional, try anyway
+          }
+        }
+      }
+
+      await placeMexcMarketOrder(symbol, 'SELL', quantity);
+      console.log(`[Kill Switch] Sold ${quantity} ${b.asset} for USDT`);
     } catch (err) {
       console.error(`[Kill Switch] Failed to sell ${b.asset}:`, err);
     }

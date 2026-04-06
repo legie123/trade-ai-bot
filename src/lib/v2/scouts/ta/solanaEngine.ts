@@ -5,6 +5,14 @@
 import { Signal } from '@/lib/types/radar';
 import { createLogger } from '@/lib/core/logger';
 import { getResilientPrice } from '@/lib/core/apiFallback';
+import { fetchWithRetry } from '@/lib/providers/base';
+import { checkVWAP } from '@/lib/v2/scouts/ta/vwapFilter';
+import { analyzeRSI } from '@/lib/v2/scouts/ta/rsiIndicator';
+import { isSymbolValid } from '@/lib/store/db';
+import { routeSignal } from '@/lib/router/signalRouter';
+import { trySignal } from '@/lib/v2/scouts/ta/signalCooldown';
+import { getStreakStatus } from '@/lib/v2/scouts/ta/streakGuard';
+import { signalStore } from '@/lib/store/signalStore';
 
 const log = createLogger('SolanaEngine');
 

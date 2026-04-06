@@ -13,7 +13,6 @@ import {
   saveBotConfig,
   recalculatePerformance,
   getEquityCurve,
-  getStrategies,
   getSyndicateAudits,
 } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
@@ -101,7 +100,6 @@ export async function GET() {
       stats,
       decisions: allDecisions.slice(0, 50),
       performance,
-      strategies: getStrategies(),
       gladiators: gladiatorStore.getGladiators(),
       syndicateAudits: getSyndicateAudits().slice(0, 50),
       v2Entities: {

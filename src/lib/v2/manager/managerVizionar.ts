@@ -5,8 +5,11 @@ import { SentinelGuard } from '../safety/sentinelGuard';
 import { DNAExtractor, IntelligenceDigest } from '../superai/dnaExtractor';
 import { executeMexcTrade } from '@/lib/v2/scouts/executionMexc';
 import { Signal, DecisionSnapshot } from '../../types/radar';
-import { addDecision, addLivePosition } from '@/lib/store/db';
+import { addDecision, addLivePosition, acquireTradeLock, releaseTradeLock } from '@/lib/store/db';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('ManagerVizionar');
 
 export class ManagerVizionar {
   private static instance: ManagerVizionar;
@@ -115,8 +118,23 @@ export class ManagerVizionar {
   }
 
   private async executeLiveCapital(id: string, payload: Signal, consensus: DualConsensus) {
-    console.log(`[LIVE EXECUTION] Gladiator ${id} deployed real funds on ${payload.symbol}.`);
-    console.log(`[MASTERS] Confidence: ${(consensus.weightedConfidence * 100).toFixed(2)}% Reasoning summarized in Combat Audit.`);
+    // OMEGA: Distributed Trade Lock — prevent duplicate executions across instances
+    const lockAcquired = await acquireTradeLock(payload.symbol);
+    if (!lockAcquired) {
+      log.warn(`[LOCK BLOCKED] Another instance is already trading ${payload.symbol}. Skipping.`);
+      return;
+    }
+
+    try {
+      await this._executeWithLock(id, payload, consensus);
+    } finally {
+      await releaseTradeLock(payload.symbol);
+    }
+  }
+
+  private async _executeWithLock(id: string, payload: Signal, consensus: DualConsensus) {
+    log.info(`[LIVE EXECUTION] Gladiator ${id} deployed real funds on ${payload.symbol}.`);
+    log.info(`[MASTERS] Confidence: ${(consensus.weightedConfidence * 100).toFixed(2)}% Reasoning summarized in Combat Audit.`);
     
     // Log in database
     const snapshot: DecisionSnapshot = {
