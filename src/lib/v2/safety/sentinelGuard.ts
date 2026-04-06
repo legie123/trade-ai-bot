@@ -1,5 +1,5 @@
 import { createLogger } from '@/lib/core/logger';
-import { getBotConfig, saveBotConfig, getDecisions, BotConfig } from '@/lib/store/db';
+import { getBotConfig, saveBotConfig, getDecisions, getEquityCurve, BotConfig } from '@/lib/store/db';
 import { DualConsensus } from '@/lib/types/gladiator';
 import { Signal, DecisionSnapshot } from '@/lib/types/radar';
 import { sellAllAssetsToUsdt } from '@/lib/exchange/mexcClient';
@@ -41,8 +41,8 @@ export class SentinelGuard {
       return { safe: false, reason: `Insufficient Consensus (${(consensus.weightedConfidence * 100).toFixed(2)}%)` };
     }
 
-    // 3. Drawdown Check
-    const mddResult = this.checkDrawdown(config);
+    // 3. Equity-Curve Drawdown Check (Omega upgrade: real compounding MDD)
+    const mddResult = this.checkEquityDrawdown();
     if (!mddResult.safe) {
       await this.triggerKillSwitch(mddResult.reason!);
       return { safe: false, reason: mddResult.reason };
@@ -58,12 +58,23 @@ export class SentinelGuard {
     return { safe: true };
   }
 
+  /**
+   * FIX CRITIC: isHalted() — citeste corect din config.haltedUntil
+   * Versiunea anterioară referentia `now` și `haltTime` care erau UNDEFINED.
+   */
   private isHalted(): boolean {
     const config = getBotConfig();
+    
     if (!config.haltedUntil) return false;
-
-    const haltTime = new Date(config.haltedUntil).getTime();
+    
     const now = Date.now();
+    const haltTime = new Date(config.haltedUntil).getTime();
+    
+    if (isNaN(haltTime)) {
+      log.warn('🛡️ [Sentinel] Invalid haltedUntil value, clearing halt state.');
+      saveBotConfig({ haltedUntil: null });
+      return false;
+    }
 
     if (now < haltTime) {
       const remainingMin = Math.round((haltTime - now) / 60000);
@@ -80,30 +91,48 @@ export class SentinelGuard {
     return false;
   }
 
-  private checkDrawdown(config: BotConfig): { safe: boolean; reason?: string } {
-    const decisions = getDecisions().filter((d: DecisionSnapshot) => d.outcome !== 'PENDING');
-    if (decisions.length < 5) return { safe: true };
+  /**
+   * OMEGA UPGRADE: Equity-Curve Based Maximum Drawdown
+   * 
+   * Calculul anterior era GREȘIT: suma de procente individuale per trade.
+   * Exemplu de eroare: 3 trade-uri cu -5% fiecare = -15% MDD calculat,
+   * dar equity reală: 1000 → 950 → 902.5 → 857.4 = -14.26% MDD real.
+   * 
+   * Acum: calculăm pe equity curve reală (compounding).
+   * Peak = cel mai mare balance observat.
+   * Drawdown = (peak - current) / peak.
+   */
+  private checkEquityDrawdown(): { safe: boolean; reason?: string; currentMDD?: number } {
+    const equityCurve = getEquityCurve();
+    
+    // Nu avem suficiente date pentru MDD meaningful
+    if (equityCurve.length < 5) return { safe: true, currentMDD: 0 };
 
-    log.info(`[Sentinel] Checking MDD for ${config.mode} mode...`);
-
-    // Simple MDD calculation for the last 50 trades
-    const pnls = decisions.slice(0, 50).map((d: DecisionSnapshot) => d.pnlPercent || 0);
     let peak = 0;
-    let current = 0;
     let maxDD = 0;
 
-    for (const p of pnls.reverse()) {
-      current += p;
-      if (current > peak) peak = current;
-      const dd = peak - current;
-      if (dd > maxDD) maxDD = dd;
+    for (const point of equityCurve) {
+      if (point.balance > peak) {
+        peak = point.balance;
+      }
+      
+      if (peak > 0) {
+        const dd = (peak - point.balance) / peak;
+        if (dd > maxDD) maxDD = dd;
+      }
     }
 
-    if (maxDD > (this.mddThreshold * 100)) {
-      return { safe: false, reason: `Critical Max Drawdown Reached: ${maxDD.toFixed(2)}%` };
+    log.info(`[Sentinel] Equity MDD: ${(maxDD * 100).toFixed(2)}% | Threshold: ${(this.mddThreshold * 100).toFixed(0)}%`);
+
+    if (maxDD > this.mddThreshold) {
+      return { 
+        safe: false, 
+        reason: `Critical Equity Drawdown: ${(maxDD * 100).toFixed(2)}% (threshold: ${(this.mddThreshold * 100).toFixed(0)}%)`,
+        currentMDD: maxDD
+      };
     }
 
-    return { safe: true };
+    return { safe: true, currentMDD: maxDD };
   }
 
   private checkDailyLoss(): { safe: boolean; reason?: string } {
@@ -117,6 +146,25 @@ export class SentinelGuard {
     }
 
     return { safe: true };
+  }
+
+  /**
+   * Get current system risk metrics (for diagnostics endpoint)
+   */
+  public getRiskMetrics(): { mdd: number; dailyLosses: number; isHalted: boolean; haltedUntil: string | null } {
+    const config = getBotConfig();
+    const equityCheck = this.checkEquityDrawdown();
+    const today = new Date().toISOString().slice(0, 10);
+    const lossesToday = getDecisions().filter((d: DecisionSnapshot) => 
+      d.timestamp.startsWith(today) && d.outcome === 'LOSS'
+    ).length;
+
+    return {
+      mdd: equityCheck.currentMDD || 0,
+      dailyLosses: lossesToday,
+      isHalted: this.isHalted(),
+      haltedUntil: config.haltedUntil,
+    };
   }
 
   public async triggerKillSwitch(reason: string): Promise<void> {
@@ -153,12 +201,7 @@ export class SentinelGuard {
   private async emergencyExitAllPositions(): Promise<void> {
     try {
       log.warn('⚠️ [Sentinel] emergencyExitAllPositions: Cancelling all orders and selling to USDT...');
-      
-      // Attempt to cancel all orders for common symbols or active symbols
-      // Since MEXC requires symbol, we'd normally loop through active traders
-      // For this implementation, we'll focus on selling the balance
       await sellAllAssetsToUsdt();
-      
       log.info('🛡️ [Sentinel] emergencyExitAllPositions: SUCCESS. All assets are back in USDT.');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

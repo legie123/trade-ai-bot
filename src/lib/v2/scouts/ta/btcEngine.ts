@@ -11,7 +11,7 @@ import { Signal } from '@/lib/types/radar';
 import { fetchWithRetry } from '@/lib/providers/base';
 import { createLogger } from '@/lib/core/logger';
 import { getResilientPrice } from '@/lib/core/apiFallback';
-import { getStrategies } from '@/lib/store/db';
+import { isSymbolValid } from '@/lib/store/db';
 import { evaluateStrategy, MarketContext } from '@/lib/v2/scouts/ta/dynamicInterpreter';
 import { checkVWAP } from '@/lib/v2/scouts/ta/vwapFilter';
 import { analyzeRSI } from '@/lib/v2/scouts/ta/rsiIndicator';
@@ -403,34 +403,8 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
     });
   }
 
-  // ==== DYNAMIC AI STRATEGIES EVALUATION ====
-  const activeStrategies = getStrategies().filter(s => 
-    (s.targetAssets.includes('BTC') || s.targetAssets.includes('ALL')) && 
-    (s.status === 'active' || s.status === 'probation')
-  );
-
-  const marketContext: MarketContext = {
-    symbol: 'BTCUSDT',
-    price,
-    closes15m,
-    closes1h,
-    closes4h,
-    vwap: price, // For now assuming Vwap ~ Price if not independently fetched
-  };
-
-  for (const strategy of activeStrategies) {
-    try {
-      if (evaluateStrategy(strategy, marketContext)) {
-        confirmedSignals.push({
-          signal: 'BUY',
-          reason: `🤖 [AI STRATEGY: ${strategy.name}] Condition met!`,
-          sourceId: strategy.id // Track provenance
-        });
-      }
-    } catch (err) {
-      log.error(`Strategy ${strategy.name} eval failed`, { error: String(err) });
-    }
-  }
+  // ==== DYNAMIC AI STRATEGIES (V2 Syndicate handled by ManagerVizionar) ====
+  // Legacy strategy evaluation removed for P5 Cleanup.
 
   return {
     price: Math.round(price * 100) / 100,

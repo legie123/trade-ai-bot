@@ -96,11 +96,10 @@ class GladiatorStore {
     
     gladiator.stats.totalTrades += 1;
     if (tick.isWin) {
-      // rough approx for winrate update
       const total = gladiator.stats.totalTrades;
       const prevWins = (gladiator.stats.winRate / 100) * (total - 1);
       gladiator.stats.winRate = ((prevWins + 1) / total) * 100;
-      gladiator.stats.profitFactor += 0.01; // tiny bump
+      gladiator.stats.profitFactor += 0.01;
     } else {
       const total = gladiator.stats.totalTrades;
       const prevWins = (gladiator.stats.winRate / 100) * (total - 1);
@@ -108,23 +107,73 @@ class GladiatorStore {
       gladiator.stats.maxDrawdown += Math.abs(tick.pnlPercent) * 0.1;
     }
     gladiator.lastUpdated = Date.now();
+    
+    // Trigger auto-promote/demote after every stats update
+    this.recalibrateRanks();
     saveGladiatorsToDb(this.gladiators);
+  }
+
+  /**
+   * AUTO-PROMOTE / DEMOTE ENGINE
+   * Re-ranks gladiators per arena by performance score.
+   * Only the Top 3 per arena get isLive = true (real capital access).
+   * This creates Darwinian selection pressure.
+   */
+  public recalibrateRanks(): void {
+    this.ensureLoaded();
+    const nonOmega = this.gladiators.filter(g => !g.isOmega);
+    
+    // Group by arena
+    const arenaGroups = new Map<ArenaType, Gladiator[]>();
+    for (const g of nonOmega) {
+      const group = arenaGroups.get(g.arena) || [];
+      group.push(g);
+      arenaGroups.set(g.arena, group);
+    }
+
+    for (const [, group] of arenaGroups) {
+      // Performance score: weighted combination of winRate + profitFactor + recency
+      const scored = group.map(g => {
+        const recencyBonus = (Date.now() - g.lastUpdated) < 3600_000 ? 5 : 0; // Active in last hour
+        const tradeBonus = Math.min(g.stats.totalTrades / 10, 10); // More experience = bonus (cap at 10)
+        const ddPenalty = g.stats.maxDrawdown > 15 ? -10 : 0; // Heavy drawdown = penalize
+        const score = g.stats.winRate + (g.stats.profitFactor * 5) + recencyBonus + tradeBonus + ddPenalty;
+        return { gladiator: g, score };
+      });
+
+      // Sort by score descending
+      scored.sort((a, b) => b.score - a.score);
+
+      // Assign ranks and live status
+      scored.forEach((entry, index) => {
+        entry.gladiator.rank = index + 1;
+        entry.gladiator.isLive = index < 3; // Top 3 get real capital
+      });
+    }
   }
 
   /**
    * Finds the best candidate gladiator to handle an incoming signal.
    * Priority: Top Rank (isLive = true) for the given symbol's typical arena.
+   * Prefers gladiators who were recently active and have higher win rates.
    */
   public findBestGladiator(symbol: string): Gladiator | undefined {
     this.ensureLoaded();
-    // Default to the highest rank gladiator in the DAY_TRADING arena for general signals
-    // Or DEEP_WEB for Solana eco
     const preferredArena: ArenaType = symbol.includes('SOL') || symbol.includes('WIF') ? 'DEEP_WEB' : 'DAY_TRADING';
     
-    return this.gladiators
-      .filter(g => g.arena === preferredArena && g.isLive)
-      .sort((a, b) => a.rank - b.rank)[0];
+    const candidates = this.gladiators
+      .filter(g => g.arena === preferredArena && g.isLive && !g.isOmega);
+
+    if (candidates.length === 0) {
+      // Fallback: any live gladiator
+      return this.gladiators
+        .filter(g => g.isLive && !g.isOmega)
+        .sort((a, b) => a.rank - b.rank)[0];
+    }
+
+    return candidates.sort((a, b) => a.rank - b.rank)[0];
   }
+
   public updateOmegaProgress(progress: number, stats?: Partial<Gladiator['stats']>): void {
     this.ensureLoaded();
     const omega = this.gladiators.find(g => g.isOmega);

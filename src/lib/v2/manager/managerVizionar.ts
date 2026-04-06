@@ -2,6 +2,7 @@ import { Gladiator, DualConsensus } from '../../types/gladiator';
 import { DualMasterConsciousness } from '../master/dualMaster';
 import { AlphaScout } from '../intelligence/alphaScout';
 import { SentinelGuard } from '../safety/sentinelGuard';
+import { DNAExtractor, IntelligenceDigest } from '../superai/dnaExtractor';
 import { executeMexcTrade } from '@/lib/v2/scouts/executionMexc';
 import { Signal, DecisionSnapshot } from '../../types/radar';
 import { addDecision, addLivePosition } from '@/lib/store/db';
@@ -12,11 +13,13 @@ export class ManagerVizionar {
   private syndicate: DualMasterConsciousness;
   private scouts: AlphaScout;
   private sentinel: SentinelGuard;
+  private dnaExtractor: DNAExtractor;
 
   private constructor() {
     this.syndicate = new DualMasterConsciousness();
     this.scouts = AlphaScout.getInstance();
     this.sentinel = SentinelGuard.getInstance();
+    this.dnaExtractor = DNAExtractor.getInstance();
   }
 
   public static getInstance(): ManagerVizionar {
@@ -28,16 +31,31 @@ export class ManagerVizionar {
 
   /**
    * The Vizionar routes the signal only after the Syndicate of Masters
-   * has reached a consensus on the market direction.
+   * has reached a consensus on the market direction. 
+   * NOW WITH REINFORCEMENT LEARNING LOOP.
    */
   public async processSignal(gladiator: Gladiator, payload: Signal) {
     if (!gladiator) return;
 
-    // 1. Get Public Context (Alpha Scouts)
+    // 1. Extract Gladiator Intelligence (RL Context)
+    const intelligence = this.dnaExtractor.extractIntelligence(gladiator.id);
+
+    // 2. Get Live Market Context (Alpha Scouts — CoinGecko + CryptoCompare)
     const context = await this.scouts.analyzeToken(payload.symbol);
     
+    // 3. Build enriched payload with both market data AND gladiator DNA
     const enrichPayload = { ...payload, alphaContext: context };
-    const dnaContext = {};
+    const dnaContext = {
+      digest: intelligence.digest,
+      confidenceModifier: intelligence.confidenceModifier,
+      overallWinRate: intelligence.overallWinRate,
+      recentWinRate: intelligence.recentWinRate,
+      currentStreak: intelligence.currentStreak,
+      bestSymbol: intelligence.bestSymbol,
+      longWinRate: intelligence.longWinRate,
+      shortWinRate: intelligence.shortWinRate,
+    };
+
     let consensus: DualConsensus;
     try {
       consensus = await this.syndicate.getConsensus(enrichPayload as Record<string, unknown>, dnaContext);
@@ -47,7 +65,10 @@ export class ManagerVizionar {
       return;
     }
 
-    // 3. The Shield Check (Sentinel Guard)
+    // 4. Apply RL Confidence Modifier (learned from past performance)
+    consensus = this.applyRLModifier(consensus, intelligence);
+
+    // 5. The Shield Check (Sentinel Guard)
     const safetyCheck = await this.sentinel.check(payload, consensus);
     
     if (!safetyCheck.safe) {
@@ -56,13 +77,33 @@ export class ManagerVizionar {
       return;
     }
 
-    // 4. Dispatch Execution
+    // 6. Dispatch Execution
     if (consensus.finalDirection !== 'FLAT') {
       await this.routeSignal(gladiator, payload, consensus);
     } else {
       console.log(`[SYNDICATE VETO] Masters did not approve the move for ${gladiator.id}. Reason: Low Confidence.`);
       this.broadcastSyndicateVeto(payload, consensus);
     }
+  }
+
+  /**
+   * Reinforcement Learning modifier:
+   * Adjusts the Dual Master's confidence based on historical gladiator performance.
+   * Hot hand → boost. Cold streak → dampen. Worst symbol → extra caution.
+   */
+  private applyRLModifier(consensus: DualConsensus, intelligence: IntelligenceDigest): DualConsensus {
+    const mod = intelligence.confidenceModifier;
+    const adjusted = consensus.weightedConfidence * mod;
+
+    // If gladiator is on a 4+ loss streak, require higher base confidence
+    if (intelligence.currentStreak <= -4 && consensus.weightedConfidence < 0.8) {
+      return { ...consensus, weightedConfidence: 0, finalDirection: 'FLAT' };
+    }
+
+    return {
+      ...consensus,
+      weightedConfidence: Math.min(adjusted, 1),
+    };
   }
 
   private async routeSignal(gladiator: Gladiator, payload: Signal, consensus: DualConsensus) {

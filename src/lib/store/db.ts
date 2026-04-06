@@ -4,14 +4,12 @@
 // Stores decision snapshots, performance, and optimizer state
 // ============================================================
 import { createClient } from '@supabase/supabase-js';
-import { INITIAL_STRATEGIES } from '@/lib/store/seedStrategies';
 import {
   DecisionSnapshot,
   PerformanceRecord,
   OptimizationState,
   BotMode,
 } from '@/lib/types/radar';
-import { TradingStrategy, StrategyCondition } from '@/lib/types/strategy';
 import { createLogger } from '@/lib/core/logger';
 import type { Gladiator } from '@/lib/types/gladiator';
 
@@ -54,12 +52,12 @@ interface DbStore {
   performance: PerformanceRecord[];
   optimizer: OptimizationState;
   config: BotConfig;
-  strategies: TradingStrategy[]; // legacy
   gladiators: Gladiator[]; // V2 Gladiators
   syndicateAudits: Record<string, unknown>[]; // Stores Master arguments
   gladiatorDna: Record<string, unknown>[]; // Stores battle DNA for Omega Super AI
   phantomTrades: PhantomTrade[]; // Shadow trades for Gladiator Combat Engine
   livePositions: LivePosition[]; // Real live trades for Trailing Stop Engine
+  invalidSymbols: string[]; // Blacklist for delisted MEXC symbols
 }
 
 const cache: DbStore = {
@@ -83,11 +81,11 @@ const cache: DbStore = {
     aiStatus: 'OK',
     haltedUntil: null,
   },
-  strategies: [],
   syndicateAudits: [],
   gladiatorDna: [],
   phantomTrades: [],
   livePositions: [],
+  invalidSymbols: [],
 };
 
 let dbInitialized = false;
@@ -95,11 +93,6 @@ let dbInitialized = false;
 // ─── INIT DB (Called at boot or Cron start) ────
 export async function initDB() {
   if (dbInitialized) return;
-
-  // Always seed strategies from defaults if cache is empty
-  if (cache.strategies.length === 0) {
-    cache.strategies = INITIAL_STRATEGIES;
-  }
 
   if (!supabaseUrl) {
     dbInitialized = true;
@@ -134,20 +127,11 @@ export async function initDB() {
         if (row.id === 'performance') cache.performance = row.data || [];
         if (row.id === 'optimizer') cache.optimizer = row.data || cache.optimizer;
         if (row.id === 'config') cache.config = row.data || cache.config;
-        if (row.id === 'strategies') {
-          const strats = row.data as TradingStrategy[] || [];
-          if (strats.length > 0) {
-            cache.strategies = strats.map((s: TradingStrategy) => ({
-              ...s,
-              entryConditions: decryptConditions(s.entryConditions),
-              exitConditions: decryptConditions(s.exitConditions),
-            }));
-          }
-        }
         if (row.id === 'gladiators') cache.gladiators = row.data || [];
         if (row.id === 'syndicate_audit') cache.syndicateAudits = row.data || [];
         if (row.id === 'gladiator_dna') cache.gladiatorDna = row.data || [];
         if (row.id === 'live_positions') cache.livePositions = row.data || [];
+        if (row.id === 'invalid_symbols') cache.invalidSymbols = row.data || [];
       }
       log.info('Supabase database initialized from cloud state');
     }
@@ -159,34 +143,6 @@ export async function initDB() {
   }
 }
 
-// ─── Premium Core Obfuscation ──────────────────
-const OBFUSCATION_KEY = process.env.CRON_SECRET || 'antigravity-premium-key';
-
-function xorCipher(text: string, key: string): string {
-  let result = '';
-  for (let i = 0; i < text.length; i++) {
-    result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-  }
-  return result;
-}
-
-function encryptConditions(conditions: StrategyCondition[]): string {
-  const jsonStr = JSON.stringify(conditions);
-  const xor = xorCipher(jsonStr, OBFUSCATION_KEY);
-  return Buffer.from(xor).toString('base64');
-}
-
-function decryptConditions(data: unknown): StrategyCondition[] {
-  if (Array.isArray(data)) return data as StrategyCondition[]; // Backward compat for unencrypted legacy rows
-  try {
-    const xor = Buffer.from(data as string, 'base64').toString('utf-8');
-    const jsonStr = xorCipher(xor, OBFUSCATION_KEY);
-    return JSON.parse(jsonStr) as StrategyCondition[];
-  } catch { // Ignore err
-    return [];
-  }
-}
-
 // ─── Atomic Sync Queue (Ensures sequential Cloud writes) ───
 let syncQueue = Promise.resolve();
 
@@ -195,18 +151,7 @@ function syncToCloud(id: string, data: unknown) {
 
   syncQueue = syncQueue.then(async () => {
     try {
-      let payload = data;
-      
-      // Obfuscate strict logic formulas for Premium Core Protection 
-      if (id === 'strategies' && Array.isArray(data)) {
-        payload = (data as TradingStrategy[]).map((s: TradingStrategy) => ({
-          ...s,
-          entryConditions: encryptConditions(s.entryConditions as StrategyCondition[]),
-          exitConditions: encryptConditions(s.exitConditions as StrategyCondition[])
-        }));
-      }
-
-      const { error } = await supabase.from('json_store').upsert({ id, data: payload });
+      const { error } = await supabase.from('json_store').upsert({ id, data });
       if (error) log.error(`Supabase sync failed for ${id}`, { error: error.message });
       
       // Artificial delay to prevent Supabase rate limits (100ms)
@@ -220,6 +165,21 @@ function syncToCloud(id: string, data: unknown) {
 // ─── Decision Snapshots ────────────────────────────
 export function getDecisions(): DecisionSnapshot[] {
   return cache.decisions;
+}
+
+export function getDecisionsToday(): DecisionSnapshot[] {
+  const today = new Date().toISOString().slice(0, 10);
+  return cache.decisions.filter(d => d.timestamp.startsWith(today));
+}
+
+export function getPendingDecisions(): DecisionSnapshot[] {
+  return cache.decisions.filter(d => d.outcome === 'PENDING');
+}
+
+// ─── System Health Reset ──────────────────────────
+export function clearSystemHealthData(): void {
+  cache.decisions = [];
+  syncToCloud('decisions', cache.decisions);
 }
 
 export function addDecision(snapshot: DecisionSnapshot): void {
@@ -240,27 +200,6 @@ export function updateDecision(id: string, updates: Partial<DecisionSnapshot>): 
   if (idx === -1) return;
   cache.decisions[idx] = { ...cache.decisions[idx], ...updates };
   syncToCloud('decisions', cache.decisions);
-}
-
-export function getPendingDecisions(): DecisionSnapshot[] {
-  return cache.decisions.filter((d) => d.outcome === 'PENDING');
-}
-
-export function getDecisionsToday(): DecisionSnapshot[] {
-  const today = new Date().toISOString().split('T')[0];
-  return cache.decisions.filter((d) => d.timestamp.startsWith(today));
-}
-
-export function clearSystemHealthData(): void {
-  cache.decisions = [];
-  cache.performance = [];
-  if (cache.config) {
-    cache.config.paperBalance = 1000;
-  }
-  syncToCloud('decisions', cache.decisions);
-  syncToCloud('performance', cache.performance);
-  syncToCloud('config', cache.config);
-  log.info('System health data wiped for Production Mode resets.');
 }
 
 // ─── Syndicate Audit (Combat Logs) ────────────────
@@ -327,6 +266,23 @@ export function updateLivePosition(id: string, updates: Partial<LivePosition>): 
     cache.livePositions[idx] = { ...cache.livePositions[idx], ...updates };
     syncToCloud('live_positions', cache.livePositions);
   }
+}
+
+// ─── Invalid Symbols (Ticker Filter) ──────────────
+export function getInvalidSymbols(): string[] {
+  return cache.invalidSymbols;
+}
+
+export function addInvalidSymbol(symbol: string): void {
+  if (!cache.invalidSymbols.includes(symbol)) {
+    cache.invalidSymbols.push(symbol);
+    syncToCloud('invalid_symbols', cache.invalidSymbols);
+    log.warn(`⚠️ Symbol ${symbol} blacklisted manually due to MEXC fetch error.`);
+  }
+}
+
+export function isSymbolValid(symbol: string): boolean {
+  return !cache.invalidSymbols.includes(symbol);
 }
 
 // ─── Performance Records ───────────────────────────
@@ -404,23 +360,14 @@ export function getBotConfig(): BotConfig {
 export function saveBotConfig(config: Partial<BotConfig>): void {
   cache.config = { ...cache.config, ...config };
   syncToCloud('config', cache.config);
+}// ─── Strategies (Legacy) ───────────────────────────
+export function getStrategies(): any[] {
+  return (cache as any).strategies || [];
 }
 
-// ─── Dynamic Strategies ────────────────────────────
-export function getStrategies(): TradingStrategy[] {
-  return cache.strategies;
-}
-
-export function saveStrategy(strategy: TradingStrategy): void {
-  const idx = cache.strategies.findIndex((s) => s.id === strategy.id);
-  if (idx > -1) cache.strategies[idx] = strategy;
-  else cache.strategies.push(strategy);
-  syncToCloud('strategies', cache.strategies);
-}
-
-export function removeStrategy(id: string): void {
-  cache.strategies = cache.strategies.filter(s => s.id !== id);
-  syncToCloud('strategies', cache.strategies);
+export function saveStrategies(strats: any[]): void {
+  (cache as any).strategies = strats;
+  syncToCloud('strategies', (cache as any).strategies);
 }
 
 // ─── Equity Curve (for chart) ──────────────────────
@@ -440,8 +387,6 @@ export function getEquityCurve(): EquityPoint[] {
     .filter((d) => d.outcome !== 'PENDING')
     .reverse(); // oldest first
 
-  log.debug(`getEquityCurve: total=${allDecs.length} non-pending=${decisions.length}`);
-
   let cumPnl = 0;
   let balance = config.paperBalance;
   const positionSize = 20; // 20% of balance per trade (paper trading standard)
@@ -449,11 +394,8 @@ export function getEquityCurve(): EquityPoint[] {
   return decisions.map((d) => {
     const pnlPct = d.pnlPercent || 0;
     cumPnl += pnlPct;
-
-    // Additive P&L: each trade risks positionSize% of CURRENT balance
-    // Trade P&L impact = balance * (positionSize/100) * (pnlPct/100)
     const tradeImpact = balance * (positionSize / 100) * (pnlPct / 100);
-    balance = Math.max(balance + tradeImpact, 0); // never go below 0
+    balance = Math.max(balance + tradeImpact, 0);
 
     return {
       timestamp: d.timestamp,

@@ -2,18 +2,9 @@
 // Multi-Coin Signal Engine — Solana Ecosystem
 // Hardened with apiFallback, structured logging, stale guards
 // ============================================================
-import { routeSignal } from '@/lib/router/signalRouter';
-import { trySignal } from '@/lib/v2/scouts/ta/signalCooldown';
-import { getStreakStatus } from '@/lib/v2/scouts/ta/streakGuard';
-import { signalStore } from '@/lib/store/signalStore';
 import { Signal } from '@/lib/types/radar';
 import { createLogger } from '@/lib/core/logger';
 import { getResilientPrice } from '@/lib/core/apiFallback';
-import { fetchWithRetry } from '@/lib/providers/base';
-import { checkVWAP } from '@/lib/v2/scouts/ta/vwapFilter';
-import { analyzeRSI } from '@/lib/v2/scouts/ta/rsiIndicator';
-import { getStrategies } from '@/lib/store/db';
-import { evaluateStrategy, MarketContext } from '@/lib/v2/scouts/ta/dynamicInterpreter';
 
 const log = createLogger('SolanaEngine');
 
@@ -239,34 +230,8 @@ function analyzeCoin(symbol: string, name: string, candles: Candle[], livePrice:
   // ── Momentum: price far above EMA50 = overbought ──  
   if (aboveAll && price > ema50 * 1.05) signals.push({ signal: 'SELL', reason: `Overbought: price 5%+ above EMA50` });
 
-  // ==== DYNAMIC AI STRATEGIES EVALUATION ====
-  const activeStrategies = getStrategies().filter(s => 
-    (s.targetAssets.includes(symbol) || s.targetAssets.includes('SOL_ECO') || s.targetAssets.includes('ALL')) && 
-    (s.status === 'active' || s.status === 'probation')
-  );
-
-  const marketContext: MarketContext = {
-    symbol,
-    price,
-    closes15m: closes,
-    closes1h: closes,
-    closes4h: closes,
-    vwap: price, 
-  };
-
-  for (const strategy of activeStrategies) {
-    try {
-      if (evaluateStrategy(strategy, marketContext)) {
-        signals.push({
-          signal: 'BUY',
-          reason: `🤖 [AI STRATEGY: ${strategy.name}] Condition met for ${symbol}!`,
-          sourceId: strategy.id
-        });
-      }
-    } catch (err) {
-      log.error(`Strategy ${strategy.name} eval failed on ${symbol}`, { error: String(err) });
-    }
-  }
+  // ==== DYNAMIC AI STRATEGIES (V2 Syndicate handled by ManagerVizionar) ====
+  // Legacy strategy evaluation removed for P5 Cleanup.
 
   // ── TREND FILTER: Block signals against EMA trend (Calibration #3) ──
   const trendUp = ema50 > ema200;
@@ -321,6 +286,7 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
   let totalSignals = 0;
 
   for (const coin of SOLANA_COINS) {
+    if (!isSymbolValid(coin.symbol)) continue;
     const candles = await fetchOHLC(coin.id);
     const analysis = analyzeCoin(coin.symbol, coin.name, candles, prices[coin.id] || 0);
     results.push(analysis);

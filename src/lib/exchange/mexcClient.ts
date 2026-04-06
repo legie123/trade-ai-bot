@@ -3,6 +3,7 @@
 // API docs: https://mexcdevelop.github.io/apidocs/spot_v3_en/
 // ============================================================
 import crypto from 'crypto';
+import { addInvalidSymbol, isSymbolValid } from '@/lib/store/db';
 
 const MEXC_BASE_URL = 'https://api.mexc.com';
 
@@ -64,8 +65,18 @@ export async function getMexcServerTime(): Promise<number> {
 }
 
 export async function getMexcPrice(symbol: string): Promise<number> {
-  const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol }, false);
-  return parseFloat(data.price as string) || 0;
+  if (!isSymbolValid(symbol)) return 0;
+  
+  try {
+    const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol }, false);
+    return parseFloat(data.price as string) || 0;
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.includes('Invalid symbol') || msg.includes('400') || msg.includes('404')) {
+      addInvalidSymbol(symbol);
+    }
+    return 0;
+  }
 }
 
 export async function getMexcTicker24h(symbol: string): Promise<Record<string, unknown>> {
