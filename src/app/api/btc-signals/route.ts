@@ -1,6 +1,6 @@
 // GET /api/btc-signals — run BTC scanner, return analysis + trigger Phoenix V2
 import { NextResponse } from 'next/server';
-import { analyzeBTC } from '@/lib/engine/btcEngine';
+import { analyzeBTC } from '@/lib/v2/scouts/ta/btcEngine';
 import { createLogger } from '@/lib/core/logger';
 import { ManagerVizionar } from '@/lib/v2/manager/managerVizionar';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';

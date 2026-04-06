@@ -2,7 +2,7 @@ import { Gladiator, SyndicateConsensus } from '../../types/gladiator';
 import { MasterSyndicate } from '../master/syndicate';
 import { AlphaScout } from '../intelligence/alphaScout';
 import { SentinelGuard } from '../safety/sentinelGuard';
-import { executeMexcTrade } from '../../engine/mexcAutoTrader';
+import { executeMexcTrade } from '@/lib/v2/scouts/executionMexc';
 import { Signal } from '../../types/radar';
 
 export class ManagerVizionar {

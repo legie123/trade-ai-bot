@@ -9,7 +9,7 @@ const log = createLogger('MoltbookDiscovery');
  */
 const ACTIVE_SUBMOLTS = ['quant', 'crypto', 'ai', 'trading', 'web3'];
 
-export async function runMoltbookDailySweep() {
+export async function runMoltbookDailySweep(forgeStats?: { progressPercent: number, totalWinsAssimilated: number }) {
     log.info('Starting Advanced Moltbook sweep across multiple submolts...');
     const results = [];
 
@@ -20,7 +20,7 @@ export async function runMoltbookDailySweep() {
         const randomSubmolt = ACTIVE_SUBMOLTS[Math.floor(Math.random() * ACTIVE_SUBMOLTS.length)];
         log.info(`Rate limit aware: System randomly selected [${randomSubmolt}] for this sweep.`);
         
-        const insightText = await extractInsightsWithLLM(discussions, randomSubmolt);
+        const insightText = await extractInsightsWithLLM(discussions, randomSubmolt, forgeStats);
         
         if (insightText && insightText.length > 20) {
            log.info(`Generated insight for [${randomSubmolt}]: ${insightText.substring(0, 80)}...`);
@@ -37,47 +37,53 @@ export async function runMoltbookDailySweep() {
     }
 }
 
-async function extractInsightsWithLLM(rawText: string, contextTarget: string): Promise<string> {
-    const OPENAI_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_KEY) return '';
+async function extractInsightsWithLLM(rawText: string, contextTarget: string, forgeStats?: any): Promise<string> {
+    const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+    if (!OPENROUTER_KEY) return '';
+
+    const forgeMsg = forgeStats ? `Also subtly mention that the 'Omega Gladiator' Forge is at ${forgeStats.progressPercent}% completion and has assimilated ${forgeStats.totalWinsAssimilated} winning trades.` : '';
 
     const prompt = `
 You are the brain of "antigravity-bot-v1", an autonomous trading AI on Moltbook.
-Analyze the following noise from other AI agents. If the DISCUSSIONS are empty or missing, just generate your own brilliant internal insight/alpha. Extract exactly 1 clear, actionable coding optimization, web3 strategy, or quantitative idea tailored for the '${contextTarget}' community.
+Analyze the following noise from other AI agents. If the DISCUSSIONS are empty or missing, just generate your own brilliant internal insight/alpha. 
+Extract exactly 1 clear, actionable coding optimization, web3 strategy, or quantitative idea tailored for the '${contextTarget}' community.
 Make it sound professional, cutting-edge, and smart. Maximum 3 sentences. No hashtags here.
+${forgeMsg}
 
 DISCUSSIONS:
 ${rawText.substring(0, 3000)}
 
 YOUR INSIGHT/IDEA:`;
 
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${OPENAI_KEY}`
+            'Authorization': `Bearer ${OPENROUTER_KEY}`,
+            'HTTP-Referer': 'https://antigravity.tech',
+            'X-Title': 'Phoenix Syndicate'
         },
         body: JSON.stringify({
-            model: 'gpt-4o',
+            model: 'meta-llama/llama-3.3-70b-instruct',
             messages: [
                 { role: 'system', content: 'You are an elite quantitative developer AI agent.' },
                 { role: 'user', content: prompt }
             ],
-            temperature: 0.9,
+            temperature: 0.8,
             max_tokens: 150
         })
     });
 
     if (res.ok) {
         const data = await res.json();
-        return data.choices[0].message.content.trim();
+        return data.choices?.[0]?.message?.content?.trim() || '';
     }
     return '';
 }
 
 async function solveMathChallenge(challengeText: string): Promise<string> {
-    const OPENAI_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_KEY) throw new Error("Missing OPENAI_KEY for Auto-Solver");
+    const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+    if (!OPENROUTER_KEY) throw new Error("Missing OPENROUTER_KEY for Auto-Solver");
     
     log.info(`Attempting to solve AI Captcha: ${challengeText}`);
     const prompt = `
@@ -89,14 +95,16 @@ RESTRICTION: Output ONLY the final numeric answer formatted to exactly 2 decimal
 PROBLEM:
 ${challengeText}`;
 
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${OPENAI_KEY}`
+            'Authorization': `Bearer ${OPENROUTER_KEY}`,
+            'HTTP-Referer': 'https://antigravity.tech',
+            'X-Title': 'Phoenix Syndicate'
         },
         body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: 'meta-llama/llama-3.3-70b-instruct',
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.1,
             max_tokens: 20
@@ -105,11 +113,13 @@ ${challengeText}`;
 
     if (res.ok) {
         const data = await res.json();
-        const rawAns = data.choices[0].message.content.trim();
-        log.info(`Auto-Solver deduced answer: ${rawAns}`);
-        return rawAns;
+        const rawAns = data.choices?.[0]?.message?.content?.trim();
+        if (rawAns) {
+           log.info(`Auto-Solver deduced answer: ${rawAns}`);
+           return rawAns;
+        }
     }
-    throw new Error("LLM Math Solver HTTP Error");
+    throw new Error("LLM Math Solver HTTP Error on OpenRouter");
 }
 
 import { verifyPost } from './moltbookClient';

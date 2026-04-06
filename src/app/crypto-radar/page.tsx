@@ -126,7 +126,9 @@ export default function CryptoRadarPage() {
     }
   };
 
-  // ---- Fetch signals from webhook endpoint ----
+  // ---- Fetch signals & health ----
+  const [forgeState, setForgeState] = useState({ progress: 0, active: 0 });
+
   const fetchSignals = useCallback(async () => {
     try {
       const res = await fetch('/api/tradingview');
@@ -135,8 +137,16 @@ export default function CryptoRadarPage() {
         setSignals(data.signals || []);
         setStats(s => data.stats || s);
       }
+      const healthRes = await fetch('/api/health');
+      if (healthRes.ok) {
+        const hData = await healthRes.json();
+        setForgeState({
+          progress: hData.trading?.forgeProgress || 0,
+          active: hData.trading?.totalGladiators || 0,
+        });
+      }
     } catch (e) {
-      console.warn('Signal fetch error:', e);
+      console.warn('Signal/Health fetch error:', e);
     }
   }, []);
 
@@ -216,9 +226,9 @@ export default function CryptoRadarPage() {
     } catch { /* optional */ }
   }, []);
 
-  // ---- Cron loop: triggers BTC engine + trade evaluator on server ----
+  // ---- Forge/Moltbook cron loop: triggers Forge Extraction & background sweep ----
   const triggerCron = useCallback(async () => {
-    try { await fetch('/api/cron'); } catch { /* background, non-blocking */ }
+    try { await fetch('/api/moltbook-cron'); } catch { /* background, non-blocking */ }
   }, []);
 
   // ---- Initial + polling ----
@@ -328,6 +338,48 @@ export default function CryptoRadarPage() {
         totalDecisions={botStats.totalDecisions}
         todayDecisions={botStats.todayDecisions}
       />
+
+      {/* ---- The Forge Progress (Super-AI Training) ---- */}
+      <div className="glass-card" style={{ marginBottom: 24, padding: '20px 24px', borderRadius: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 28 }}>🔬</div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '0.05em', color: '#fff' }}>THE FORGE: MOLDING THE OMEGA GLADIATOR</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Extracting DNA from {forgeState.active} Active Gladiators</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent-cyan)' }}>
+            {forgeState.progress}%
+          </div>
+        </div>
+        
+        {/* Progress Bar Container */}
+        <div style={{ height: 12, background: 'rgba(0,0,0,0.4)', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', position: 'relative' }}>
+          <div style={{
+            height: '100%',
+            width: `${forgeState.progress}%`,
+            background: 'linear-gradient(90deg, #3b82f6, #06b6d4, #10b981)',
+            boxShadow: '0 0 15px rgba(6, 182, 212, 0.5)',
+            transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)',
+            position: 'relative'
+          }}>
+            {/* Animated shimmer effect on the progress bar */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+              animation: 'shimmer 2s infinite',
+              transform: 'skewX(-20deg)'
+            }} />
+          </div>
+        </div>
+        <style>{`@keyframes shimmer { 0% { transform: translateX(-100%) skewX(-20deg); } 100% { transform: translateX(200%) skewX(-20deg); } }`}</style>
+        
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
+          <div>Assimilating Win Behaviors</div>
+          <div>Target: 100 Wins (Genesis)</div>
+        </div>
+      </div>
 
       {/* ---- Filter Presets ---- */}
       <div role="toolbar" aria-label="Filter presets" style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -505,13 +557,13 @@ export default function CryptoRadarPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {combatAudits.filter((s: any) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((audit: any) => (
-                      <div key={audit.id || audit.signalId} style={{ display: 'flex', flexDirection: 'column', padding: 12, background: watchlist.includes(audit.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${audit.consensus?.finalDirection === 'LONG' ? 'var(--accent-green)' : audit.consensus?.finalDirection === 'SHORT' ? 'var(--accent-red)' : 'var(--text-muted)'}`, transition: 'background 0.2s' }}>
+                      <div key={audit.id} style={{ display: 'flex', flexDirection: 'column', padding: 12, background: watchlist.includes(audit.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${audit.finalDirection === 'LONG' ? 'var(--accent-green)' : audit.finalDirection === 'SHORT' ? 'var(--accent-red)' : 'var(--text-muted)'}`, transition: 'background 0.2s' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(audit.timestamp)}</span>
                           <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{audit.symbol} {watchlist.includes(audit.symbol) && <span style={{ fontSize: 10, color: 'var(--accent-cyan)' }}>★</span>}</span>
-                          <span className={`badge ${audit.consensus?.finalDirection === 'LONG' ? 'badge-signal-buy' : audit.consensus?.finalDirection === 'SHORT' ? 'badge-signal-sell' : 'badge-info'}`} style={{ fontSize: 10 }}>{audit.consensus?.finalDirection || 'NEUTRAL'}</span>
-                          <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(audit.consensus?.weightedConfidence ? audit.consensus.weightedConfidence * 100 : 0) }}>
-                            {Math.round((audit.consensus?.weightedConfidence || 0) * 100)}%
+                          <span className={`badge ${audit.finalDirection === 'LONG' ? 'badge-signal-buy' : audit.finalDirection === 'SHORT' ? 'badge-signal-sell' : 'badge-info'}`} style={{ fontSize: 10 }}>{audit.finalDirection || 'NEUTRAL'}</span>
+                          <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(audit.weightedConfidence ? audit.weightedConfidence * 100 : 0) }}>
+                            {Math.round((audit.weightedConfidence || 0) * 100)}%
                           </span>
                           
                           {/* Actionable CTAs */}
@@ -520,12 +572,18 @@ export default function CryptoRadarPage() {
                             <button className="signal-cta" title={mutedSymbols.includes(audit.symbol) ? 'Unmute' : 'Mute'} onClick={() => toggleMute(audit.symbol)} style={{ opacity: 0.5 }}>🔇</button>
                           </div>
                         </div>
-                        {audit.consensus?.opinions && (
-                          <div style={{ display: 'flex', gap: 6, marginTop: 8, fontSize: 10, flexWrap: 'wrap' }}>
-                            {audit.consensus.opinions.map((op: any, i: number) => (
-                              <span key={i} style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', color: op.direction === 'LONG' ? 'var(--accent-green)' : op.direction === 'SHORT' ? 'var(--accent-red)' : 'var(--text-muted)'}}>
-                                {op.seat.split('_')[0]}: {op.direction}
-                              </span>
+                        {audit.opinions && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                            {audit.opinions.map((op: any, i: number) => (
+                              <div key={i} style={{ fontSize: 11, background: 'rgba(0,0,0,0.3)', padding: 8, borderRadius: 6 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{op.seat}</span>
+                                  <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', color: op.direction === 'LONG' ? 'var(--accent-green)' : op.direction === 'SHORT' ? 'var(--accent-red)' : 'var(--text-muted)'}}>
+                                    {op.direction} ({(op.confidence * 100).toFixed(0)}%)
+                                  </span>
+                                </div>
+                                <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4, fontStyle: 'italic' }}>&quot;{op.reasoning}&quot;</div>
+                              </div>
                             ))}
                           </div>
                         )}

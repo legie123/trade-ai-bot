@@ -125,7 +125,7 @@ export class MasterSyndicate {
   }
 
   private consensusThreshold = 0.70;
-  private timeoutMs = 2000;
+  private timeoutMs = 10000;
 
   public static parseResponse(seat: MasterSeat, text: string): SyndicateOpinion {
     const directionMatch = text.match(/DIRECTION:\s*(LONG|SHORT|FLAT)/i);
@@ -155,8 +155,11 @@ export class MasterSyndicate {
 
     const consensus = this.calculateWeightedVote(validOpinions, arena);
     
-    // Combat Audit: Persist reasoning to DB
-    addSyndicateAudit(consensus);
+    // Combat Audit: Persist reasoning to DB with contextual symbol
+    addSyndicateAudit({
+      ...consensus,
+      symbol: (marketData as any).symbol || 'UNKNOWN_ASSET'
+    });
     
     return consensus;
   }

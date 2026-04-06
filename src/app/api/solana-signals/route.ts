@@ -1,6 +1,6 @@
 // GET /api/solana-signals — run Solana multi-coin scanner
 import { NextResponse } from 'next/server';
-import { analyzeMultiCoin } from '@/lib/engine/solanaEngine';
+import { analyzeMultiCoin } from '@/lib/v2/scouts/ta/solanaEngine';
 import { createLogger } from '@/lib/core/logger';
 import { ManagerVizionar } from '@/lib/v2/manager/managerVizionar';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';

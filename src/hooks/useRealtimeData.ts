@@ -81,6 +81,25 @@ export interface RealtimeBotStats {
     symbol: string;
   }>;
   balance: number;
+  gladiators?: Array<{
+    id: string;
+    status: string;
+    arena: string;
+    winRate: number;
+    trainingProgress: number;
+    isOmega?: boolean;
+    genes: Record<string, unknown>;
+  }>;
+  v2Entities?: {
+    masters: Array<{ id: string; name: string; role: string; status: string; power: number }>;
+    manager: { name: string; role: string; status: string; description: string };
+    sentinels: {
+      riskShield: { name: string; limit: string; active: boolean; triggered: boolean };
+      lossDaily: { name: string; limit: string; active: boolean; triggered: boolean };
+    };
+    promoter: { name: string; role: string; status: string };
+    scouts: { name: string; role: string; status: string };
+  };
 }
 
 export interface RealtimeSignal {

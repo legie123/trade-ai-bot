@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { runMoltbookDailySweep } from '@/lib/moltbook/discoveryFeed';
 import { createLogger } from '@/lib/core/logger';
+import { getWatchdogState } from '@/lib/core/watchdog';
+import { extractWinningBehaviors } from '@/lib/v2/forge/dnaExtractor';
 
 const log = createLogger('MoltbookCron');
 
@@ -15,12 +17,23 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  log.info('Triggering manual / cron run for Moltbook Autonomous Agent...');
+  const watchdog = getWatchdogState();
+  if (watchdog.status !== 'HEALTHY' && watchdog.status !== 'WARNING') {
+    log.error('Watchdog reports degraded state. Halting cron sweep to preserve resources.');
+    return NextResponse.json({ success: false, error: 'System not healthy.' }, { status: 503 });
+  }
+
+  log.info('Triggering Moltbook Cron: Data Extraction & Network Sweep...');
 
   try {
-    const sweepResult = await runMoltbookDailySweep();
+    const forgeStats = extractWinningBehaviors();
+    log.info(`Super-AI Forge Progress: ${forgeStats.progressPercent}% (${forgeStats.totalWinsAssimilated} wins assimilated)`);
+
+    const sweepResult = await runMoltbookDailySweep(forgeStats);
+    
     return NextResponse.json({
         success: true,
+        forge: forgeStats,
         data: sweepResult
     });
   } catch (err: any) {

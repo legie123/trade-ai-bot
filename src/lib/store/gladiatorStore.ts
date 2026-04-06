@@ -45,6 +45,26 @@ class GladiatorStore {
         lastUpdated: Date.now(),
       };
     });
+
+    // Seed the ultimate Omega Gladiator
+    this.gladiators.push({
+      id: 'OMEGA-GLADIATOR',
+      name: 'Super-AI (Omega)',
+      arena: 'DAY_TRADING', // Can be any arena
+      rank: 0, // God rank
+      isLive: false,
+      isOmega: true,
+      status: 'IN_TRAINING',
+      trainingProgress: 0,
+      stats: {
+        winRate: 0,
+        profitFactor: 0,
+        maxDrawdown: 0,
+        sharpeRatio: 0,
+        totalTrades: 0,
+      },
+      lastUpdated: Date.now(),
+    });
   }
 
   public getGladiators(): Gladiator[] {
@@ -63,6 +83,20 @@ class GladiatorStore {
     return this.gladiators
       .filter(g => g.arena === preferredArena && g.isLive)
       .sort((a, b) => a.rank - b.rank)[0];
+  }
+  public updateOmegaProgress(progress: number, stats?: Partial<Gladiator['stats']>): void {
+    const omega = this.gladiators.find(g => g.isOmega);
+    if (omega) {
+      omega.trainingProgress = Math.min(100, Math.max(0, progress));
+      if (stats) {
+        omega.stats = { ...omega.stats, ...stats };
+      }
+      if (omega.trainingProgress >= 100 && omega.status === 'IN_TRAINING') {
+        omega.status = 'ACTIVE';
+        omega.isLive = true;
+      }
+      omega.lastUpdated = Date.now();
+    }
   }
 }
 

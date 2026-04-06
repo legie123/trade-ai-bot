@@ -3,22 +3,15 @@ import { NextResponse } from 'next/server';
 import { getWatchdogState } from '@/lib/core/watchdog';
 import { getHealthSnapshot } from '@/lib/core/heartbeat';
 import { isKillSwitchEngaged, getKillSwitchState } from '@/lib/core/killSwitch';
-import { startAutoScan } from '@/lib/engine/autoScan';
-import { getAggregatorStats } from '@/lib/engine/signalAggregator';
-import { getExecutionLog } from '@/lib/engine/executor';
 import { getDecisions } from '@/lib/store/db';
+import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { testConnection } from '@/lib/exchange/binanceClient';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Auto-start scanning loop on first health check if dead
     const watchdog = getWatchdogState();
-    if (!watchdog.alive && watchdog.status !== 'HEALTHY') {
-      startAutoScan();
-    }
-
     const heartbeat = getHealthSnapshot();
     const hs = heartbeat?.status || 'YELLOW';
     
@@ -49,12 +42,10 @@ export async function GET() {
     } catch { /* */ }
 
     // Aggregate stats
-    const agg = getAggregatorStats();
-    const execLog = getExecutionLog();
     const decisions = getDecisions();
     const today = new Date().toISOString().slice(0, 10);
     const todayDecisions = decisions.filter(d => d.timestamp.startsWith(today)).length;
-    const executedToday = execLog.filter(r => r.executed && r.timestamp?.startsWith(today)).length;
+    const activeGladiators = gladiatorStore.getGladiators().length;
 
     // Overall Status
     const killSwitch = getKillSwitchState();
@@ -64,7 +55,7 @@ export async function GET() {
 
     return NextResponse.json({
       status: overallStatus,
-      version: '6.0.0 (Hardened)',
+      version: '6.0.0 (Phoenix V2)',
       systemMode: process.env.AUTO_TRADE_ENABLED === 'true' ? 'AUTO_TRADE' : 'PAPER',
       uptimeSecs: process.uptime(),
       
@@ -76,17 +67,15 @@ export async function GET() {
 
       trading: {
         autoSelectEnabled: process.env.AUTO_TRADE_ENABLED === 'true',
-        totalSignalsReady: agg.total,
+        totalGladiators: activeGladiators,
         decisionsToday: todayDecisions,
-        paperFillsToday: executedToday,
-        openPositions: agg.pendingCount,
+        forgeProgress: gladiatorStore.getGladiators().find(g => g.isOmega)?.trainingProgress || 0,
       },
 
       api: {
         binance: { ok: binanceOk, mode: binanceMode, latencyMs: binanceLatency },
         dexScreener: { ok: dexOk },
         coinGecko: { ok: cgOk },
-
       },
 
       memoryTracker: heartbeat?.memory || {},

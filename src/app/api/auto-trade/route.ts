@@ -1,41 +1,19 @@
-// GET /api/auto-trade — scan for executable trades + ML scores
-// POST /api/auto-trade — toggle auto-trading, execute manual
+// GET /api/auto-trade — return engine running status (Informational - Phoenix V2)
+// POST /api/auto-trade — test connections
 import { NextResponse } from 'next/server';
-import { scanForAutoTrades, getAutoTradeConfig } from '@/lib/engine/autoTrader';
-import { scoreRecentSignals } from '@/lib/engine/mlFilter';
 import { testConnection, getBalances, getPrice } from '@/lib/exchange/binanceClient';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const config = getAutoTradeConfig();
-    const trades = await scanForAutoTrades();
-    const mlScores = scoreRecentSignals(5);
-
     return NextResponse.json({
       status: 'ok',
-      autoTradeEnabled: config.enabled,
-      config,
-      candidates: trades.map((t) => ({
-        symbol: t.decision.symbol,
-        signal: t.decision.signal,
-        confidence: t.decision.confidence,
-        shouldExecute: t.shouldExecute,
-        reason: t.reason,
-        risk: t.risk,
-        confluence: {
-          confirmedTFs: t.confluence.confirmedTFs,
-          confluenceScore: t.confluence.confluenceScore,
-        },
-      })),
-      mlScores: mlScores.map((s) => ({
-        symbol: s.symbol,
-        signal: s.signal,
-        score: s.score,
-        verdict: s.verdict,
-        reasons: s.reasons,
-      })),
+      autoTradeEnabled: true, // Phoenix V2 is always listening
+      version: 'Phoenix V2 (GTC)',
+      message: 'The system runs autonomously via webhooks and crons in the Sindicat.',
+      candidates: [], // Removed in V2, check Crypto Radar for active combats
+      mlScores: [], // Obsolete, replaced by AlphaScout / MasterSyndicate
     });
   } catch (err) {
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });

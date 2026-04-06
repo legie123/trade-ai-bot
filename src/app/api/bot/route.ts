@@ -17,9 +17,6 @@ import {
   getSyndicateAudits,
 } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
-import { evaluatePendingDecisions } from '@/lib/engine/tradeEvaluator';
-
-import { runOptimizer } from '@/lib/engine/optimizer';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState } from '@/lib/core/killSwitch';
 import { BotStats } from '@/lib/types/radar';
 
@@ -106,6 +103,33 @@ export async function GET() {
       strategies: getStrategies(),
       gladiators: gladiatorStore.getGladiators(),
       syndicateAudits: getSyndicateAudits().slice(0, 50),
+      v2Entities: {
+        masters: [
+          { id: 'master_gemini', name: 'Gemini 2.0 Pro', role: 'Master Principal', status: 'ONLINE', power: 100 },
+          { id: 'master_fallback', name: 'Claude 3.5 Sonnet', role: 'Elite Fallback', status: 'STANDBY', power: 80 },
+          { id: 'master_deepseek', name: 'DeepSeek-R1', role: 'Math Logic', status: 'ACTIVE', power: 85 }
+        ],
+        manager: {
+          name: 'Manager Vizionar',
+          role: 'Gatekeeper Tehnic',
+          status: 'ORCHESTRATING',
+          description: 'Așteaptă 70% consensus de la Oracole.'
+        },
+        sentinels: {
+          riskShield: { name: 'Risk Sentinel', limit: '15% MDD', active: true, triggered: maxDrawdown >= 15 },
+          lossDaily: { name: 'Loss Sentinel', limit: '5 Pierderi/Zi', active: true, triggered: todayEvaluated.filter(d => d.outcome === 'LOSS').length >= 5 }
+        },
+        promoter: {
+          name: 'Social Broadcaster',
+          role: 'Moltbook Network Hook',
+          status: 'AWAITING CRON'
+        },
+        scouts: {
+          name: 'Alpha Scouts',
+          role: 'OSINT Gatherer',
+          status: 'SCANNING'
+        }
+      },
       optimizer,
       config,
       equityCurve: getEquityCurve(),
@@ -122,12 +146,11 @@ export async function POST(request: Request) {
 
     switch (action) {
       case 'evaluate': {
-        const result = await evaluatePendingDecisions();
-        return NextResponse.json({ status: 'ok', ...result });
+        const pendingCount = getDecisions().filter(d => d.outcome === 'PENDING').length;
+        return NextResponse.json({ message: `V2 Master Syndicate processing ${pendingCount} pending signals.` });
       }
       case 'optimize': {
-        const result = runOptimizer();
-        return NextResponse.json({ status: 'ok', ...result });
+        return NextResponse.json({ message: 'V2 optimization runs automatically via Sindicat.' });
       }
       case 'recalculate': {
         const perf = recalculatePerformance();

@@ -89,6 +89,22 @@ interface BotData {
     targetAssets: string[];
     risk: { stopLossPercent: number; takeProfitPercent: number; trailingStopEnabled: boolean };
   }>;
+  gladiators: Array<{
+    id: string;
+    status: string;
+    arena: string;
+    winRate: number;
+    trainingProgress: number;
+    isOmega?: boolean;
+    genes: Record<string, unknown>;
+  }>;
+  v2Entities: {
+    masters: Array<{ id: string; name: string; role: string; status: string; power: number }>;
+    manager: { name: string; role: string; status: string; description: string };
+    sentinels: { riskShield: { name: string; limit: string; active: boolean; triggered: boolean }; lossDaily: { name: string; limit: string; active: boolean; triggered: boolean } };
+    promoter: { name: string; role: string; status: string };
+    scouts: { name: string; role: string; status: string };
+  } | null;
 }
 
 export default function BotCenterPage() {
@@ -110,6 +126,8 @@ export default function BotCenterPage() {
     config: { ...rtBot.config, aiStatus: 'OK' },
     equityCurve: rtBot.equityCurve,
     strategies: [],
+    gladiators: rtBot.gladiators || [],
+    v2Entities: rtBot.v2Entities || null,
   } : null;
 
   const loading = !realtimeData;
@@ -264,191 +282,243 @@ export default function BotCenterPage() {
         <div className="empty-state glass-card"><div className="empty-state-icon">🔌</div>System Offline. API Unreachable.</div>
       ) : (
         <div className="bento-grid">
-          
-          {/* ================= COLUMN 1 ================= */}
-          <div className="bento-col-4" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* ================= PHOENIX V2 CORE ARCHITECTURE ================= */}
+          <div className="bento-col-12" style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(300px, 1fr) minmax(300px, 1fr)', gap: 16 }}>
             
-            {/* System Health */}
-            <div className="glass-card" style={{ borderTop: `3px solid ${healthColor}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>System Health</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: healthColor, textShadow: `0 0 10px ${healthColor}` }}>
-                    {s?.strategyHealth}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Current Streak</div>
-                  <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)' }}>
-                    {s?.currentStreak || 0} {s?.streakType === 'WIN' ? '��' : s?.streakType === 'LOSS' ? '💀' : '—'}
-                  </div>
-                </div>
+            {/* LEVEL 1: THE MASTERS */}
+            <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--accent-red)' }}>👑 SINDICATUL MAEȘTRILOR</span>
+                <span className="pulse" style={{ fontSize: 10, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', padding: '2px 8px', borderRadius: 10 }}>CONSENSUS: 70%</span>
               </div>
-            </div>
-
-            {/* STRATEGY ARENA LEADERBOARD */}
-            <div className="glass-card" style={{ flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.05em', color: 'var(--accent-cyan)' }}>⚔️ STRATEGY ARENA</span>
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(0,0,0,0.3)', padding: '2px 8px', borderRadius: 10 }}>LIVE</span>
-              </div>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {data.performance.length > 0 ? (
-                  data.performance
-                    .sort((a, b) => b.winRate - a.winRate)
-                    .map((p, i) => (
-                      <div key={i} style={{ 
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-                        background: i === 0 ? 'rgba(6, 182, 212, 0.1)' : 'rgba(0,0,0,0.2)', 
-                        border: i === 0 ? '1px solid rgba(6, 182, 212, 0.3)' : '1px solid var(--border)',
-                        padding: '12px', borderRadius: 12, position: 'relative', overflow: 'hidden'
-                      }}>
-                        {i === 0 && <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: 'var(--accent-cyan)', boxShadow: 'var(--neon-cyan)' }} />}
-                        
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <span style={{ fontSize: 18, opacity: i === 0 ? 1 : 0.5 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`}</span>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: i === 0 ? '#fff' : 'var(--text-primary)' }}>{p.signalType}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{p.totalTrades} battles</div>
-                          </div>
-                        </div>
-                        
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: p.winRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {p.winRate}% WR
-                          </div>
-                          <div style={{ fontSize: 10, color: p.avgPnlPercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                            {p.avgPnlPercent >= 0 ? '+' : ''}{p.avgPnlPercent}% PnL
-                          </div>
-                        </div>
-                      </div>
-                  ))
-                ) : data.strategies && data.strategies.length > 0 ? (
-                  data.strategies.map((strat, i) => (
-                    <div key={strat.id} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      background: i === 0 ? 'rgba(6, 182, 212, 0.08)' : 'rgba(0,0,0,0.2)',
-                      border: i === 0 ? '1px solid rgba(6, 182, 212, 0.25)' : '1px solid var(--border)',
-                      padding: '12px', borderRadius: 12, position: 'relative', overflow: 'hidden'
-                    }}>
-                      {i === 0 && <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: 'var(--accent-cyan)', boxShadow: 'var(--neon-cyan)' }} />}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span style={{ fontSize: 16 }}>{['⚡','🔄','📊','📈','🎯','🔀','💰','🧱','🚀'][i] || '🔹'}</span>
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{strat.name}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{strat.targetAssets.join(', ')} · {strat.description.slice(0, 35)}</div>
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{
-                          fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6,
-                          background: strat.status === 'active' ? 'rgba(16,185,129,0.15)' : strat.status === 'probation' ? 'rgba(245,158,11,0.15)' : 'rgba(100,116,139,0.15)',
-                          color: strat.status === 'active' ? 'var(--accent-green)' : strat.status === 'probation' ? 'var(--accent-amber)' : 'var(--text-muted)',
-                          textTransform: 'uppercase'
-                        }}>{strat.status}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-                          SL {strat.risk.stopLossPercent}% · TP {strat.risk.takeProfitPercent}%
-                        </div>
-                      </div>
+              <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {data.v2Entities?.masters?.map((m) => (
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '10px 12px', borderRadius: 8, borderLeft: m.id.includes('gemini') ? '2px solid var(--accent-blue)' : m.id.includes('deepseek') ? '2px solid var(--accent-cyan)' : '2px solid var(--accent-purple)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                       <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.id.includes('gemini') ? 'var(--accent-blue)' : m.id.includes('deepseek') ? 'var(--accent-cyan)' : 'var(--accent-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                         {m.id.includes('gemini') ? '🔵' : m.id.includes('deepseek') ? '🐋' : '🦙'}
+                       </div>
+                       <div>
+                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{m.name}</div>
+                         <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Role: {m.role}</div>
+                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="empty-state pulse" style={{ padding: '20px 0' }}>Arena is waiting...</div>
-                )}
+                    <span className="badge badge-bullish">{m.status}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Global Metrics Mini Bento */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div className="glass-card" style={{ padding: 16 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>Total PnL</div>
-                <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)', fontWeight: 700, color: (s?.totalPnlPercent || 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                  {(s?.totalPnlPercent || 0) >= 0 ? '+' : ''}{s?.totalPnlPercent || 0}%
+            {/* LEVEL 2: MANAGER & PROMOTER */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* MANAGER VIZIONAR */}
+              <div className="glass-card" style={{ flex: 1, padding: 0 }}>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--accent-cyan)' }}>👔 {data.v2Entities?.manager?.name.toUpperCase() || 'MANAGER VIZIONAR'}</span>
+                </div>
+                <div style={{ padding: '16px 20px' }}>
+                  <div style={{ fontSize: 13, color: 'var(--text-primary)', marginBottom: 4 }}>Gatekeeper Status: <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>{data.v2Entities?.manager?.status}</span></div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>{data.v2Entities?.manager?.description}</div>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <div style={{ flex: 1, background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Decisions Today</div>
+                      <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{s?.todayDecisions || 0}</div>
+                    </div>
+                    <div style={{ flex: 1, background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Overall WR</div>
+                      <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)', fontWeight: 700, color: (s?.overallWinRate || 0) > 50 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>{s?.overallWinRate || 0}%</div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="glass-card" style={{ padding: 16 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>Drawdown</div>
-                <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent-red)' }}>
-                  -{s?.maxDrawdown || 0}%
+
+              {/* PROMOTER */}
+              <div className="glass-card" style={{ flex: 1, padding: 0, position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: 'var(--accent-purple)' }} />
+                <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', color: '#fff' }}>📢 SOCIAL PROMOTER</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Moltbook Interaction Engine</div>
+                  </div>
+                  <button className="btn" onClick={() => botAction('trigger-promoter')} disabled={evalLoading} style={{ background: 'var(--accent-purple)', borderColor: 'var(--accent-purple)', padding: '6px 12px', fontSize: 11 }}>
+                    [ Trigger Broadcast ]
+                  </button>
                 </div>
+              </div>
+            </div>
+
+            {/* LEVEL 3 & 4: SENTINELS & SCOUTS */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              
+              {/* SENTINEL PLANE */}
+              <div className="glass-card" style={{ flex: 1, padding: 0 }}>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--accent-amber)' }}>🛡️ SENTINEL PLANE</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Risk Auth</span>
+                </div>
+                <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '10px 12px', borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{data.v2Entities?.sentinels?.riskShield?.name || 'MDD Sentinel'}</div>
+                    <div className={data.v2Entities?.sentinels?.riskShield?.triggered ? 'badge badge-bearish' : 'badge badge-bullish'}>
+                      {data.v2Entities?.sentinels?.riskShield?.triggered ? 'CRITICAL' : 'OK'} ({data.v2Entities?.sentinels?.riskShield?.limit})
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '10px 12px', borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{data.v2Entities?.sentinels?.lossDaily?.name || 'Loss Sentinel'}</div>
+                    <div className={data.v2Entities?.sentinels?.lossDaily?.triggered ? 'badge badge-bearish' : 'badge badge-bullish'}>
+                      {data.v2Entities?.sentinels?.lossDaily?.triggered ? 'BREACHED' : 'OK'} ({data.v2Entities?.sentinels?.lossDaily?.limit})
+                    </div>
+                  </div>
+                  
+                  {/* KILL SWITCH */}
+                  <button 
+                    onClick={() => botAction('killswitch')} 
+                    disabled={evalLoading}
+                    style={{ 
+                      marginTop: 6, width: '100%', padding: '12px', borderRadius: 8, 
+                      background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--accent-red)',
+                      color: 'var(--accent-red)', fontSize: 14, fontWeight: 800, letterSpacing: '0.1em', cursor: 'pointer',
+                      transition: 'all 0.2s', opacity: evalLoading ? 0.6 : 1
+                    }}>
+                    ⚠️ ENGAGE EMEREGENCY EXIT ⚠️
+                  </button>
+                </div>
+              </div>
+
+              {/* ALPHA SCOUTS */}
+              <div className="glass-card" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: '#fff' }}>📡 {data.v2Entities?.scouts?.name.toUpperCase() || 'ALPHA SCOUTS'}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Zero MNPI | Pure OSINT</div>
+                </div>
+                <div className="pulse" style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-green)', boxShadow: '0 0 10px var(--accent-green)' }} />
               </div>
             </div>
             
           </div>
+          
+          <div className="bento-col-12" style={{ display: 'flex', gap: 16 }}>
+             {/* ================= COLUMN 1 (Logs) ================= */}
+             <div className="bento-col-8 glass-card" style={{ padding: '16px 20px' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: 12 }}>RECENT DECISIONS (SINDICAT CONSENSUS)</div>
+                {data.decisions.length > 0 ? (
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                     {data.decisions.slice(0, 7).map((d) => (
+                       <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '80px 100px 100px 1fr 100px 80px', gap: 12, alignItems: 'center', background: 'rgba(0,0,0,0.15)', padding: '8px 12px', borderRadius: 6, borderLeft: d.outcome === 'WIN' ? '2px solid var(--accent-green)' : d.outcome === 'LOSS' ? '2px solid var(--accent-red)' : '2px solid var(--border)' }}>
+                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(d.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                         <span style={{ fontSize: 13, fontWeight: 700 }}>{d.symbol}</span>
+                         <span className={`badge ${d.signal.includes('BUY') ? 'badge-signal-buy' : d.signal.includes('SELL') ? 'badge-signal-sell' : 'badge-info'}`} style={{ fontSize: 9 }}>
+                           {d.signal} {d.direction === 'BULLISH' ? '▲' : '▼'}
+                         </span>
+                         <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>${d.price?.toLocaleString()}</span>
+                         <span style={{ fontSize: 13, fontWeight: 700, textAlign: 'right', color: d.pnlPercent !== null ? (d.pnlPercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)') : 'var(--accent-amber)' }}>
+                           {d.pnlPercent !== null ? `${d.pnlPercent >= 0 ? '+' : ''}${d.pnlPercent}%` : 'PENDING'}
+                         </span>
+                         {/* Fake Confidence or Real if exists */}
+                         <span style={{ fontSize: 10, textAlign: 'right', color: 'var(--text-muted)'}}>{d.confidence}% conf</span>
+                       </div>
+                     ))}
+                   </div>
+                ) : (
+                   <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>No recent consensus</div>
+                )}
+             </div>
 
-          {/* ================= COLUMN 2 ================= */}
-          <div className="bento-col-8" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            
-            {/* TradingView Chart */}
-            <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)' }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>OPTICAL RADAR VISION</span>
-                <span className="pulse" style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-red)', boxShadow: '0 0 8px var(--accent-red)' }}></span>
-              </div>
-              <TradingViewPanel />
-            </div>
+             {/* ================= COLUMN 2 (Connections) ================= */}
+             <div className="bento-col-4" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+               <div className="glass-card" style={{ padding: '16px 20px', flex: 1 }}>
+                 <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: 16 }}>EXTERNAL LINKS (GATEKEEPER)</div>
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: 10, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                     <span style={{ fontSize: 12, fontWeight: 600 }}>🟡 Binance Exec</span>
+                     <span style={{ fontSize: 12, color: binanceStatus.startsWith('✅') ? 'var(--accent-green)' : 'var(--accent-red)' }}>{binanceStatus}</span>
+                   </div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: 10, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                     <span style={{ fontSize: 12, fontWeight: 600 }}>✈️ Telegram Log</span>
+                     <span style={{ fontSize: 12, color: telegramOk ? 'var(--accent-green)' : 'var(--accent-amber)' }}>{telegramOk ? '✅ ONLINE' : '🟡 STANDBY'}</span>
+                   </div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: 10, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                     <span style={{ fontSize: 12, fontWeight: 600 }}>🤖 Backtest System</span>
+                     <span style={{ fontSize: 12, color: 'var(--accent-cyan)' }}>READY</span>
+                   </div>
+                 </div>
+               </div>
+             </div>
+          </div>
+          
+          {/* ================= ROW 3: SYSTEM HEALTH + EQUITY ================= */}
+          <div className="bento-col-12" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16, marginTop: 16 }}>
 
-            {/* Equity Curve */}
+            {/* SYSTEM HEALTH PANEL */}
             <div className="glass-card" style={{ padding: 0 }}>
-              <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-blue)', letterSpacing: '0.05em' }}>EQUITY TRAJECTORY</span>
-                <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 700, background: 'rgba(59, 130, 246, 0.1)', padding: '2px 8px', borderRadius: 4, color: 'var(--accent-blue)' }}>
-                  BAL: ${data.config.paperBalance?.toLocaleString() || '1,000'}
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', color: healthColor }}>
+                  ❤️ SYSTEM HEALTH: {s?.strategyHealth || 'OFFLINE'}
                 </span>
               </div>
-              <div style={{ padding: '16px 20px' }}>
-                <EquityChart data={data.equityCurve || []} startBalance={data.config.paperBalance || 1000} />
-              </div>
-            </div>
-
-          </div>
-
-          {/* ================= COLUMN 3 (Connections & Logs) ================= */}
-          <div className="bento-col-4" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div className="glass-card" style={{ padding: '16px 20px' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: 16 }}>EXTERNAL LINKS</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: 8, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
-                  <span style={{ fontSize: 12 }}>🟡 Binance</span>
-                  <span style={{ fontSize: 12, color: binanceStatus.startsWith('✅') ? 'var(--accent-green)' : 'var(--accent-red)' }}>{binanceStatus}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: 8, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
-                  <span style={{ fontSize: 12 }}>✈️ Telegram</span>
-                  <span style={{ fontSize: 12, color: telegramOk ? 'var(--accent-green)' : 'var(--accent-amber)' }}>{telegramOk ? '✅ ONLINE' : '🟡 STANDBY'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: 8, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
-                  <span style={{ fontSize: 12 }}>🤖 Backtest</span>
-                  <span style={{ fontSize: 12, color: 'var(--accent-cyan)' }}>READY</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bento-col-8 glass-card" style={{ padding: '16px 20px' }}>
-             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: 12 }}>RECENT EXECUTIONS</div>
-             {data.decisions.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {data.decisions.slice(0, 5).map((d) => (
-                    <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '80px 100px 100px 1fr 100px', gap: 12, alignItems: 'center', background: 'rgba(0,0,0,0.15)', padding: '8px 12px', borderRadius: 6, borderLeft: d.outcome === 'WIN' ? '2px solid var(--accent-green)' : d.outcome === 'LOSS' ? '2px solid var(--accent-red)' : '2px solid var(--border)' }}>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(d.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>{d.symbol}</span>
-                      <span className={`badge ${d.signal.includes('BUY') ? 'badge-signal-buy' : d.signal.includes('SELL') ? 'badge-signal-sell' : 'badge-info'}`} style={{ fontSize: 9 }}>
-                        {d.signal} {d.direction === 'BULLISH' ? '▲' : '▼'}
-                      </span>
-                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>${d.price?.toLocaleString()}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, textAlign: 'right', color: d.pnlPercent !== null ? (d.pnlPercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)') : 'var(--accent-amber)' }}>
-                        {d.pnlPercent !== null ? `${d.pnlPercent >= 0 ? '+' : ''}${d.pnlPercent}%` : 'PENDING'}
-                      </span>
+              <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total PnL</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--font-mono)', color: (s?.totalPnlPercent || 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                      {(s?.totalPnlPercent || 0) >= 0 ? '+' : ''}{(s?.totalPnlPercent || 0).toFixed(2)}%
                     </div>
-                  ))}
+                  </div>
+                  <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Today PnL</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--font-mono)', color: (s?.todayPnlPercent || 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                      {(s?.todayPnlPercent || 0) >= 0 ? '+' : ''}{(s?.todayPnlPercent || 0).toFixed(2)}%
+                    </div>
+                  </div>
                 </div>
-             ) : (
-                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>No recent trades</div>
-             )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Max Drawdown</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: (s?.maxDrawdown || 0) > 10 ? 'var(--accent-red)' : 'var(--accent-amber)' }}>
+                      {(s?.maxDrawdown || 0).toFixed(2)}%
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Streak</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: s?.streakType === 'WIN' ? 'var(--accent-green)' : s?.streakType === 'LOSS' ? 'var(--accent-red)' : 'var(--text-primary)' }}>
+                      {s?.currentStreak || 0} {s?.streakType || '-'}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Balance</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                      ${(data.config?.paperBalance || 1000).toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Trades</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                      {s?.totalDecisions || 0}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* EQUITY CURVE */}
+            <div className="glass-card" style={{ padding: 0 }}>
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-primary)' }}>📈 EQUITY CURVE</span>
+              </div>
+              <div style={{ padding: '12px 20px' }}>
+                <EquityChart data={data.equityCurve || []} startBalance={data.config?.paperBalance || 1000} />
+              </div>
+            </div>
           </div>
 
-          {/* ================= COLUMN FULL (Reasoning Panel) ================= */}
+          {/* ================= ROW 4: TRADINGVIEW CHART ================= */}
+          <div className="bento-col-12" style={{ marginTop: 16 }}>
+            <TradingViewPanel />
+          </div>
+
+          {/* ================= ROW 5: REASONING PANEL ================= */}
           <div className="bento-col-12" style={{ marginTop: 16 }}>
              <TradeReasoningPanel />
           </div>
