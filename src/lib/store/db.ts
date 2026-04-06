@@ -230,6 +230,18 @@ export function getDecisionsToday(): DecisionSnapshot[] {
   return cache.decisions.filter((d) => d.timestamp.startsWith(today));
 }
 
+export function clearSystemHealthData(): void {
+  cache.decisions = [];
+  cache.performance = [];
+  if (cache.config) {
+    cache.config.paperBalance = 1000;
+  }
+  syncToCloud('decisions', cache.decisions);
+  syncToCloud('performance', cache.performance);
+  syncToCloud('config', cache.config);
+  log.info('System health data wiped for Production Mode resets.');
+}
+
 // ─── Syndicate Audit (Combat Logs) ────────────────
 export function addSyndicateAudit(audit: any): void {
   cache.syndicateAudits.unshift({ ...audit, id: `audit-${Date.now()}` });

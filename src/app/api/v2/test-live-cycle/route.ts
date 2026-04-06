@@ -21,6 +21,51 @@ export async function POST(req: NextRequest) {
          timestamp: new Date().toISOString()
       });
     }
+    
+    if (action === 'massive_phantom_test') {
+      const { ArenaSimulator } = await import('@/lib/v2/arena/simulator');
+      const { routeSignal } = await import('@/lib/router/signalRouter');
+      const { getPhantomTrades } = await import('@/lib/store/db');
+      const arena = ArenaSimulator.getInstance();
+      
+      // Seed 50 realistic signals
+      const symbols = ['BTC', 'SOL', 'ETH', 'XRP'];
+      for (let i = 0; i < 50; i++) {
+        const symbol = symbols[Math.floor(Math.random() * symbols.length)];
+        const routed = routeSignal({
+           id: `test_mass_${i}`,
+           symbol,
+           signal: Math.random() > 0.5 ? 'BUY' : 'SELL',
+           price: Math.random() * 50000 + 1000,
+           timestamp: new Date().toISOString(),
+           source: 'MASS_TEST',
+           timeframe: '15m'
+        });
+        arena.distributeSignalToGladiators(routed);
+      }
+      
+      // Fast-forward time for all generated phantom trades (so cron evaluates them immediately)
+      const trades = getPhantomTrades();
+      trades.forEach((t: any) => {
+        t.timestamp = new Date(Date.now() - 60000).toISOString(); // push it 60 seconds to the past
+      });
+      
+      // Simulate Cron Loop Evaluation
+      await arena.evaluatePhantomTrades();
+
+      return NextResponse.json({
+         status: 'massive_phantom_combat_completed',
+         signalsDeployed: 50,
+         phantomTradesResolved: trades.length,
+         timestamp: new Date().toISOString()
+      });
+    }
+
+    if (action === 'reset_health') {
+      const { clearSystemHealthData } = await import('@/lib/store/db');
+      clearSystemHealthData();
+      return NextResponse.json({ status: 'system_pnl_reset_to_green' });
+    }
 
     const manager = ManagerVizionar.getInstance();
     const gladiator = gladiatorStore.findBestGladiator(symbol);

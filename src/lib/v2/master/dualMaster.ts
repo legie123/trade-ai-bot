@@ -5,7 +5,6 @@ import {
   ArenaType 
 } from '../../types/gladiator';
 import { addSyndicateAudit } from '@/lib/store/db';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface MasterLLM {
   identity: DualMasterIdentity;
@@ -14,18 +13,12 @@ interface MasterLLM {
 
 class ArchitectMaster implements MasterLLM {
   identity: DualMasterIdentity = 'ARCHITECT';
-  private genAI: GoogleGenerativeAI;
-
-  constructor() {
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-  }
 
   async invoke(prompt: string, timeout: number): Promise<MasterOpinion> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const model = this.genAI.getGenerativeModel({ model: "gemini-2.0-pro-exp-02-05" });
       const promptWithPersona = `You are the ARCHITECT (Master 1). Your focus is pure logic, probability, risk management, and math. Analyze the following data strictly objectively and numerically.
       
       Data: ${prompt}
@@ -35,10 +28,22 @@ class ArchitectMaster implements MasterLLM {
       CONFIDENCE: [0.0-1.0]
       REASONING: [Brief logical breakdown]`;
 
-      const result = await model.generateContent(promptWithPersona, { signal: controller.signal } as unknown as Parameters<typeof model.generateContent>[1]);
-      const text = result.response.text();
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: promptWithPersona }]
+        }),
+        signal: controller.signal
+      });
       clearTimeout(timer);
       
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content;
       if (!text || text.length < 10) throw new Error("Empty response");
       return DualMasterConsciousness.parseResponse(this.identity, text);
     } catch (err) {
@@ -66,14 +71,14 @@ class OracleMaster implements MasterLLM {
       CONFIDENCE: [0.0-1.0]
       REASONING: [Brief intuitive/sentiment breakdown]`;
 
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'anthropic/claude-3.5-sonnet',
+          model: 'gpt-4o',
           messages: [{ role: 'user', content: promptWithPersona }]
         }),
         signal: controller.signal
