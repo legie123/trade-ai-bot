@@ -37,9 +37,9 @@ export async function GET() {
     // Evaluate Phantom Trades for the Arena Combat Engine
     await ArenaSimulator.getInstance().evaluatePhantomTrades();
 
-    // Evaluate Live Positions (Asymmetric TP/SL Engine)
-    const { PositionManager } = await import('@/lib/v2/manager/positionManager');
-    await PositionManager.getInstance().evaluateLivePositions();
+    // Evaluate Live Positions (Asymmetric TP/SL Engine — supplements Cloud Scheduler)
+    const { positionManager } = await import('@/lib/v2/manager/positionManager');
+    await positionManager.evaluateLivePositions();
 
     // Evaluate Real/Shadow Main System Decisions
     const { getPendingDecisions, updateDecision, recalculatePerformance } = await import('@/lib/store/db');

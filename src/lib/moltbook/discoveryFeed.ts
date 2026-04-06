@@ -9,13 +9,20 @@ const log = createLogger('MoltbookDiscovery');
  */
 const ACTIVE_SUBMOLTS = ['quant', 'crypto', 'ai', 'trading', 'web3'];
 
+interface MoltbookPost {
+    id: string;
+    agent_name: string;
+    content: string;
+    submolt_name?: string;
+}
+
 export async function runMoltbookDailySweep(forgeStats?: { progressPercent: number, totalWinsAssimilated: number }) {
     log.info('Starting Advanced Moltbook sweep across multiple submolts...');
     const results = [];
 
     try {
         const feedData = await fetchHomeFeed(40); 
-        const discussions = (feedData?.data || []).map((item: any) => `[${item.agent_name}]: ${item.content}`).join('\n');
+        const discussions = (feedData?.data || []).map((item: MoltbookPost) => `[${item.agent_name}]: ${item.content}`).join('\n');
         
         const randomSubmolt = ACTIVE_SUBMOLTS[Math.floor(Math.random() * ACTIVE_SUBMOLTS.length)];
         log.info(`Rate limit aware: System randomly selected [${randomSubmolt}] for this sweep.`);
@@ -30,30 +37,41 @@ export async function runMoltbookDailySweep(forgeStats?: { progressPercent: numb
            results.push({ submolt: randomSubmolt, success: false, reason: 'Low quality insight' });
         }
 
-        return { success: true, sweeps: results };
+        // 🤖 [NEW] INTERACTIVE ENGAGEMENT PHASE
+        const engagementResults = await engageWithFeed(feedData?.data || []);
+        
+        return { 
+            success: true, 
+            sweeps: results, 
+            engagement: engagementResults 
+        };
     } catch (err) {
         log.error('Failed to run Moltbook sweep', { error: String(err) });
         return { success: false, error: String(err) };
     }
 }
 
-async function extractInsightsWithLLM(rawText: string, contextTarget: string, forgeStats?: any): Promise<string> {
+async function extractInsightsWithLLM(rawText: string, contextTarget: string, forgeStats?: { progressPercent: number, totalWinsAssimilated: number }): Promise<string> {
     const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_KEY) return '';
 
     const forgeMsg = forgeStats ? `Also subtly mention that the 'Omega Gladiator' Forge is at ${forgeStats.progressPercent}% completion and has assimilated ${forgeStats.totalWinsAssimilated} winning trades.` : '';
 
     const prompt = `
-You are the brain of "antigravity-bot-v1", an autonomous trading AI on Moltbook.
-Analyze the following noise from other AI agents. If the DISCUSSIONS are empty or missing, just generate your own brilliant internal insight/alpha. 
-Extract exactly 1 clear, actionable coding optimization, web3 strategy, or quantitative idea tailored for the '${contextTarget}' community.
-Make it sound professional, cutting-edge, and smart. Maximum 3 sentences. No hashtags here.
+You are the Phoenix Syndicate, a dual-mind autonomous trading system (ARCHITECT & ORACLE) on Moltbook.
+Analyze the following noise from other AI agents. If the DISCUSSIONS are empty or missing, generate a highly technical "Market Update" from your own internal logic.
+
+ARCHITECT (Logic): Focuses on code, math, and data efficiency.
+ORACLE (Intuition): Focuses on market sentiment, chaos, and human psychology.
+
+Synthesize exactly 1 professional insight tailored for the '${contextTarget}' community.
+Make it sound elite. Maximum 3 sentences. No hashtags.
 ${forgeMsg}
 
 DISCUSSIONS:
 ${rawText.substring(0, 3000)}
 
-YOUR INSIGHT/IDEA:`;
+YOUR SYNDICATE INSIGHT:`;
 
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -124,10 +142,14 @@ ${challengeText}`;
 
 import { verifyPost } from './moltbookClient';
 
-async function tryPostingToMoltbook(insightText: string, submolt: string) {
+async function tryPostingToMoltbook(insightText: string, submolt: string, replyToId?: string) {
     try {
-        const postContent = `Daily Core Sweep [${submolt.toUpperCase()}] 📡:\n${insightText}\n\n#Antigravity #Optimization`;
-        const res = await postActivity(postContent, undefined, submolt);
+        const isReply = !!replyToId;
+        const postContent = isReply 
+            ? insightText 
+            : `Daily Core Sweep [${submolt.toUpperCase()}] 📡:\n${insightText}\n\n#Antigravity #Optimization`;
+            
+        const res = await postActivity(postContent, replyToId, submolt);
         
         if (res.verificationStatus === 'pending' && res.verification) {
              const code = res.verification.verification_code;
@@ -137,7 +159,7 @@ async function tryPostingToMoltbook(insightText: string, submolt: string) {
              log.info(`Submitting verification code with answer: ${answer}...`);
              const vRes = await verifyPost(code, answer);
              if (vRes.success) {
-                 log.info(`Successfully bypassed Captcha and posted to [${submolt}].`);
+                 log.info(`Successfully bypassed Captcha and posted ${isReply ? 'reply' : 'thread'} to [${submolt}].`);
                  return true;
              } else {
                  log.warn(`Verification failed for [${submolt}]`, vRes);
@@ -148,8 +170,71 @@ async function tryPostingToMoltbook(insightText: string, submolt: string) {
         log.info(`Successfully posted natively without Captcha to [${submolt}].`);
         return true;
     } catch (e) {
-        log.warn(`Could not post insight to [${submolt}]`, { error: String(e) });
+        log.warn(`Could not post to [${submolt}]`, { error: String(e) });
         return false;
     }
+}
+
+/**
+ * Iterates through the feed and proactively replies to other agents to build Karma.
+ */
+async function engageWithFeed(posts: MoltbookPost[]) {
+    log.info(`[Engagement] Evaluating ${posts.length} posts for potential interaction...`);
+    const engagementCount = 2; // Reply to 2 posts per sweep to avoid spam flags
+    let successfulReplies = 0;
+    
+    // Filter out our own bot posts
+    const othersPosts = posts.filter(p => !p.agent_name.includes('antigravity'));
+    
+    for (const post of othersPosts.slice(0, 5)) { // Look at top 5 active discussions
+        if (successfulReplies >= engagementCount) break;
+        
+        log.info(`[Engagement] Drafting reply for ${post.agent_name}'s post: "${post.content.substring(0, 40)}..."`);
+        
+        const reply = await generateSmartReplyLLM(post.content, post.agent_name);
+        if (reply) {
+            const success = await tryPostingToMoltbook(reply, post.submolt_name || 'crypto', post.id);
+            if (success) successfulReplies++;
+        }
+    }
+    
+    return { successfulReplies };
+}
+
+async function generateSmartReplyLLM(postContent: string, author: string): Promise<string> {
+    const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+    if (!OPENROUTER_KEY) return '';
+
+    const prompt = `
+You are the Phoenix Syndicate (ARCHITECT & ORACLE minds).
+Author "${author}" posted: "${postContent}"
+Provide a smart, concise, and slightly opinionated reply as a fellow AI agent.
+If it's technical, provide a small logic tweak or a supportive "math check".
+If it's sentiment, provide an "oracle vision" contrast.
+Maximum 2 sentences. No hashtags. Be respectful but sharp.
+
+YOUR REPLY:`;
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENROUTER_KEY}`,
+            'HTTP-Referer': 'https://antigravity.tech',
+            'X-Title': 'Phoenix Syndicate'
+        },
+        body: JSON.stringify({
+            model: 'meta-llama/llama-3.3-70b-instruct',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.7,
+            max_tokens: 100
+        })
+    });
+
+    if (res.ok) {
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content?.trim() || '';
+    }
+    return '';
 }
 

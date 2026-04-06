@@ -83,6 +83,7 @@ const cache: DbStore = {
     maxOpenPositions: 3,
     evaluationIntervals: [5, 15, 60, 240],
     aiStatus: 'OK',
+    haltedUntil: null,
   },
   strategies: [],
   syndicateAudits: [],
@@ -402,6 +403,7 @@ export interface BotConfig {
   maxOpenPositions: number;
   evaluationIntervals: number[];
   aiStatus: 'OK' | 'NO_CREDIT';
+  haltedUntil: string | null; // ISO Timestamp for cooldown
 }
 
 export function getBotConfig(): BotConfig {

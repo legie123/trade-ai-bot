@@ -59,8 +59,20 @@ export class SentinelGuard {
   }
 
   private isHalted(): boolean {
-    // Logic to check if we are in a cooldown period
-    return false; // Placeholder
+    const config = getBotConfig();
+    if (!config.haltedUntil) return false;
+
+    const haltTime = new Date(config.haltedUntil).getTime();
+    const now = Date.now();
+
+    if (now < haltTime) {
+      const remainingMin = Math.round((haltTime - now) / 60000);
+      log.warn(`🛡️ [Sentinel] System is currently HALTED. Remaining cooldown: ${remainingMin} minutes.`);
+      return true;
+    }
+
+    // Cooldown expired
+    return false;
   }
 
   private checkDrawdown(config: BotConfig): { safe: boolean; reason?: string } {
@@ -105,10 +117,30 @@ export class SentinelGuard {
   public async triggerKillSwitch(reason: string): Promise<void> {
     log.error(`🚨 [KILL SWITCH] Activated! Reason: ${reason}`);
     
-    // 1. Halt Bot
-    saveBotConfig({ aiStatus: 'OK', mode: 'OBSERVATION' }); // Force Observation Mode
+    // 1. Set Cooldown (4 hours)
+    const cooldownMs = 4 * 60 * 60 * 1000;
+    const haltedUntil = new Date(Date.now() + cooldownMs).toISOString();
     
-    // 2. Emergency Exit (Placeholder for real exchange call)
+    saveBotConfig({ 
+      aiStatus: 'OK', 
+      mode: 'OBSERVATION',
+      haltedUntil 
+    });
+
+    // 2. Social Broadcast (Transparency)
+    try {
+      const { postActivity } = await import('@/lib/moltbook/moltbookClient');
+      const message = `⚠️ [SENTINEL GUARD] KILL-SWITCH ACTIVAT 🚨\n\n` +
+        `Motiv: ${reason}\n` +
+        `Acțiune: Sistemul a fost trecut în mod OBSERVATION.\n` +
+        `Cooldown: 4 ore (până la ${new Date(haltedUntil).toLocaleTimeString()}).\n\n` +
+        `Siguranța capitalului este prioritara. Toate pozițiile au fost închise (Emergency Exit). #Antigravity #SafeAI`;
+      await postActivity(message, undefined, 'crypto');
+    } catch {
+      // Non-critical
+    }
+    
+    // 3. Emergency Exit
     log.info('🛡️ [Sentinel] Emergency Exit Initialized: Pulling all orders...');
     await this.emergencyExitAllPositions();
   }

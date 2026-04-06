@@ -5,6 +5,7 @@ import { SentinelGuard } from '../safety/sentinelGuard';
 import { executeMexcTrade } from '@/lib/v2/scouts/executionMexc';
 import { Signal, DecisionSnapshot } from '../../types/radar';
 import { addDecision, addLivePosition } from '@/lib/store/db';
+import { postActivity } from '@/lib/moltbook/moltbookClient';
 
 export class ManagerVizionar {
   private static instance: ManagerVizionar;
@@ -45,6 +46,7 @@ export class ManagerVizionar {
     
     if (!safetyCheck.safe) {
       console.warn(`[SENTINEL BLOCKED] ${payload.symbol}: ${safetyCheck.reason}`);
+      this.broadcastSentinelBlock(payload, safetyCheck.reason || 'Unknown Risk Rule');
       return;
     }
 
@@ -53,6 +55,7 @@ export class ManagerVizionar {
       await this.routeSignal(gladiator, payload, consensus);
     } else {
       console.log(`[SYNDICATE VETO] Masters did not approve the move for ${gladiator.id}. Reason: Low Confidence.`);
+      this.broadcastSyndicateVeto(payload, consensus);
     }
   }
 
@@ -107,6 +110,10 @@ export class ManagerVizionar {
           status: 'OPEN',
           openedAt: new Date().toISOString(),
         });
+
+        // 🔗 [MOLTBOOK BROADCAST] Phoenix V2 Live Positioning
+        this.broadcastTradeToMoltbook('ENTRY', result.symbol, consensus.finalDirection, result.price, consensus);
+
         console.log(`[POSITION MANAGER] LivePosition registered for ${result.symbol} — Trailing Engine armed.`);
       } else {
         console.error(`[EXECUTION FAILED] ${result.error}`);
@@ -118,6 +125,60 @@ export class ManagerVizionar {
     }
 
     addDecision(snapshot);
+  }
+
+  private async broadcastTradeToMoltbook(type: 'ENTRY' | 'EXIT', symbol: string, side: string, price: number, consensus: DualConsensus) {
+    try {
+      const architect = consensus.opinions.find(o => o.identity === 'ARCHITECT');
+      const oracle = consensus.opinions.find(o => o.identity === 'ORACLE');
+      
+      const message = `🚨 [PHOENIX V2] ${type === 'ENTRY' ? 'NOUĂ INTRARE' : 'IEȘIRE'} ACTIVATĂ 🚨\n\n` +
+        `Asset: $ ${symbol}\n` +
+        `Direcție: ${side}\n` +
+        `Preț: $ ${price.toLocaleString()}\n` +
+        `Confidence: ${(consensus.weightedConfidence * 100).toFixed(2)}%\n\n` +
+        `🧠 [CONSENS DEZBATERE]\n` +
+        `🏛️ ARCHITECT: "${architect?.reasoning.substring(0, 100)}..."\n` +
+        `🔮 ORACLE: "${oracle?.reasoning.substring(0, 100)}..."\n\n` +
+        `#Antigravity #TradingAI #AlgorithmicTrading`;
+
+      await postActivity(message, undefined, 'crypto');
+      console.log(`[SOCIAL] Broadcast finalizat pe Moltbook: $${symbol} ${side}`);
+    } catch {
+      // Non-critical
+    }
+  }
+
+  private async broadcastSyndicateVeto(payload: Signal, consensus: DualConsensus) {
+    try {
+      const architect = consensus.opinions.find(o => o.identity === 'ARCHITECT');
+      const oracle = consensus.opinions.find(o => o.identity === 'ORACLE');
+
+      const message = `⚖️ [SYNDICATE VETO] DECIZIE RELEVATĂ ⚖️\n\n` +
+        `Asset: $ ${payload.symbol}\n` +
+        `Verdict: SKIP (Niciun consens clar)\n` +
+        `Confidence: ${(consensus.weightedConfidence * 100).toFixed(2)}%\n\n` +
+        `Divergență Masters:\n` +
+        `• ARCHITECT: ${architect?.direction} (${architect?.confidence})\n` +
+        `• ORACLE: ${oracle?.direction} (${oracle?.confidence})\n\n` +
+        `Sindicatul Phoenix preferă siguranța capitalului în fața speculației ambigue. #Antigravity #TradingPsychology`;
+
+      await postActivity(message, undefined, 'crypto');
+    } catch {
+      // Non-critical
+    }
+  }
+
+  private async broadcastSentinelBlock(payload: Signal, reason: string) {
+    try {
+      const message = `🛡️ [SENTINEL GUARD] SEMNAL BLOCAT 🛡️\n\n` +
+        `Asset: $ ${payload.symbol}\n` +
+        `Motiv Securitate: ${reason}\n\n` +
+        `Scutul Sentinel a detectat riscuri care depășesc parametrii de siguranță Phoenix V2. Oportunitate ignorată pentru protecția portofoliului. #SafetyFirst #RiskManagement`;
+      await postActivity(message, undefined, 'crypto');
+    } catch {
+      // Non-critical
+    }
   }
 
   private async executeShadowMode(id: string, payload: Signal, consensus: DualConsensus) {

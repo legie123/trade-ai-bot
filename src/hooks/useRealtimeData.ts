@@ -71,6 +71,7 @@ export interface RealtimeBotStats {
     paperBalance: number;
     riskPerTrade: number;
     maxOpenPositions: number;
+    haltedUntil: string | null;
   };
   equityCurve: Array<{
     timestamp: string;
@@ -81,6 +82,15 @@ export interface RealtimeBotStats {
     symbol: string;
   }>;
   balance: number;
+  syndicateAudits?: Array<{
+    id: string;
+    timestamp: string;
+    symbol: string;
+    decision: string;
+    confidence: number;
+    architect: { direction: string; confidence: number; reasoning: string };
+    oracle: { direction: string; confidence: number; reasoning: string };
+  }>;
   gladiators?: Array<{
     id: string;
     status: string;

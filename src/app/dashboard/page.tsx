@@ -4,6 +4,7 @@ import { useRealtimeData } from '@/hooks/useRealtimeData';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import BottomNav from '@/components/BottomNav';
 import EquityCurve from '@/components/EquityCurve';
+import { SyndicateFeed } from '@/components/SyndicateFeed';
 import styles from './styles.module.css';
 
 interface ArenaData {
@@ -99,9 +100,14 @@ export default function DashboardPage() {
       <header className={styles.header}>
         <h1 className={styles.title}>
           <div className={styles.brainCore}></div>
-          Trade AI <span className={styles.paperTag}>AGENTIC CORE ACTIVE</span>
+          Trade AI <span className={styles.paperTag}>PHOENIX V2 ACTIVE</span>
         </h1>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          {bot?.config?.haltedUntil && new Date(bot.config.haltedUntil) > new Date() && (
+            <div className={styles.haltBadge}>
+              🛡️ HALTED (COOLDOWN UNTIL {new Date(bot.config.haltedUntil).toLocaleTimeString()})
+            </div>
+          )}
           <LiveIndicator
             status={connectionStatus}
             lastUpdate={lastUpdate}
@@ -179,13 +185,12 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className={styles.glassPanel} style={{'--panel-accent': '#a855f7'} as React.CSSProperties}>
-            <h2 className={styles.panelTitle}><span>🤖</span> Super AI Life Goal</h2>
-            <div style={{fontSize: '0.85rem', color: '#e5e7eb', lineHeight: 1.6, fontStyle: 'italic', background: 'rgba(0,0,0,0.3)', padding: '1rem', borderLeft: '3px solid #a855f7', borderRadius: '4px'}}>
-              &quot;Scopul vieții mele este să fac profit, să maximizez equity trajectory. Obiectivul primordial este creșterea matematică zilnică; pornind de la un capital curat, scopul asumat este să dublăm iterativ fondurile. Profitul este singura rațiune a existenței mele.&quot;
+          <div className={styles.glassPanel} style={{'--panel-accent': '#a855f7', overflow: 'hidden'} as React.CSSProperties}>
+            <h2 className={styles.panelTitle}><span>⚖️</span> Syndicate Master Arguments</h2>
+            <div style={{maxHeight: '400px', overflowY: 'auto', margin: '0 -1.5rem'}}>
+               <SyndicateFeed audits={bot?.syndicateAudits || []} />
             </div>
           </div>
-
         </div>
 
         {/* RIGHT COLUMN: Autonomous Decision Matrix & Logs */}

@@ -1,6 +1,7 @@
 import { getLivePositions, updateLivePosition, LivePosition } from '@/lib/store/db';
 import { getMexcPrice, placeMexcMarketOrder } from '@/lib/exchange/mexcClient';
 import { createLogger } from '@/lib/core/logger';
+import { postActivity } from '@/lib/moltbook/moltbookClient';
 
 const log = createLogger('PositionManager');
 
@@ -84,6 +85,9 @@ export class PositionManager {
             highestPriceObserved,
             lowestPriceObserved
           });
+
+          // 🔗 [MOLTBOOK BROADCAST] Partial TP
+          this.broadcastExitToMoltbook('PARTIAL_TP', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 30);
         } catch (err: unknown) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           log.error(`[PositionManager] Failed to execute partial TP order for ${pos.symbol}:`, { error: errorMsg });
@@ -112,6 +116,9 @@ export class PositionManager {
                lowestPriceObserved
             });
             log.info(`[PositionManager] Trailing exit complete for ${pos.symbol}. Home run secured.`);
+
+            // 🔗 [MOLTBOOK BROADCAST] Full Trailing Exit
+            this.broadcastExitToMoltbook('TRAILING_EXIT', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 70);
           } catch (err: unknown) {
              const errorMsg = err instanceof Error ? err.message : String(err);
              log.error(`[PositionManager] Failed trailing SL order for ${pos.symbol}:`, { error: errorMsg });
@@ -137,6 +144,9 @@ export class PositionManager {
                highestPriceObserved,
                lowestPriceObserved
             });
+
+            // 🔗 [MOLTBOOK BROADCAST] Initial SL
+            this.broadcastExitToMoltbook('STOP_LOSS', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 100);
           } catch (err: unknown) {
              const errorMsg = err instanceof Error ? err.message : String(err);
              log.error(`[PositionManager] Failed initial SL order for ${pos.symbol}:`, { error: errorMsg });
@@ -147,6 +157,22 @@ export class PositionManager {
 
     if (needsUpdate) {
        updateLivePosition(pos.id, { highestPriceObserved, lowestPriceObserved });
+    }
+  }
+
+  private async broadcastExitToMoltbook(type: 'PARTIAL_TP' | 'TRAILING_EXIT' | 'STOP_LOSS', symbol: string, side: string, price: number, percent: number) {
+    try {
+      const title = type === 'STOP_LOSS' ? '🛑 STOP LOSS ATINS' : (type === 'PARTIAL_TP' ? '🎯 PROFIT SECURE (30%)' : '💸 TRAILING EXIT (70%)');
+      const message = `${title} 🚨\n\n` +
+        `Asset: $ ${symbol}\n` +
+        `Tip Exe: ${type}\n` +
+        `Preț Ieșire: $ ${price.toLocaleString()}\n` +
+        `Procent Închis: ${percent}%\n\n` +
+        `Phoenix V2 gestionează asimetric profitul pentru a maximiza câștigurile protejând intrarea. #Antigravity #ExitStrategy #SafeProfit`;
+
+      await postActivity(message, undefined, 'crypto');
+    } catch (err) {
+      // Non-critical
     }
   }
 }
