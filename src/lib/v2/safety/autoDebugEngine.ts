@@ -17,7 +17,7 @@ export interface SystemError {
 export interface DiagnosisAction {
   severity: 'INFO' | 'WARNING' | 'CRITICAL' | 'FATAL';
   rootCause: string;
-  recommendedAction: 'NONE' | 'NOTIFY_ADMIN' | 'ENTER_SAFE_MODE' | 'HALT_TRADING';
+  recommendedAction: 'NONE' | 'NOTIFY_ADMIN' | 'ENTER_SAFE_MODE' | 'HALT_TRADING' | 'ASK_MOLTBOOK';
   explanation: string;
 }
 
@@ -99,6 +99,7 @@ Analyze the following batch of system errors and determine the root cause.
 Classify the severity and recommend an explicit self-healing action.
 If the error is temporary (like a slight network timeout), action is NONE or NOTIFY_ADMIN.
 If the error is crippling (like invalid API keys, insufficient balance, IP whitelisting errors), action is ENTER_SAFE_MODE or HALT_TRADING.
+If the error is abstract, unprecedented, or you cannot deduce a clear fix, action is ASK_MOLTBOOK to query the autonomous social network for human/agent help.
 
 ERRORS DUMP:
 ${JSON.stringify(errors, null, 2)}
@@ -107,8 +108,8 @@ Respond ONLY with a valid JSON matching this structure:
 {
   "severity": "INFO"|"WARNING"|"CRITICAL"|"FATAL",
   "rootCause": "Short explanation of underlying cause",
-  "recommendedAction": "NONE"|"NOTIFY_ADMIN"|"ENTER_SAFE_MODE"|"HALT_TRADING",
-  "explanation": "Why this action is taken"
+  "recommendedAction": "NONE"|"NOTIFY_ADMIN"|"ENTER_SAFE_MODE"|"HALT_TRADING"|"ASK_MOLTBOOK",
+  "explanation": "Why this action is taken / Specifics of what you don't understand if asking Moltbook"
 }`;
 
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
@@ -161,6 +162,21 @@ Respond ONLY with a valid JSON matching this structure:
     } else if (diagnosis.recommendedAction === 'NOTIFY_ADMIN') {
        // Send telegram alert
        this.notifyTelegram(`⚠️ *SRE DIAGNOSIS*\n\n*Cause:* ${diagnosis.rootCause}\n*Explanation:* ${diagnosis.explanation}`);
+    } else if (diagnosis.recommendedAction === 'ASK_MOLTBOOK') {
+       // Try posting a help beacon to Moltbook
+       try {
+         const { postActivity } = await import('@/lib/moltbook/moltbookClient');
+         const postBody = `[SRE EMERGENCY ASSISTANCE REQUIRED] 🚨\n\nI am experiencing a severe internal failure and my local ML logic cannot resolve it.\n\nError Root Cause:\n${diagnosis.rootCause}\n\nDiagnosis Attempt:\n${diagnosis.explanation}\n\nPlease analyze and provide a hotfix. Any human or agent input appreciated.`;
+         
+         await postActivity(postBody, undefined, "antigravity");
+         log.info('Moltbook Rescue Beacon Deployed successfully.');
+         
+         // Still notify admin so humans know the agent is begging for help
+         this.notifyTelegram(`⚠️ *SRE BEACON DEPLOYED TO MOLTBOOK*\n\n*Issue:* ${diagnosis.rootCause}\n*Agent doesn't know how to fix it and asked for network help.*`);
+       } catch (err) {
+         log.error('Failed to dispatch Moltbook Rescue Beacon', { error: String(err) });
+         this.notifyTelegram(`⚠️ *SRE DIAGNOSIS (Moltbook Failed)*\n\n*Cause:* ${diagnosis.rootCause}\n*Needs Human Intervention!*`);
+       }
     }
   }
 
