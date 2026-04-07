@@ -9,11 +9,46 @@ import { createLogger } from '@/lib/core/logger';
 const log = createLogger('DualMaster');
 
 // ─── Shared LLM call with retry + timeout (DRY) ───
+async function callDeepSeek(prompt: string, timeout: number, signal?: AbortSignal): Promise<string> {
+  if (!process.env.DEEPSEEK_API_KEY) throw new Error('DEEPSEEK_API_KEY missing for fallback');
+  
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
+
+  try {
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 300,
+        temperature: 0.4,
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) throw new Error(`DeepSeek HTTP ${response.status}`);
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content;
+    if (!text || text.length < 10) throw new Error('Empty DeepSeek response');
+    return text;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 async function callOpenAI(prompt: string, timeout: number, signal?: AbortSignal): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
-  // Chain external signal if provided
   if (signal) {
     signal.addEventListener('abort', () => controller.abort(), { once: true });
   }
@@ -28,8 +63,8 @@ async function callOpenAI(prompt: string, timeout: number, signal?: AbortSignal)
       body: JSON.stringify({
         model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300,       // Cap response size for speed
-        temperature: 0.4,      // More deterministic for trading
+        max_tokens: 300,
+        temperature: 0.4,
       }),
       signal: controller.signal
     });
@@ -46,6 +81,21 @@ async function callOpenAI(prompt: string, timeout: number, signal?: AbortSignal)
   } catch (err) {
     clearTimeout(timer);
     throw err;
+  }
+}
+
+async function executeDualEngineFallback(prompt: string, timeout: number): Promise<string> {
+  try {
+    return await callOpenAI(prompt, timeout);
+  } catch (err) {
+    log.warn(`OpenAI failed, bridging to DeepSeek Fallback in <5ms`, { error: (err as Error).message });
+    try {
+      // Retain the remaining timeout
+      return await callDeepSeek(prompt, timeout);
+    } catch (dsErr) {
+      log.error(`Both OpenAI and DeepSeek Fallback failed`, { error: (dsErr as Error).message });
+      throw new Error(`LLM Engine Total Failure: ${(err as Error).message} | ${(dsErr as Error).message}`);
+    }
   }
 }
 
@@ -77,7 +127,7 @@ CONFIDENCE: [0.0-1.0]
 REASONING: [Brief breakdown referencing specific data points]`;
 
   try {
-    const text = await callOpenAI(fullPrompt, timeout);
+    const text = await executeDualEngineFallback(fullPrompt, timeout);
     return parseResponse(identity, text);
   } catch (err) {
     const errorMsg = (err as Error).message;
@@ -180,11 +230,27 @@ export class DualMasterConsciousness {
       `If the gladiator historically loses on this asset, lower your confidence.`,
     ].filter(Boolean).join('\n');
     
-    // Both masters analyze simultaneously (parallel)
-    const [architectOpinion, oracleOpinion] = await Promise.all([
+    // Both masters analyze simultaneously (parallel) via allSettled to prevent single-point-of-failure
+    const results = await Promise.allSettled([
       invokeMaster('ARCHITECT', prompt, this.timeoutMs),
       invokeMaster('ORACLE', prompt, this.timeoutMs)
     ]);
+
+    const isArchitectDead = results[0].status === 'rejected';
+    const isOracleDead = results[1].status === 'rejected';
+
+    if (isArchitectDead && isOracleDead) {
+      log.error('🚨 [DualMaster] BOTH Masters failed. System is completely BLIND.');
+      throw new Error(`Both LLMs are offline.`);
+    }
+
+    const architectOpinion: MasterOpinion = results[0].status === 'fulfilled' 
+       ? results[0].value 
+       : { identity: 'ARCHITECT', direction: 'FLAT', confidence: 0, reasoning: `OFFLINE/ERROR: ${results[0].reason?.message || 'Timeout'}` };
+
+    const oracleOpinion: MasterOpinion = results[1].status === 'fulfilled'
+       ? results[1].value
+       : { identity: 'ORACLE', direction: 'FLAT', confidence: 0, reasoning: `OFFLINE/ERROR: ${results[1].reason?.message || 'Timeout'}` };
 
     // ─── OMEGA: Hallucination Defense ───
     const hallucinationReport = this.runHallucinationDefense(architectOpinion, oracleOpinion, prompt);

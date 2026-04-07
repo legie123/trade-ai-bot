@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 export interface RealtimeDashboard {
-  system: { status: string; uptime: number; memoryUsageRssMB: number };
+  system: { status: string; uptime: number; memoryUsageRssMB: number; syncQueue?: { pending: number; totalCompleted: number; lastSyncComplete: string } };
   watchdog: { status: string; crashCount: number; alive: boolean };
   heartbeat: {
     status: string;

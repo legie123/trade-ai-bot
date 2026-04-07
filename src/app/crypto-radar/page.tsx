@@ -91,6 +91,7 @@ export default function CryptoRadarPage() {
   });
   const debouncedSearch = useDebounce(filters.search, 300);
   const [combatAudits, setCombatAudits] = useState<any[]>([]);
+  const [gladiators, setGladiators] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [indicators, setIndicators] = useState<any>(null);
 
@@ -131,14 +132,14 @@ export default function CryptoRadarPage() {
 
   const fetchSignals = useCallback(async () => {
     try {
-      const res = await fetch('/api/tradingview');
-      if (res.ok) {
+      const res = await fetch('/api/tradingview', { signal: AbortSignal.timeout(8000) }).catch(() => null);
+      if (res && res.ok) {
         const data = await res.json();
         setSignals(data.signals || []);
         setStats(s => data.stats || s);
       }
-      const healthRes = await fetch('/api/health');
-      if (healthRes.ok) {
+      const healthRes = await fetch('/api/health', { signal: AbortSignal.timeout(8000) }).catch(() => null);
+      if (healthRes && healthRes.ok) {
         const hData = await healthRes.json();
         setForgeState({
           progress: hData.trading?.forgeProgress || 0,
@@ -152,11 +153,14 @@ export default function CryptoRadarPage() {
 
   const fetchDecisions = useCallback(async () => {
     try {
-      const res = await fetch('/api/bot');
-      if (res.ok) {
+      const res = await fetch('/api/bot', { signal: AbortSignal.timeout(8000) }).catch(() => null);
+      if (res && res.ok) {
         const data = await res.json();
         if (data.syndicateAudits) {
           setCombatAudits(data.syndicateAudits.slice(0, 20));
+        }
+        if (data.gladiators) {
+          setGladiators(data.gladiators);
         }
       }
     } catch {}
@@ -165,8 +169,8 @@ export default function CryptoRadarPage() {
   // ---- Fetch BTC engine analysis ----
   const fetchBTC = useCallback(async () => {
     try {
-      const res = await fetch('/api/btc-signals');
-      if (res.ok) {
+      const res = await fetch('/api/btc-signals', { signal: AbortSignal.timeout(8000) }).catch(() => null);
+      if (res && res.ok) {
         const data = await res.json();
         if (data.btc) setBtcData({ ...data.btc, signals: data.signals || [] });
         // Re-fetch signals since BTC engine pushes new ones to store
@@ -180,8 +184,8 @@ export default function CryptoRadarPage() {
   // ---- Fetch tokens from API ----
   const fetchTokens = useCallback(async () => {
     try {
-      const res = await fetch('/api/tokens');
-      if (res.ok) {
+      const res = await fetch('/api/tokens', { signal: AbortSignal.timeout(12000) }).catch(() => null);
+      if (res && res.ok) {
         const data = await res.json();
         const mapped: TokenRow[] = (data.tokens || []).map((t: Record<string, unknown>) => ({
           symbol: t.symbol || '?',
@@ -209,8 +213,8 @@ export default function CryptoRadarPage() {
   // ---- Fetch Solana multi-coin engine ----
   const fetchSolana = useCallback(async () => {
     try {
-      const res = await fetch('/api/solana-signals');
-      if (res.ok) {
+      const res = await fetch('/api/solana-signals', { signal: AbortSignal.timeout(8000) }).catch(() => null);
+      if (res && res.ok) {
         const data = await res.json();
         setSolCoins(data.coins || []);
       }
@@ -221,17 +225,16 @@ export default function CryptoRadarPage() {
 
   const fetchIndicators = useCallback(async () => {
     try {
-      const res = await fetch('/api/indicators');
-      if (res.ok) setIndicators(await res.json());
+      const res = await fetch('/api/indicators', { signal: AbortSignal.timeout(8000) }).catch(() => null);
+      if (res && res.ok) setIndicators(await res.json());
     } catch { /* optional */ }
   }, []);
 
   // ---- Forge/Moltbook cron loop: triggers Forge Extraction & background sweep ----
   const triggerCron = useCallback(async () => {
     try { 
-      await fetch('/api/cron'); // Trigger main heartbeat
-      // Silently try moltbook (may fail without secret, which is fine since it's a Vercel cron)
-      await fetch('/api/moltbook-cron'); 
+      await fetch('/api/cron', { signal: AbortSignal.timeout(10000) }).catch(() => null);
+      await fetch('/api/moltbook-cron', { signal: AbortSignal.timeout(10000) }).catch(() => null); 
     } catch { /* background, non-blocking */ }
   }, []);
 
@@ -682,6 +685,44 @@ export default function CryptoRadarPage() {
                </div>
              </div>
            )}
+
+           {/* Gladiators Arena */}
+           <div className="glass-card" style={{ padding: 0 }}>
+             <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-red)', letterSpacing: '0.05em' }}>⚔️ THE GLADIATORS ARENA</span>
+               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{gladiators.length} ACTIVE BOTS</span>
+             </div>
+             <div className="table-wrap" style={{ maxHeight: 300, padding: '0 8px 8px' }}>
+               {gladiators.length > 0 ? (
+                 <table>
+                   <thead><tr><th>Rank</th><th>Gladiator</th><th>Arena</th><th>WinRate</th><th>P/F</th><th>Deploy</th></tr></thead>
+                   <tbody>
+                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                     {gladiators.filter((g: any) => !g.isOmega).sort((a: any, b: any) => a.rank - b.rank).map((g: any) => (
+                       <tr key={g.id} style={{ background: g.isLive ? 'rgba(16, 185, 129, 0.05)' : '' }}>
+                         <td>
+                           {g.rank === 1 ? '👑 1' : g.rank === 2 ? '🥈 2' : g.rank === 3 ? '🥉 3' : g.rank}
+                         </td>
+                         <td style={{ fontWeight: 600, color: g.isLive ? '#fff' : 'var(--text-secondary)' }}>{g.name}</td>
+                         <td style={{ fontSize: 10, color: 'var(--text-muted)' }}>{g.arena.replace('_', ' ')}</td>
+                         <td style={{ fontFamily: 'var(--font-mono)', color: g.stats.winRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                           {g.stats.winRate.toFixed(1)}%
+                         </td>
+                         <td style={{ fontFamily: 'var(--font-mono)' }}>{g.stats.profitFactor.toFixed(2)}</td>
+                         <td>
+                           <span className={`badge ${g.isLive ? 'badge-bullish' : 'badge-neutral'}`} style={{ fontSize: 9 }}>
+                             {g.isLive ? 'LIVE CAP' : 'SHADOW'}
+                           </span>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+               ) : (
+                 <div style={{ padding: 20, textAlign:'center', color: 'var(--text-muted)' }}>Awaiting Gladiators...</div>
+               )}
+             </div>
+           </div>
 
         </div>
 

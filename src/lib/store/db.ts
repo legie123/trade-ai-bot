@@ -42,6 +42,7 @@ export interface LivePosition {
   partialTPHit: boolean;
   highestPriceObserved: number;
   lowestPriceObserved: number;
+  currentPrice?: number;
   status: 'OPEN' | 'CLOSED';
   openedAt: string;
 }
@@ -58,6 +59,7 @@ interface DbStore {
   phantomTrades: PhantomTrade[]; // Shadow trades for Gladiator Combat Engine
   livePositions: LivePosition[]; // Real live trades for Trailing Stop Engine
   invalidSymbols: string[]; // Blacklist for delisted MEXC symbols
+  equityHistory: EquityPoint[]; // Immutable history for PnL
 }
 
 const cache: DbStore = {
@@ -86,6 +88,7 @@ const cache: DbStore = {
   phantomTrades: [],
   livePositions: [],
   invalidSymbols: [],
+  equityHistory: [],
 };
 
 let dbInitialized = false;
@@ -111,7 +114,6 @@ export async function initDB() {
       for (const row of data) {
         if (row.id === 'decisions') {
           const raw = row.data || [];
-          // Deduplicate by signalId
           const seen = new Set<string>();
           const deduped = raw.filter((d: DecisionSnapshot) => {
             const key = d.signalId || d.id;
@@ -119,7 +121,6 @@ export async function initDB() {
             seen.add(key);
             return true;
           });
-          // Keep only latest 100 decisions (prevents infinite Supabase growth)
           const sorted = deduped.sort((a: DecisionSnapshot, b: DecisionSnapshot) =>
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           cache.decisions = sorted.slice(0, 100);
@@ -128,13 +129,28 @@ export async function initDB() {
         if (row.id === 'optimizer') cache.optimizer = row.data || cache.optimizer;
         if (row.id === 'config') cache.config = row.data || cache.config;
         if (row.id === 'gladiators') cache.gladiators = row.data || [];
-        if (row.id === 'syndicate_audit') cache.syndicateAudits = row.data || [];
         if (row.id === 'gladiator_dna') cache.gladiatorDna = row.data || [];
-        if (row.id === 'live_positions') cache.livePositions = row.data || [];
         if (row.id === 'invalid_symbols') cache.invalidSymbols = row.data || [];
       }
-      log.info('Supabase database initialized from cloud state');
     }
+
+    // --- NEW: Load from True Postgres Tables ---
+    const { data: equityData, error: eqErr } = await supabase.from('equity_history').select('*').order('timestamp', { ascending: true }).limit(500);
+    if (!eqErr && equityData) {
+      cache.equityHistory = equityData;
+    }
+
+    const { data: auditsData, error: audErr } = await supabase.from('syndicate_audits').select('*').order('timestamp', { ascending: false }).limit(200);
+    if (!audErr && auditsData) {
+      cache.syndicateAudits = auditsData;
+    }
+
+    const { data: liveData, error: lErr } = await supabase.from('live_positions').select('*');
+    if (!lErr && liveData) {
+      cache.livePositions = liveData;
+    }
+
+    log.info('Supabase database initialized from cloud Postgres tables');
 
     dbInitialized = true;
   } catch (err) {
@@ -221,9 +237,15 @@ export function updateDecision(id: string, updates: Partial<DecisionSnapshot>): 
 
 // ─── Syndicate Audit (Combat Logs) ────────────────
 export function addSyndicateAudit(audit: Record<string, unknown>): void {
-  cache.syndicateAudits.unshift({ ...audit, id: `audit-${Date.now()}` });
+  const newAudit = { ...audit, id: `audit-${Date.now()}` };
+  cache.syndicateAudits.unshift(newAudit);
   if (cache.syndicateAudits.length > 500) cache.syndicateAudits.length = 500;
-  syncToCloud('syndicate_audit', cache.syndicateAudits);
+  
+  if (supabaseUrl && dbInitialized) {
+    supabase.from('syndicate_audits').insert(newAudit).then(({ error }) => {
+      if (error) log.error('Failed to insert syndicate audit', { error: error.message });
+    });
+  }
 }
 
 export function getSyndicateAudits(): Record<string, unknown>[] {
@@ -274,14 +296,22 @@ export function getLivePositions(): LivePosition[] {
 
 export function addLivePosition(pos: LivePosition): void {
   cache.livePositions.unshift(pos);
-  syncToCloud('live_positions', cache.livePositions);
+  if (supabaseUrl && dbInitialized) {
+    supabase.from('live_positions').insert(pos).then(({ error }) => {
+      if (error) log.error('Failed to insert live position', { error: error.message });
+    });
+  }
 }
 
 export function updateLivePosition(id: string, updates: Partial<LivePosition>): void {
   const idx = cache.livePositions.findIndex((p) => p.id === id);
   if (idx > -1) {
     cache.livePositions[idx] = { ...cache.livePositions[idx], ...updates };
-    syncToCloud('live_positions', cache.livePositions);
+    if (supabaseUrl && dbInitialized) {
+      supabase.from('live_positions').update(updates).eq('id', id).then(({ error }) => {
+         if (error) log.error('Failed to update live position', { id, error: error.message });
+      });
+    }
   }
 }
 
@@ -377,7 +407,7 @@ export function getBotConfig(): BotConfig {
 export function saveBotConfig(config: Partial<BotConfig>): void {
   cache.config = { ...cache.config, ...config };
   syncToCloud('config', cache.config);
-}// ─── Equity Curve (for chart) ──────────────────────
+}// ─── Equity Curve (Continuous & Non-Destructive) ─────
 export interface EquityPoint {
   timestamp: string;
   pnl: number;        
@@ -388,31 +418,58 @@ export interface EquityPoint {
 }
 
 export function getEquityCurve(): EquityPoint[] {
-  const config = getBotConfig();
-  const allDecs = getDecisions();
-  const decisions = allDecs
-    .filter((d) => d.outcome !== 'PENDING')
-    .reverse(); // oldest first
+  if (cache.equityHistory.length === 0) {
+    return [{
+      timestamp: new Date().toISOString(),
+      balance: cache.config.paperBalance || 1000,
+      pnl: 0,
+      outcome: 'WIN', // Dummy values to fulfill EquityPoint schema
+      signal: 'SEED',
+      symbol: 'SYSTEM',
+    }];
+  }
+  return cache.equityHistory;
+}
 
-  let cumPnl = 0;
-  let balance = config.paperBalance;
-  const positionSize = 20; // 20% of balance per trade (paper trading standard)
+// Internal function to push a closed trade onto the real curve 
+// without recalculating the history (so we never reset on truncations)
+export function appendToEquityCurve(dec: DecisionSnapshot, pnlPct: number): void {
+  if (cache.equityHistory.some(e => e.timestamp === dec.timestamp && e.symbol === dec.symbol)) return;
 
-  return decisions.map((d) => {
-    const pnlPct = d.pnlPercent || 0;
-    cumPnl += pnlPct;
-    const tradeImpact = balance * (positionSize / 100) * (pnlPct / 100);
-    balance = Math.max(balance + tradeImpact, 0);
+  const positionSize = 20; // 20% of balance roughly
+  let currentPnl = 0;
+  let currentBalance = cache.config.paperBalance || 1000;
 
-    return {
-      timestamp: d.timestamp,
-      pnl: Math.round(cumPnl * 100) / 100,
-      balance: Math.round(balance * 100) / 100,
-      outcome: d.outcome,
-      signal: d.signal,
-      symbol: d.symbol,
-    };
-  });
+  if (cache.equityHistory.length > 0) {
+    const last = cache.equityHistory[cache.equityHistory.length - 1];
+    currentPnl = last.pnl;
+    currentBalance = last.balance;
+  }
+
+  currentPnl += pnlPct;
+  const tradeImpact = currentBalance * (positionSize / 100) * (pnlPct / 100);
+  currentBalance = Math.max(currentBalance + tradeImpact, 0);
+
+  // Auto-compound into the master config so baseline goes up
+  saveBotConfig({ paperBalance: currentBalance });
+
+  const newPoint: EquityPoint = {
+    timestamp: dec.timestamp || new Date().toISOString(),
+    pnl: Math.round(currentPnl * 100) / 100,
+    balance: Math.round(currentBalance * 100) / 100,
+    outcome: dec.outcome,
+    signal: dec.signal,
+    symbol: dec.symbol,
+  };
+
+  cache.equityHistory.push(newPoint);
+  if (cache.equityHistory.length > 1000) cache.equityHistory.shift(); 
+  
+  if (supabaseUrl && dbInitialized) {
+    supabase.from('equity_history').insert(newPoint).then(({ error }) => {
+      if (error) log.error('Failed to insert equity history', { error: error.message });
+    });
+  }
 }
 
 // ─── OMEGA: Distributed Trade Lock ─────────────────

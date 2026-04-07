@@ -164,6 +164,35 @@ export default function DashboardPage() {
                 {data.watchdog.status}
               </span>
             </div>
+            {data.system.syncQueue && (
+              <>
+                <div style={{borderTop: '1px solid rgba(255,255,255,0.06)', margin: '0.6rem 0', paddingTop: '0.6rem'}}>
+                  <div style={{fontSize: '0.75rem', color: '#22d3ee', fontWeight: 600, marginBottom: '0.4rem', letterSpacing: '0.05em'}}>⚡ SYNC PIPELINE</div>
+                </div>
+                <div className={styles.statRow}>
+                  <span>Queue Pending</span>
+                  <span style={{
+                    color: data.system.syncQueue.pending > 5 ? '#ef4444' : data.system.syncQueue.pending > 0 ? '#f59e0b' : '#10b981',
+                    fontWeight: 700,
+                    fontFamily: 'monospace'
+                  }}>
+                    {data.system.syncQueue.pending} {data.system.syncQueue.pending === 0 ? '✓' : '⏳'}
+                  </span>
+                </div>
+                <div className={styles.statRow}>
+                  <span>Total Synced</span>
+                  <span className={styles.statValue} style={{fontFamily: 'monospace'}}>
+                    {data.system.syncQueue.totalCompleted.toLocaleString()}
+                  </span>
+                </div>
+                <div className={styles.statRow}>
+                  <span>Last Sync</span>
+                  <span style={{color: '#9ca3af', fontSize: '0.75rem', fontFamily: 'monospace'}}>
+                    {new Date(data.system.syncQueue.lastSyncComplete).toLocaleTimeString()}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           <div className={styles.glassPanel} style={{'--panel-accent': '#f59e0b'} as React.CSSProperties}>

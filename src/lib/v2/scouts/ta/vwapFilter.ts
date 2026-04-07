@@ -110,27 +110,28 @@ export async function checkVWAP(
   const priceAboveVWAP = currentPrice > vwap;
   const priceBelowVWAP = currentPrice < vwap;
 
-  // 4. Volume surge = recent 3-bar average is 1.2x the 20-bar average (tuned via 3-month replay)
-  const volumeSurge = volumeRatio >= 1.2;
+  // 4. Volume surge = recent 3-bar average vs 20-bar average
+  // Relaxed from 1.2x to 0.8x (normal volume) to prevent bot death during low volatility sessions
+  const volumeSurge = volumeRatio >= 0.8;
 
   // 5. Final confirmation logic
-  // FIXED: For trend-following, require price on correct side of VWAP + volume surge
-  // For mean-reversion (when volume is very strong), allow signals against VWAP
+  // For trend-following, require price on correct side of VWAP with normal volume
+  // For mean-reversion, require slightly higher volume (1.2x)
   let confirmed = false;
   if (proposedSignal === 'BUY') {
     if (priceAboveVWAP && volumeSurge) {
-      // Classic: price above VWAP with volume = institutional momentum BUY
+      // Classic: price above VWAP with normal volume
       confirmed = true;
-    } else if (priceBelowVWAP && volumeRatio >= 1.5) {
-      // Mean reversion: price below VWAP with strong volume = capitulation / reversal BUY
+    } else if (priceBelowVWAP && volumeRatio >= 1.2) {
+      // Mean reversion: capitulation / reversal BUY
       confirmed = true;
     }
   } else if (proposedSignal === 'SELL') {
     if (priceBelowVWAP && volumeSurge) {
-      // Classic: price below VWAP with volume = institutional selling
+      // Classic: price below VWAP with normal volume
       confirmed = true;
-    } else if (priceAboveVWAP && volumeRatio >= 1.5) {
-      // Distribution: price above VWAP with strong volume = smart money selling
+    } else if (priceAboveVWAP && volumeRatio >= 1.2) {
+      // Distribution: smart money selling
       confirmed = true;
     }
   }

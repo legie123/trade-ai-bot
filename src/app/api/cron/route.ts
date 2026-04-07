@@ -4,6 +4,7 @@ import { watchdogPing } from '@/lib/core/watchdog';
 import { startHeartbeat } from '@/lib/core/heartbeat';
 import { createLogger } from '@/lib/core/logger';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
+import { DNAExtractor } from '@/lib/v2/superai/dnaExtractor';
 
 const log = createLogger('CronLoop');
 
@@ -11,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 let loopStarted = false;
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     // Ensure heartbeat is running
     if (!loopStarted) {
@@ -41,8 +42,21 @@ export async function GET() {
     const { positionManager } = await import('@/lib/v2/manager/positionManager');
     await positionManager.evaluateLivePositions();
 
+    // Trigger Market Scanners (so the AI trades even when the user's browser is closed)
+    try {
+      const internalPort = process.env.PORT || 3000;
+      const baseUrl = `http://127.0.0.1:${internalPort}`;
+      
+      // Fire and forget without awaiting so cron doesn't stall
+      fetch(`${baseUrl}/api/btc-signals`, { signal: AbortSignal.timeout(10000) }).catch(() => null);
+      fetch(`${baseUrl}/api/solana-signals`, { signal: AbortSignal.timeout(10000) }).catch(() => null);
+      log.info(`[Market Scanners] Background TA sweep triggered via cron at ${baseUrl}`);
+    } catch (e) {
+      log.error('Failed to trigger background scanners', { error: String(e) });
+    }
+
     // Evaluate Real/Shadow Main System Decisions
-    const { getPendingDecisions, updateDecision, recalculatePerformance } = await import('@/lib/store/db');
+    const { getPendingDecisions, updateDecision, recalculatePerformance, appendToEquityCurve, getLivePositions, updateLivePosition } = await import('@/lib/store/db');
     const { getMexcPrice } = await import('@/lib/exchange/mexcClient');
     
     const pending = getPendingDecisions();
@@ -55,11 +69,15 @@ export async function GET() {
     });
 
     const uniqueSymbols = [...new Set(eligibleDecisions.map(d => d.symbol))];
+
+    // Fetch all unique prices in parallel for decisions and live positions
+    const livePos = getLivePositions().filter(p => p.status === 'OPEN');
+    const liveSymbols = livePos.map(p => p.symbol);
+    const allSymbols = [...new Set([...uniqueSymbols, ...liveSymbols])];
     const priceCache: Record<string, number> = {};
 
-    // Fetch all unique prices in parallel
     await Promise.all(
-      uniqueSymbols.map(async (sym) => {
+      allSymbols.map(async (sym) => {
         try {
           const price = await getMexcPrice(sym);
           if (price > 0) priceCache[sym] = price;
@@ -89,7 +107,47 @@ export async function GET() {
          evaluatedAt: new Date().toISOString()
       });
 
+      appendToEquityCurve({ ...dec, outcome }, pnlPercent);
+
+      // DNA LEARNING: Inject pure Shadow mode experience into RL engine
+      // Only log if the decision source belongs to a shadow gladiator (V2 Shadow)
+      if (dec.source.includes('Shadow')) {
+        const gladiatorIdMatch = dec.source.match(/\((.*?)\)/);
+        const elapsedMin = (Date.now() - new Date(dec.timestamp).getTime()) / 60000;
+        if (gladiatorIdMatch && gladiatorIdMatch[1]) {
+          try {
+            await DNAExtractor.getInstance().logBattle({
+              id: `shadow_${dec.id}`,
+              gladiatorId: gladiatorIdMatch[1],
+              symbol: dec.symbol,
+              decision: dec.action as 'LONG' | 'SHORT' | 'FLAT',
+              entryPrice: dec.price,
+              outcomePrice: currentPrice,
+              pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+              isWin: outcome === 'WIN',
+              timestamp: Date.now(),
+              marketContext: { exitType: 'SHADOW_TIME_BASED', holdTimeSec: elapsedMin * 60 }
+            });
+          } catch (err) {
+             log.error(`Failed to inject shadow DNA for ${dec.id}`, { error: String(err) });
+          }
+        }
+      }
+
       mainDecisionsEvaluated++;
+    }
+
+    // Update Floating PnL for live positions
+    let livePositionsUpdated = 0;
+    for (const pos of livePos) {
+      if (priceCache[pos.symbol]) {
+        updateLivePosition(pos.id, { 
+          currentPrice: priceCache[pos.symbol],
+          highestPriceObserved: Math.max(pos.highestPriceObserved, priceCache[pos.symbol]),
+          lowestPriceObserved: Math.min(pos.lowestPriceObserved, priceCache[pos.symbol])
+        });
+        livePositionsUpdated++;
+      }
     }
 
     if (mainDecisionsEvaluated > 0) {
@@ -97,12 +155,18 @@ export async function GET() {
       log.info(`[Trade AI] Resolved ${mainDecisionsEvaluated} main real/paper decisions. PnL recalibrated.`);
     }
 
+    // Extract behaviors to The Forge (Omega Gladiator)
+    const { extractWinningBehaviors } = await import('@/lib/v2/forge/dnaExtractor');
+    const forgeStats = extractWinningBehaviors();
+
     return NextResponse.json({
       status: 'ok',
       message: 'Cron tick processed',
       scanCount: gScan.__autoScan.scanCount,
       mainDecisionsEvaluated,
+      livePositionsUpdated,
       pricesFetched: Object.keys(priceCache).length,
+      forgeProgress: forgeStats.progressPercent,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

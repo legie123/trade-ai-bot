@@ -14,6 +14,7 @@ import {
   recalculatePerformance,
   getEquityCurve,
   getSyndicateAudits,
+  getLivePositions,
 } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState } from '@/lib/core/killSwitch';
@@ -78,6 +79,40 @@ export async function GET() {
     const totalPnl = evaluated.reduce((s, d) => s + (d.pnlPercent || 0), 0);
     const todayPnl = todayEvaluated.reduce((s, d) => s + (d.pnlPercent || 0), 0);
 
+    // Calculate Real-Time Floating PnL
+    const activePositions = getLivePositions().filter(p => p.status === 'OPEN');
+    let floatingPnlValue = 0;
+    
+    for (const pos of activePositions) {
+      if (pos.currentPrice && pos.entryPrice) {
+        const rawDiff = pos.currentPrice - pos.entryPrice;
+        const diffPercent = (rawDiff / pos.entryPrice) * 100;
+        const pnlPercent = pos.side === 'LONG' ? diffPercent : -diffPercent;
+        
+        // Default position size roughly 20%
+        const currentBalance = config.paperBalance || 1000;
+        const tradeImpact = currentBalance * (20 / 100) * (pnlPercent / 100);
+        floatingPnlValue += tradeImpact;
+      }
+    }
+
+    const baseEquityCurve = getEquityCurve();
+    const finalEquityCurve = [...baseEquityCurve];
+    
+    // Inject floating PNL so dashboard naturally fluctuates live
+    if (floatingPnlValue !== 0) {
+       const latestBalance = baseEquityCurve.length > 0 ? baseEquityCurve[baseEquityCurve.length - 1].balance : config.paperBalance || 1000;
+       const latestPnl = baseEquityCurve.length > 0 ? baseEquityCurve[baseEquityCurve.length - 1].pnl : 0;
+       finalEquityCurve.push({
+         timestamp: new Date().toISOString(),
+         balance: Math.round((latestBalance + floatingPnlValue) * 100) / 100,
+         pnl: latestPnl,
+         outcome: 'FLOATING',
+         signal: 'LIVE',
+         symbol: 'MULTIPLE'
+       });
+    }
+
     const stats: BotStats = {
       mode: config.mode,
       totalDecisions: allDecisions.length,
@@ -133,7 +168,7 @@ export async function GET() {
       },
       optimizer,
       config,
-      equityCurve: getEquityCurve(),
+      equityCurve: finalEquityCurve,
     });
   } catch (err) {
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });

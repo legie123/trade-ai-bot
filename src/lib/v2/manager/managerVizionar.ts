@@ -76,7 +76,7 @@ export class ManagerVizionar {
     
     if (!safetyCheck.safe) {
       console.warn(`[SENTINEL BLOCKED] ${payload.symbol}: ${safetyCheck.reason}`);
-      this.broadcastSentinelBlock(payload, safetyCheck.reason || 'Unknown Risk Rule');
+      await this.broadcastSentinelBlock(payload, safetyCheck.reason || 'Unknown Risk Rule');
       return;
     }
 
@@ -85,7 +85,7 @@ export class ManagerVizionar {
       await this.routeSignal(gladiator, payload, consensus);
     } else {
       console.log(`[SYNDICATE VETO] Masters did not approve the move for ${gladiator.id}. Reason: Low Confidence.`);
-      this.broadcastSyndicateVeto(payload, consensus);
+      await this.broadcastSyndicateVeto(payload, consensus);
     }
   }
 
@@ -200,7 +200,7 @@ export class ManagerVizionar {
         });
 
         // 🔗 [MOLTBOOK BROADCAST] Phoenix V2 Live Positioning
-        this.broadcastTradeToMoltbook('ENTRY', result.symbol, consensus.finalDirection, result.price, consensus);
+        await this.broadcastTradeToMoltbook('ENTRY', result.symbol, consensus.finalDirection, result.price, consensus);
 
         console.log(`[POSITION MANAGER] LivePosition registered for ${result.symbol} — Trailing Engine armed.`);
       } else {

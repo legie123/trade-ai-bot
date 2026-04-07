@@ -42,8 +42,8 @@ export function useBotStats(intervalMs = 30_000) {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/bot');
-      if (!res.ok) return;
+      const res = await fetch('/api/bot', { signal: AbortSignal.timeout(8000) }).catch(() => null);
+      if (!res || !res.ok) return;
       const data = await res.json();
       const s = data.stats;
       const config = data.config;
