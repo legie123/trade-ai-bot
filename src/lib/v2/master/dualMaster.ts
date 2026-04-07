@@ -116,7 +116,7 @@ const PERSONAS: Record<DualMasterIdentity, string> = {
   ORACLE: `You are the ORACLE (Master 2). Your focus is intuition, sentiment edge, contrarian plays, and market psychology. Look beyond the math to the chaotic human element. You MUST reference specific market conditions from the data in your reasoning.`
 };
 
-async function invokeMaster(identity: DualMasterIdentity, prompt: string, timeout: number): Promise<MasterOpinion> {
+async function invokeMaster(identity: DualMasterIdentity, prompt: string, _timeout: number): Promise<MasterOpinion> {
   const fullPrompt = `${PERSONAS[identity]}
       
 Data: ${prompt}
@@ -127,7 +127,9 @@ CONFIDENCE: [0.0-1.0]
 REASONING: [Brief breakdown referencing specific data points]`;
 
   try {
-    const text = await executeDualEngineFallback(fullPrompt, timeout);
+    // ANTI-DEADLOCK BOMB: Hard limit LLM to 3500ms per attempt to prevent 504 Gateway Timeout
+    const MAX_LLM_TIMEOUT = 3500;
+    const text = await executeDualEngineFallback(fullPrompt, MAX_LLM_TIMEOUT);
     return parseResponse(identity, text);
   } catch (err) {
     const errorMsg = (err as Error).message;

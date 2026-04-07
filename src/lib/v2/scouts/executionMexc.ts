@@ -1,4 +1,4 @@
-import { getMexcPrice, placeMexcMarketOrder, getMexcBalances, getMexcExchangeInfo } from '@/lib/exchange/mexcClient';
+import { getMexcPrice, placeMexcLimitOrder, placeMexcMarketOrder, getMexcBalances, getMexcExchangeInfo } from '@/lib/exchange/mexcClient';
 import { sendMessage } from '@/lib/alerts/telegram';
 import { createLogger } from '@/lib/core/logger';
 
@@ -31,10 +31,10 @@ async function getExchangeInfoCached(): Promise<Record<string, unknown>> {
   }
 }
 
-function getSymbolFilters(exchangeInfo: Record<string, unknown>, symbol: string): { minQty: number; stepSize: number; minNotional: number } {
-  const symbols = (exchangeInfo as { symbols?: { symbol: string; filters?: { filterType: string; minQty?: string; stepSize?: string; minNotional?: string }[] }[] }).symbols || [];
+function getSymbolFilters(exchangeInfo: Record<string, unknown>, symbol: string): { minQty: number; stepSize: number; minNotional: number; tickSize: number } {
+  const symbols = (exchangeInfo as { symbols?: { symbol: string; filters?: { filterType: string; minQty?: string; stepSize?: string; minNotional?: string; tickSize?: string }[] }[] }).symbols || [];
   const found = symbols.find(s => s.symbol === symbol);
-  const defaults = { minQty: 0.00001, stepSize: 0.00001, minNotional: 5 };
+  const defaults = { minQty: 0.00001, stepSize: 0.00001, minNotional: 5, tickSize: 0.00001 };
   if (!found || !found.filters) return defaults;
 
   for (const f of found.filters) {
@@ -44,6 +44,9 @@ function getSymbolFilters(exchangeInfo: Record<string, unknown>, symbol: string)
     }
     if (f.filterType === 'MIN_NOTIONAL') {
       defaults.minNotional = parseFloat(f.minNotional || '5');
+    }
+    if (f.filterType === 'PRICE_FILTER') {
+      defaults.tickSize = parseFloat(f.tickSize || '0.00001');
     }
   }
   return defaults;
@@ -118,13 +121,26 @@ export async function executeMexcTrade(
     if (dryRun) {
       log.info(`[DRY RUN] Would execute ${side} ${mexcSymbol}: ${quantity} @ $${price} ($${tradeAmount.toFixed(2)}) | Balance: $${usdtBalance.toFixed(2)}`);
     } else {
-      await placeMexcMarketOrder(mexcSymbol, side, quantity);
+      // ANTI-SLIPPAGE BOMB: Replace vulnerable Market Order with a Tolerant Limit Order
+      // Max Slippage allowed is 0.5% from the AI analysed price.
+      const MAX_SLIPPAGE = 0.005;
+      let limitPrice = side === 'BUY' ? price * (1 + MAX_SLIPPAGE) : price * (1 - MAX_SLIPPAGE);
+      limitPrice = roundToStep(limitPrice, filters.tickSize);
+
+      try {
+        await placeMexcLimitOrder(mexcSymbol, side, quantity, limitPrice);
+        log.info(`[SLIPPAGE PROTECT] Sent LIMIT ${side} for ${mexcSymbol} @ max price $${limitPrice} (AI price: $${price})`);
+      } catch (err) {
+        log.warn(`[LIMIT FAILED] ${(err as Error).message}. Falling back to Market Order with extreme caution.`);
+        await placeMexcMarketOrder(mexcSymbol, side, quantity);
+      }
 
       const telegramMsg = `[TRADE EXECUTION V2]\nPair: ${mexcSymbol}\nSide: ${side}\nPrice: $${price}\nQty: ${quantity}\nValue: $${tradeAmount.toFixed(2)}\nBalance: $${usdtBalance.toFixed(2)}`;
-      await sendMessage(telegramMsg).catch(() => {}); // Don't block on telegram
+      sendMessage(telegramMsg).catch(() => {}); // Fire and forget, don't block on telegram
     }
 
     log.info(`[EXECUTION V2${dryRun ? ' DRY' : ''}] ${side} ${mexcSymbol}: ${quantity} @ $${price} ($${tradeAmount.toFixed(2)}) | Balance: $${usdtBalance.toFixed(2)}`);
+
 
     return {
       symbol: mexcSymbol,

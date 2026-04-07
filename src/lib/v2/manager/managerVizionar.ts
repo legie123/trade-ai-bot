@@ -5,7 +5,7 @@ import { SentinelGuard } from '../safety/sentinelGuard';
 import { DNAExtractor, IntelligenceDigest } from '../superai/dnaExtractor';
 import { executeMexcTrade } from '@/lib/v2/scouts/executionMexc';
 import { Signal, DecisionSnapshot } from '../../types/radar';
-import { addDecision, addLivePosition, acquireTradeLock, releaseTradeLock } from '@/lib/store/db';
+import { addDecision, addLivePosition, acquireTradeLock, releaseTradeLock, isPositionOpenStrict } from '@/lib/store/db';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
 import { createLogger } from '@/lib/core/logger';
 
@@ -76,7 +76,7 @@ export class ManagerVizionar {
     
     if (!safetyCheck.safe) {
       console.warn(`[SENTINEL BLOCKED] ${payload.symbol}: ${safetyCheck.reason}`);
-      await this.broadcastSentinelBlock(payload, safetyCheck.reason || 'Unknown Risk Rule');
+      this.broadcastSentinelBlock(payload, safetyCheck.reason || 'Unknown Risk Rule').catch(() => {});
       return;
     }
 
@@ -85,7 +85,7 @@ export class ManagerVizionar {
       await this.routeSignal(gladiator, payload, consensus);
     } else {
       console.log(`[SYNDICATE VETO] Masters did not approve the move for ${gladiator.id}. Reason: Low Confidence.`);
-      await this.broadcastSyndicateVeto(payload, consensus);
+      this.broadcastSyndicateVeto(payload, consensus).catch(() => {});
     }
   }
 
@@ -141,7 +141,14 @@ export class ManagerVizionar {
   }
 
   private async executeLiveCapital(id: string, payload: Signal, consensus: DualConsensus) {
-    // OMEGA: Distributed Trade Lock — prevent duplicate executions across instances
+    // 1. STRICT DB VERIFICATION: check Postgres live_positions to prevent Double-Buy across instances
+    const isAlreadyOpen = await isPositionOpenStrict(payload.symbol);
+    if (isAlreadyOpen) {
+      log.warn(`[MULTI-INSTANCE PROTECT] Real-time DB confirmed ${payload.symbol} is already OPEN. Skipping.`);
+      return;
+    }
+
+    // 2. OMEGA: Distributed Trade Lock — prevent duplicate executions across instances
     const lockAcquired = await acquireTradeLock(payload.symbol);
     if (!lockAcquired) {
       log.warn(`[LOCK BLOCKED] Another instance is already trading ${payload.symbol}. Skipping.`);
@@ -200,7 +207,7 @@ export class ManagerVizionar {
         });
 
         // 🔗 [MOLTBOOK BROADCAST] Phoenix V2 Live Positioning
-        await this.broadcastTradeToMoltbook('ENTRY', result.symbol, consensus.finalDirection, result.price, consensus);
+        this.broadcastTradeToMoltbook('ENTRY', result.symbol, consensus.finalDirection, result.price, consensus).catch(() => {});
 
         console.log(`[POSITION MANAGER] LivePosition registered for ${result.symbol} — Trailing Engine armed.`);
       } else {

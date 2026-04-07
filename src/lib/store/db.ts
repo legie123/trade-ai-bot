@@ -294,6 +294,26 @@ export function getLivePositions(): LivePosition[] {
   return cache.livePositions;
 }
 
+// ─── OMEGA: Strict DB Verification ──────────────
+// Pulls directly from Postgres to bypass stale memory
+export async function isPositionOpenStrict(symbol: string): Promise<boolean> {
+  if (!supabaseUrl) {
+    return cache.livePositions.some(p => p.symbol === symbol && p.status === 'OPEN');
+  }
+  const { data, error } = await supabase.from('live_positions')
+    .select('id')
+    .eq('symbol', symbol)
+    .eq('status', 'OPEN')
+    .limit(1);
+
+  if (error) {
+     log.error('Strict position check failed', { error: error.message });
+     // Safe fallback: true (assume it's open to prevent double buy)
+     return true; 
+  }
+  return data && data.length > 0;
+}
+
 export function addLivePosition(pos: LivePosition): void {
   cache.livePositions.unshift(pos);
   if (supabaseUrl && dbInitialized) {
