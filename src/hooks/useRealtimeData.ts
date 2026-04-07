@@ -3,7 +3,7 @@
 // Replaces all polling with a single SSE stream from /api/live-stream
 // Falls back to polling if SSE fails after 5 retries
 // ============================================================
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 export interface RealtimeDashboard {
   system: { status: string; uptime: number; memoryUsageRssMB: number; syncQueue?: { pending: number; totalCompleted: number; lastSyncComplete: string } };
@@ -110,6 +110,7 @@ export interface RealtimeBotStats {
     promoter: { name: string; role: string; status: string };
     scouts: { name: string; role: string; status: string };
   };
+  activePositions?: Array<{ symbol: string; side: 'LONG'|'SHORT'; entryPrice: number; size: number }>;
 }
 
 export interface RealtimeSignal {
@@ -146,6 +147,7 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
   const { enabled = true, fallbackIntervalMs = 5000 } = options;
 
   const [data, setData] = useState<RealtimePayload | null>(null);
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [updateCount, setUpdateCount] = useState(0);
@@ -275,6 +277,94 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
     connectRef.current();
   }, []);
 
+  // Live Binance WebSocket for Open Positions
+  useEffect(() => {
+    const activePositions = data?.bot?.activePositions || [];
+    if (activePositions.length === 0) return;
+
+    const symbols = activePositions.map(p => p.symbol.replace('/', '').toLowerCase() + '@aggTrade');
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbols.join('/')}`);
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.s && payload.p) {
+          const symbolStr = payload.s.toUpperCase();
+          const p = parseFloat(payload.p);
+          setLivePrices(prev => ({ ...prev, [symbolStr]: p }));
+        }
+      } catch {}
+    };
+
+    return () => ws.close();
+  }, [data?.bot?.activePositions]);
+
+  // Compute augmented data with live Floating PnL
+  const augmentedBot = useMemo(() => {
+    if (!data?.bot) return null;
+    
+    // Deep clone stats so we don't accidentally mutate state object
+    const bot = { ...data.bot, stats: { ...data.bot.stats } };
+    const activePositions = bot.activePositions || [];
+    
+    if (activePositions.length === 0) {
+      if (!bot.balance) bot.balance = bot.config?.paperBalance || 1000;
+      return bot;
+    }
+
+    const currentBalance = bot.config?.paperBalance || 1000;
+    let floatingPnlValue = 0;
+
+    for (const pos of activePositions) {
+      const sanitizedSymbol = pos.symbol.replace('/', '').toUpperCase();
+      const currentPrice = livePrices[sanitizedSymbol] || pos.entryPrice;
+      const rawDiff = currentPrice - pos.entryPrice;
+      const diffPercent = (rawDiff / pos.entryPrice) * 100;
+      const pnlPercent = pos.side === 'LONG' ? diffPercent : -diffPercent;
+      
+      const tradeImpact = currentBalance * pos.size * (pnlPercent / 100);
+      floatingPnlValue += tradeImpact;
+    }
+
+    bot.balance = Math.round((currentBalance + floatingPnlValue) * 100) / 100;
+    
+    // Inject/Update the FLOATING point in equityCurve with pure live data
+    if (floatingPnlValue !== 0 && bot.equityCurve) {
+       const curve = [...bot.equityCurve];
+       
+       // Handle server-injected pseudo-floating point
+       const lastIdx = curve.length - 1;
+       const latestClosedPnl = lastIdx >= 0 && curve[lastIdx].outcome === 'FLOATING' 
+          ? (lastIdx >= 1 ? curve[lastIdx - 1].pnl : 0)
+          : (lastIdx >= 0 ? curve[lastIdx].pnl : 0);
+
+       const livePoint = {
+         timestamp: new Date().toISOString(),
+         balance: bot.balance,
+         pnl: latestClosedPnl, // Base PNL 
+         outcome: 'FLOATING',
+         signal: 'LIVE',
+         symbol: 'MULTIPLE'
+       };
+
+       if (lastIdx >= 0 && curve[lastIdx].outcome === 'FLOATING') {
+         curve[lastIdx] = livePoint;
+       } else {
+         curve.push(livePoint);
+       }
+       bot.equityCurve = curve;
+       
+       // Update day trailing stats for KPI Bar and performance tracking
+       if (bot.stats) {
+          const impactPercent = (floatingPnlValue / currentBalance) * 100;
+          bot.stats.todayPnlPercent = Math.round(((bot.stats.todayPnlPercent || 0) + impactPercent) * 100) / 100;
+          bot.stats.totalPnlPercent = Math.round(((bot.stats.totalPnlPercent || 0) + impactPercent) * 100) / 100;
+       }
+    }
+
+    return bot;
+  }, [data, livePrices]);
+
   // Lifecycle — connect on mount
   useEffect(() => {
     if (enabled) {
@@ -296,11 +386,11 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
 
   return {
     /** Full real-time payload */
-    data,
+    data: data ? { ...data, bot: augmentedBot as RealtimeBotStats } : null,
     /** Dashboard-specific data */
     dashboard: data?.dashboard || null,
     /** Bot stats + decisions + equity curve */
-    bot: data?.bot || null,
+    bot: augmentedBot,
     /** Latest signals */
     signals: data?.signals || [],
     /** Connection status: connecting | connected | reconnecting | polling | error */

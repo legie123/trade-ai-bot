@@ -127,10 +127,19 @@ export default function EquityCurve({ data, initialBalance }: EquityCurveProps) 
 
         {/* Last point glow  */}
         <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r={1.5}
-          fill={isUp ? '#10b981' : '#ef4444'}
+          fill={last.outcome === 'FLOATING' ? (last.balance >= (data[data.length - 2]?.balance || initialBalance) ? '#10b981' : '#f59e0b') : (isUp ? '#10b981' : '#ef4444')}
           stroke="rgba(0,0,0,0.5)" strokeWidth={0.4}
+          style={last.outcome === 'FLOATING' ? { animation: 'pulseLive 2s infinite' } : {}}
         />
       </svg>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes pulseLive {
+          0% { r: 1.5px; opacity: 0.9; }
+          50% { r: 3.5px; opacity: 0.3; }
+          100% { r: 1.5px; opacity: 0.9; }
+        }
+      `}} />
     </div>
   );
 }

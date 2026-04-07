@@ -12,6 +12,13 @@ const GECKO_IDS: Record<string, string> = {
   XRP: 'ripple', XRPUSDT: 'ripple',
   DOGE: 'dogecoin', DOGEUSDT: 'dogecoin',
   AVAX: 'avalanche-2', AVAXUSDT: 'avalanche-2',
+  WIF: 'dogwifcoin', WIFUSDT: 'dogwifcoin',
+  BONK: 'bonk', BONKUSDT: 'bonk',
+  JUP: 'jupiter', JUPUSDT: 'jupiter',
+  RAY: 'raydium', RAYUSDT: 'raydium',
+  JTO: 'jito-governance-token', JTOUSDT: 'jito-governance-token',
+  PYTH: 'pyth-network', PYTHUSDT: 'pyth-network',
+  RNDR: 'render-token', RNDRUSDT: 'render-token',
 };
 
 interface GeckoMarketData {
@@ -163,13 +170,18 @@ export class AlphaScout {
 
   private async fetchSocialSummary(symbol: string): Promise<string> {
     try {
+      const coinId = this.getCCSocialCoinId(symbol);
+      if (coinId === 0) return 'Social data unavailable (unmapped altcoin)';
+
       const res = await fetchWithRetry(
-        `https://min-api.cryptocompare.com/data/social/coin/latest?coinId=${this.getCCSocialCoinId(symbol)}`,
+        `https://min-api.cryptocompare.com/data/social/coin/latest?coinId=${coinId}`,
         { retries: 1, timeoutMs: 5000 }
       );
       const json = await res.json();
+      if (json?.Response === 'Error') return `Social data unavailable: ${json.Message || 'API locked'}`;
+      
       const data: CCSocialData = json?.Data;
-      if (!data) return 'Social data unavailable';
+      if (!data || Object.keys(data).length === 0) return 'Social data unavailable';
 
       const twitterFollowers = data.Twitter?.followers || 0;
       const redditSubs = data.Reddit?.subscribers || 0;
@@ -191,7 +203,7 @@ export class AlphaScout {
       DOGE: 4432, AVAX: 910584, ADA: 127380, DOT: 891958,
       MATIC: 321992, LINK: 271745,
     };
-    return map[symbol] || 1182; // Default to BTC
+    return map[symbol] || 0;
   }
 }
 

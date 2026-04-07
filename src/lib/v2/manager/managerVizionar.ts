@@ -3,7 +3,7 @@ import { DualMasterConsciousness } from '../master/dualMaster';
 import { AlphaScout } from '../intelligence/alphaScout';
 import { SentinelGuard } from '../safety/sentinelGuard';
 import { DNAExtractor, IntelligenceDigest } from '../superai/dnaExtractor';
-import { executeMexcTrade } from '@/lib/v2/scouts/executionMexc';
+import { executeBinanceTrade } from '@/lib/v2/scouts/executionBinance';
 import { Signal, DecisionSnapshot } from '../../types/radar';
 import { addDecision, addLivePosition, acquireTradeLock, releaseTradeLock, isPositionOpenStrict } from '@/lib/store/db';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
@@ -190,12 +190,12 @@ export class ManagerVizionar {
       evaluatedAt: null
     };
 
-    // Real Execution on MEXC
+    // Real Execution on BINANCE (DRY RUN SECURED)
     try {
       const side = consensus.finalDirection === 'LONG' ? 'BUY' : 'SELL';
-      const result = await executeMexcTrade(payload.symbol, side);
+      const result = await executeBinanceTrade(payload.symbol, side);
       if (result.executed) {
-        console.log(`[EXECUTION SUCCESS] Trade placed on MEXC for ${payload.symbol} @ ${result.price}`);
+        console.log(`[EXECUTION SUCCESS] Trade placed on BINANCE for ${payload.symbol} @ ${result.price}`);
         
         // Register LivePosition for Asymmetric Trailing TP/SL Engine
         addLivePosition({

@@ -8,7 +8,7 @@ import PipelineStatus from '@/components/PipelineStatus';
 import InstallPwaButton from '@/components/InstallPwaButton';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
-import { useBotStats } from '@/hooks/useBotStats';
+import EquityCurve from '@/components/EquityCurve';
 
 // ============================================================
 // Bot Command Center — Intelligence Dashboard
@@ -82,6 +82,7 @@ interface BotData {
     signal: string;
     symbol: string;
   }>;
+  balance?: number;
   strategies: Array<{
     id: string;
     name: string;
@@ -116,9 +117,6 @@ interface BotData {
 export default function BotCenterPage() {
   // ── Real-time SSE connection (replaces all polling) ──
   const { data: realtimeData, bot: rtBot, connectionStatus, lastUpdate, updateCount, forceRefresh, reconnect } = useRealtimeData();
-  
-  // ── Binance WebSocket for 0-latency live Equity ──
-  const { stats: botStats } = useBotStats(30_000);
 
   const [actionStatus, setActionStatus] = useState<string>('');
   const [binanceStatus, setBinanceStatus] = useState<string>('—');
@@ -134,6 +132,7 @@ export default function BotCenterPage() {
     optimizer: { version: rtBot.stats.optimizerVersion || 0, weights: {}, lastOptimizedAt: rtBot.stats.lastOptimized || '', history: [] },
     config: { ...rtBot.config, aiStatus: 'OK' },
     equityCurve: rtBot.equityCurve,
+    balance: rtBot.balance,
     strategies: [],
     gladiators: rtBot.gladiators || [],
     v2Entities: rtBot.v2Entities || null,
@@ -288,7 +287,7 @@ export default function BotCenterPage() {
 
       {/* ---- KPI Metrics Bar ---- */}
       <KpiBar
-        equity={botStats?.equity || data?.config?.paperBalance || 1000}
+        equity={data?.balance || data?.config?.paperBalance || 1000}
         pnl24h={data?.stats?.todayPnlPercent || 0}
         maxDrawdown={data?.stats?.maxDrawdown || 0}
         riskMode={data?.stats?.mode || 'OFFLINE'}
@@ -518,7 +517,7 @@ export default function BotCenterPage() {
                   <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Balance (Real)</div>
                     <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                      ${(botStats?.equity || data.config?.paperBalance || 1000).toLocaleString()}
+                      ${(data.balance || data.config?.paperBalance || 1000).toLocaleString()}
                     </div>
                   </div>
                   <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
@@ -537,7 +536,7 @@ export default function BotCenterPage() {
                 <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-primary)' }}>📈 EQUITY CURVE</span>
               </div>
               <div style={{ padding: '12px 20px' }}>
-                <EquityChart data={data.equityCurve || []} startBalance={data.config?.paperBalance || 1000} />
+                <EquityCurve data={data.equityCurve || []} initialBalance={data.config?.paperBalance || 1000} />
               </div>
             </div>
           </div>
@@ -723,142 +722,6 @@ function TradeReasoningPanel() {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// ============================================================
-// Equity Curve Chart Component — Pure SVG, no libraries
-// ============================================================
-interface EquityChartProps {
-  data: BotData['equityCurve'];
-  startBalance: number;
-}
-
-function EquityChart({ data, startBalance }: EquityChartProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  if (data.length === 0) {
-    return (
-      <div style={{
-        height: 200,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexDirection: 'column',
-        gap: 8,
-        color: 'var(--text-muted)',
-      }}>
-        <span style={{ fontSize: 32 }}>📉</span>
-        <span style={{ fontSize: 12 }}>Waiting for evaluated trades to build the equity curve...</span>
-        <span style={{ fontSize: 10 }}>Decisions will be auto-evaluated after 1 hour</span>
-      </div>
-    );
-  }
-
-  const W = 800;
-  const H = 200;
-  const PAD = { top: 20, right: 20, bottom: 30, left: 60 };
-  const chartW = W - PAD.left - PAD.right;
-  const chartH = H - PAD.top - PAD.bottom;
-
-  // Start with 0 PnL point
-  const points = [{ pnl: 0, balance: startBalance, outcome: 'START', timestamp: '', signal: '', symbol: '' }, ...data];
-  const pnls = points.map((p) => p.pnl);
-  const minPnl = Math.min(0, ...pnls);
-  const maxPnl = Math.max(0.1, ...pnls); // avoid zero range
-  const range = maxPnl - minPnl || 1;
-
-  const xStep = chartW / Math.max(points.length - 1, 1);
-  const yScale = (pnl: number) => PAD.top + chartH - ((pnl - minPnl) / range) * chartH;
-  const zeroY = yScale(0);
-
-  // Build path
-  const linePath = points
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${PAD.left + i * xStep},${yScale(p.pnl)}`)
-    .join(' ');
-
-  // Area fill path (closes down to zero line)
-  const areaPath = linePath +
-    ` L${PAD.left + (points.length - 1) * xStep},${zeroY}` +
-    ` L${PAD.left},${zeroY} Z`;
-
-  const lastPnl = points[points.length - 1]?.pnl || 0;
-  const isPositive = lastPnl >= 0;
-
-  // Grid lines
-  const gridCount = 4;
-  const gridLines = Array.from({ length: gridCount + 1 }, (_, i) => {
-    const pnl = minPnl + (range / gridCount) * i;
-    return { y: yScale(pnl), label: `${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}%` };
-  });
-
-  return (
-    <div ref={containerRef} style={{ width: '100%', overflowX: 'auto' }}>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        style={{ width: '100%', minWidth: 500, height: 'auto' }}
-        preserveAspectRatio="xMidYMid meet"
-      >
-        <defs>
-          <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={isPositive ? '#10b981' : '#ef4444'} stopOpacity="0.3" />
-            <stop offset="100%" stopColor={isPositive ? '#10b981' : '#ef4444'} stopOpacity="0.02" />
-          </linearGradient>
-        </defs>
-
-        {/* Grid lines */}
-        {gridLines.map((g, i) => (
-          <g key={i}>
-            <line x1={PAD.left} y1={g.y} x2={W - PAD.right} y2={g.y}
-              stroke="var(--border)" strokeWidth="0.5" strokeDasharray="4,4" />
-            <text x={PAD.left - 6} y={g.y + 4} textAnchor="end"
-              style={{ fontSize: 9, fill: 'var(--text-muted)' }}>{g.label}</text>
-          </g>
-        ))}
-
-        {/* Zero line */}
-        <line x1={PAD.left} y1={zeroY} x2={W - PAD.right} y2={zeroY}
-          stroke="var(--text-muted)" strokeWidth="1" strokeOpacity="0.4" />
-
-        {/* Area fill */}
-        <path d={areaPath} fill="url(#eqGrad)" />
-
-        {/* Line */}
-        <path d={linePath} fill="none"
-          stroke={isPositive ? '#10b981' : '#ef4444'} strokeWidth="2" strokeLinecap="round" />
-
-        {/* Data points (skip first which is synthetic 0) */}
-        {points.slice(1).map((p, i) => {
-          const cx = PAD.left + (i + 1) * xStep;
-          const cy = yScale(p.pnl);
-          const color = p.outcome === 'WIN' ? '#10b981' : p.outcome === 'LOSS' ? '#ef4444' : '#64748b';
-          return (
-            <circle key={i} cx={cx} cy={cy} r={4}
-              fill={color} stroke="var(--bg-primary)" strokeWidth="1.5" opacity="0.9" />
-          );
-        })}
-
-        {/* Current balance label */}
-        <text x={PAD.left + (points.length - 1) * xStep} y={yScale(lastPnl) - 10}
-          textAnchor="middle" style={{ fontSize: 11, fontWeight: 700, fill: isPositive ? '#10b981' : '#ef4444' }}>
-          {lastPnl >= 0 ? '+' : ''}{lastPnl.toFixed(2)}%
-        </text>
-
-        {/* X-axis labels (first and last) */}
-        {data.length > 0 && (
-          <>
-            <text x={PAD.left + xStep} y={H - 6} textAnchor="start"
-              style={{ fontSize: 8, fill: 'var(--text-muted)' }}>
-              {new Date(data[0].timestamp).toLocaleDateString()}
-            </text>
-            <text x={PAD.left + points.length * xStep - xStep} y={H - 6} textAnchor="end"
-              style={{ fontSize: 8, fill: 'var(--text-muted)' }}>
-              {new Date(data[data.length - 1].timestamp).toLocaleDateString()}
-            </text>
-          </>
-        )}
-      </svg>
     </div>
   );
 }
