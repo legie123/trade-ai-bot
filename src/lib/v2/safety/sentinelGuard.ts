@@ -104,11 +104,26 @@ export class SentinelGuard {
    */
   private checkEquityDrawdown(): { safe: boolean; reason?: string; currentMDD?: number } {
     const equityCurve = getEquityCurve();
+    const config = getBotConfig();
+    const startBalance = config.paperBalance || 1000;
     
-    // Nu avem suficiente date pentru MDD meaningful
-    if (equityCurve.length < 5) return { safe: true, currentMDD: 0 };
+    // Hard Mode Fix: Do not bypass protection simply because there are < 5 trades.
+    // If not enough history, check directly against the absolute starting balance drop.
+    if (equityCurve.length < 5) {
+      if (equityCurve.length > 0) {
+         const current = equityCurve[equityCurve.length - 1].balance;
+         if (current < startBalance) {
+           const simpleDD = (startBalance - current) / startBalance;
+           if (simpleDD > this.mddThreshold) {
+             return { safe: false, reason: `Early Critical Loss: ${(simpleDD * 100).toFixed(2)}% drop on first trades!`, currentMDD: simpleDD };
+           }
+           return { safe: true, currentMDD: simpleDD };
+         }
+      }
+      return { safe: true, currentMDD: 0 };
+    }
 
-    let peak = 0;
+    let peak = startBalance;
     let maxDD = 0;
 
     for (const point of equityCurve) {

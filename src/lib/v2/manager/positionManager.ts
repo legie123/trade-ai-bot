@@ -76,9 +76,11 @@ export class PositionManager {
         const exitQty = pos.quantity * ASYMMETRIC_RULES.partialTakeProfitAmount;
         
         try {
-          // Execute on MEXC Exchange
-          await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', exitQty);
-          log.info(`💸 [PositionManager] Sold ${ASYMMETRIC_RULES.partialTakeProfitAmount * 100}% of ${pos.symbol} at ${currentPrice}`);
+          // Asymmetric T1: Strict Limit Order to prevent Take-Profit slippage (T1 is guaranteed profit, no slippage allowed)
+          // Hard Mode: We use MEXC Limit Order with precise price
+          const { placeMexcLimitOrder } = await import('@/lib/exchange/mexcClient');
+          await placeMexcLimitOrder(pos.symbol, isLong ? 'SELL' : 'BUY', exitQty, currentPrice);
+          log.info(`💸 [PositionManager] Limit T1 Executed: Sold ${ASYMMETRIC_RULES.partialTakeProfitAmount * 100}% of ${pos.symbol} at ${currentPrice}`);
 
           updateLivePosition(pos.id, {
             partialTPHit: true,
@@ -149,10 +151,14 @@ export class PositionManager {
             log.info(`[PositionManager] Trailing exit complete for ${pos.symbol}. Home run secured.`);
 
             // 🔗 [MOLTBOOK BROADCAST] Full Trailing Exit
-            this.broadcastExitToMoltbook('TRAILING_EXIT', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 70);
+            this.broadcastExitToMoltbook('TRAILING_EXIT', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 70).catch(() => {});
           } catch (err: unknown) {
              const errorMsg = err instanceof Error ? err.message : String(err);
              log.error(`[PositionManager] Failed trailing SL order for ${pos.symbol}:`, { error: errorMsg });
+             if (errorMsg.includes('Min-Notional') || errorMsg.includes('quantity too low') || errorMsg.includes('insufficient')) {
+               log.warn(`🚨 [ZOMBIE PREVENTION] Closing position ${pos.symbol} in DB due to unfillable MEXC state.`);
+               updateLivePosition(pos.id, { status: 'CLOSED' });
+             }
           }
           return;
        }
@@ -192,10 +198,14 @@ export class PositionManager {
             });
 
             // 🔗 [MOLTBOOK BROADCAST] Initial SL
-            this.broadcastExitToMoltbook('STOP_LOSS', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 100);
+            this.broadcastExitToMoltbook('STOP_LOSS', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 100).catch(() => {});
           } catch (err: unknown) {
              const errorMsg = err instanceof Error ? err.message : String(err);
              log.error(`[PositionManager] Failed initial SL order for ${pos.symbol}:`, { error: errorMsg });
+             if (errorMsg.includes('Min-Notional') || errorMsg.includes('quantity too low') || errorMsg.includes('insufficient')) {
+               log.warn(`🚨 [ZOMBIE PREVENTION] Marking ${pos.symbol} STOP LOSS as CLOSED locally to drop phantom size.`);
+               updateLivePosition(pos.id, { status: 'CLOSED' });
+             }
           }
           return;
        }
@@ -217,8 +227,8 @@ export class PositionManager {
         `Phoenix V2 gestionează asimetric profitul pentru a maximiza câștigurile protejând intrarea. #Antigravity #ExitStrategy #SafeProfit`;
 
       await postActivity(message, undefined, 'crypto');
-    } catch (err) {
-      // Non-critical
+    } catch {
+      // Non-critical: Moltbook issue should not fail evaluation
     }
   }
 }
