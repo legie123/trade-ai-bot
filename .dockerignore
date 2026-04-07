@@ -10,3 +10,4 @@ coverage
 .idea
 *.log
 data/
+tmp/

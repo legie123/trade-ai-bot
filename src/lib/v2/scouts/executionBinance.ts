@@ -12,8 +12,18 @@ export async function getBinanceExchangeInfoCached() {
   if (cachedExchangeInfo && Date.now() < exchangeInfoExpires) {
     return cachedExchangeInfo;
   }
-  cachedExchangeInfo = await getExchangeInfo();
-  exchangeInfoExpires = Date.now() + 1000 * 60 * 60; // 1 hr cache
+  try {
+    const newData = await getExchangeInfo();
+    if (newData && newData.symbols) {
+      cachedExchangeInfo = newData;
+      exchangeInfoExpires = Date.now() + 1000 * 60 * 60; // 1 hr cache
+    } else if (!cachedExchangeInfo) {
+      throw new Error('Exchange info returned empty and no cache available.');
+    }
+  } catch (err) {
+    log.warn('[CACHE FALLBACK] Binance Rate Limit hit, using stale Exchange Info', { error: (err as Error).message });
+    if (!cachedExchangeInfo) throw err;
+  }
   return cachedExchangeInfo;
 }
 

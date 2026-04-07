@@ -46,6 +46,7 @@ export interface LivePosition {
   currentPrice?: number;
   status: 'OPEN' | 'CLOSED';
   openedAt: string;
+  isPaperTrade?: boolean;
 }
 
 // ─── Singleton Memory Cache ─────────────────────

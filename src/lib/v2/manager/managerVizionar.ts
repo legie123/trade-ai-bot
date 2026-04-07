@@ -209,6 +209,7 @@ export class ManagerVizionar {
           lowestPriceObserved: result.price,
           status: 'OPEN',
           openedAt: new Date().toISOString(),
+          isPaperTrade: true,
         });
 
         // 🔗 [MOLTBOOK BROADCAST] Phoenix V2 Live Positioning
