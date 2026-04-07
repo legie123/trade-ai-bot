@@ -42,6 +42,14 @@ export async function GET(req: Request) {
     const { positionManager } = await import('@/lib/v2/manager/positionManager');
     await positionManager.evaluateLivePositions();
 
+    // SRE Auto-Debug Diagnostics Check (Continuous ML Evaluation)
+    try {
+      const { autoDebugEngine } = await import('@/lib/v2/safety/autoDebugEngine');
+      autoDebugEngine.runDiagnostics().catch(() => {});
+    } catch (e) {
+      log.error('Failed to trigger AutoDebugEngine', { error: String(e) });
+    }
+
     // Trigger Market Scanners (so the AI trades even when the user's browser is closed)
     try {
       const internalPort = process.env.PORT || 3000;

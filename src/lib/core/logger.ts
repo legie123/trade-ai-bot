@@ -23,10 +23,17 @@ function getMinLevel(): LogLevel {
   return LEVEL_PRIORITY[env as LogLevel] !== undefined ? (env as LogLevel) : 'INFO';
 }
 
-// ─── In-memory log buffer for dashboard ─────────────
-const gLog = globalThis as unknown as { __logBuffer?: LogEntry[] };
+const gLog = globalThis as unknown as { 
+  __logBuffer?: LogEntry[];
+  __errorInterceptors?: ((entry: LogEntry) => void)[];
+};
 if (!gLog.__logBuffer) gLog.__logBuffer = [];
+if (!gLog.__errorInterceptors) gLog.__errorInterceptors = [];
 const MAX_BUFFER = 500;
+
+export function registerErrorInterceptor(cb: (entry: LogEntry) => void) {
+  gLog.__errorInterceptors!.push(cb);
+}
 
 export function getRecentLogs(limit = 50): LogEntry[] {
   return (gLog.__logBuffer || []).slice(-limit);
@@ -55,6 +62,13 @@ function log(level: LogLevel, module: string, msg: string, data?: Record<string,
   gLog.__logBuffer!.push(entry);
   if (gLog.__logBuffer!.length > MAX_BUFFER) {
     gLog.__logBuffer = gLog.__logBuffer!.slice(-MAX_BUFFER);
+  }
+
+  // Intercept ERROR/FATAL streams
+  if (level === 'ERROR' || level === 'FATAL') {
+    gLog.__errorInterceptors?.forEach(cb => {
+      try { cb(entry); } catch { /* ignore */ }
+    });
   }
 
   // Console output
