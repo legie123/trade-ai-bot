@@ -159,9 +159,8 @@ CONFIDENCE: [0.0-1.0]
 REASONING: [Brief breakdown referencing specific data points]`;
 
   try {
-    // ANTI-DEADLOCK BOMB: Hard limit LLM to 3500ms per attempt to prevent 504 Gateway Timeout
-    const MAX_LLM_TIMEOUT = 3500;
-    const text = await executeDualEngineFallback(fullPrompt, MAX_LLM_TIMEOUT);
+    // Provide a long timeout (45s) since modern LLMs need thorough reasoning
+    const text = await executeDualEngineFallback(fullPrompt, _timeout);
     return parseResponse(identity, text);
   } catch (err) {
     const errorMsg = (err as Error).message;
@@ -244,7 +243,7 @@ interface HallucinationReport {
 }
 
 export class DualMasterConsciousness {
-  private timeoutMs = 12000;
+  private timeoutMs = 45000;
 
   public async getConsensus(marketData: Record<string, unknown>, gladiatorDnaContext: Record<string, unknown>): Promise<DualConsensus> {
     // Build a context-rich prompt that the LLM can actually reason about

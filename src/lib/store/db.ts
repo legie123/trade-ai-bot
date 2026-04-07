@@ -16,7 +16,8 @@ import type { Gladiator } from '@/lib/types/gladiator';
 const log = createLogger('Database-Supabase');
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Upgrade: Prefer Service Role Key for backend operations to bypass RLS restrictions
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 // Avoid crashing if credentials are not valid during build
 const supabase = createClient(
