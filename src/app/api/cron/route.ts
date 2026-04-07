@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 let loopStarted = false;
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     // Ensure heartbeat is running
     if (!loopStarted) {

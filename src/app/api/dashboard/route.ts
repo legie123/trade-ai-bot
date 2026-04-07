@@ -20,10 +20,8 @@ export async function GET() {
       __autoScan?: { running: boolean; lastScanAt: string | null; scanCount: number };
     };
     if (!gScan.__autoScan) {
-      gScan.__autoScan = { running: true, lastScanAt: new Date().toISOString(), scanCount: 0 };
+      gScan.__autoScan = { running: false, lastScanAt: null, scanCount: 0 };
     }
-    gScan.__autoScan.running = true;
-    gScan.__autoScan.lastScanAt = new Date().toISOString();
 
     const watchdog = getWatchdogState();
     const heartbeat = getFreshHealthSnapshot();

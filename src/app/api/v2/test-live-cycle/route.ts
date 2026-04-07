@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       
       // Fast-forward time for all generated phantom trades (so cron evaluates them immediately)
       const trades = getPhantomTrades();
-      trades.forEach((t: any) => {
+      trades.forEach((t: { timestamp: string }) => {
         t.timestamp = new Date(Date.now() - 60000).toISOString(); // push it 60 seconds to the past
       });
       

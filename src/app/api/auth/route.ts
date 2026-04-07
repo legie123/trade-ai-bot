@@ -5,7 +5,7 @@
 // DELETE /api/auth — logout
 // ============================================================
 import { NextResponse } from 'next/server';
-import { createToken, verifyToken, DASHBOARD_PASSWORD, isAuthenticated } from '@/lib/auth';
+import { createToken, DASHBOARD_PASSWORD, isAuthenticated } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 

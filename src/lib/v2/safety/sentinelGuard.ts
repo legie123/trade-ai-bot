@@ -105,7 +105,7 @@ export class SentinelGuard {
   private checkEquityDrawdown(): { safe: boolean; reason?: string; currentMDD?: number } {
     const equityCurve = getEquityCurve();
     const config = getBotConfig();
-    const startBalance = config.paperBalance || 1000;
+    const startBalance = equityCurve.length > 0 ? equityCurve[0].balance : (config.paperBalance || 1000);
     
     // Hard Mode Fix: Do not bypass protection simply because there are < 5 trades.
     // If not enough history, check directly against the absolute starting balance drop.

@@ -141,6 +141,11 @@ export class ManagerVizionar {
   }
 
   private async executeLiveCapital(id: string, payload: Signal, consensus: DualConsensus) {
+    if (consensus.finalDirection !== 'LONG') {
+      log.warn(`[MULTI-INSTANCE PROTECT] MEXC Spot execution exclusively supports LONG (Buy-Hold-Sell). Vetoing ${consensus.finalDirection} intent.`);
+      return;
+    }
+
     // 1. STRICT DB VERIFICATION: check Postgres live_positions to prevent Double-Buy across instances
     const isAlreadyOpen = await isPositionOpenStrict(payload.symbol);
     if (isAlreadyOpen) {

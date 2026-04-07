@@ -243,6 +243,9 @@ export function addSyndicateAudit(audit: Record<string, unknown>): void {
   
   if (supabaseUrl && dbInitialized) {
     const cleanAudit = { ...newAudit };
+    if ((cleanAudit as Record<string, unknown>).finalDirection) {
+      (cleanAudit as Record<string, unknown>).signal = (cleanAudit as Record<string, unknown>).finalDirection;
+    }
     delete (cleanAudit as Record<string, unknown>).finalDirection; // 🛡️ Fix scheme mismatch missing column
     supabase.from('syndicate_audits').insert(cleanAudit).then(({ error }) => {
       if (error) log.error('Failed to insert syndicate audit', { error: error.message });
@@ -478,7 +481,8 @@ export function getEquityCurve(): EquityPoint[] {
 export function appendToEquityCurve(dec: DecisionSnapshot, pnlPct: number): void {
   if (cache.equityHistory.some(e => e.timestamp === dec.timestamp && e.symbol === dec.symbol)) return;
 
-  const positionSize = 20; // 20% of balance roughly
+  const config = getBotConfig();
+  const positionSize = config.riskPerTrade || 1.5;
   let currentPnl = 0;
   let currentBalance = cache.config.paperBalance || 1000;
 

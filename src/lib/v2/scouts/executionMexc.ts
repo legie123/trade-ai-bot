@@ -18,7 +18,7 @@ export interface MexcTradeResult {
 let exchangeInfoCache: { data: Record<string, unknown>; expiresAt: number } | null = null;
 const EXCHANGE_INFO_TTL = 300_000; // 5min cache
 
-async function getExchangeInfoCached(): Promise<Record<string, unknown>> {
+export async function getExchangeInfoCached(): Promise<Record<string, unknown>> {
   if (exchangeInfoCache && Date.now() < exchangeInfoCache.expiresAt) {
     return exchangeInfoCache.data;
   }
@@ -31,7 +31,7 @@ async function getExchangeInfoCached(): Promise<Record<string, unknown>> {
   }
 }
 
-function getSymbolFilters(exchangeInfo: Record<string, unknown>, symbol: string): { minQty: number; stepSize: number; minNotional: number; tickSize: number } {
+export function getSymbolFilters(exchangeInfo: Record<string, unknown>, symbol: string): { minQty: number; stepSize: number; minNotional: number; tickSize: number } {
   const symbols = (exchangeInfo as { symbols?: { symbol: string; filters?: { filterType: string; minQty?: string; stepSize?: string; minNotional?: string; tickSize?: string }[] }[] }).symbols || [];
   const found = symbols.find(s => s.symbol === symbol);
   const defaults = { minQty: 0.00001, stepSize: 0.00001, minNotional: 5, tickSize: 0.00001 };
@@ -122,8 +122,8 @@ export async function executeMexcTrade(
       log.info(`[DRY RUN] Would execute ${side} ${mexcSymbol}: ${quantity} @ $${price} ($${tradeAmount.toFixed(2)}) | Balance: $${usdtBalance.toFixed(2)}`);
     } else {
       // ANTI-SLIPPAGE BOMB: Replace vulnerable Market Order with a Tolerant Limit Order
-      // Max Slippage allowed is 0.5% from the AI analysed price.
-      const MAX_SLIPPAGE = 0.005;
+      // Max Slippage allowed is 0.4% from the AI analysed price.
+      const MAX_SLIPPAGE = 0.004;
       let limitPrice = side === 'BUY' ? price * (1 + MAX_SLIPPAGE) : price * (1 - MAX_SLIPPAGE);
       limitPrice = roundToStep(limitPrice, filters.tickSize);
 

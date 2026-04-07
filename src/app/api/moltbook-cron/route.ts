@@ -36,8 +36,8 @@ export async function GET(request: Request) {
         forge: forgeStats,
         data: sweepResult
     });
-  } catch (err: any) {
-    log.error('Moltbook Cron failed', { error: err.message });
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    log.error('Moltbook Cron failed', { error: (err as Error).message });
+    return NextResponse.json({ success: false, error: (err as Error).message }, { status: 500 });
   }
 }

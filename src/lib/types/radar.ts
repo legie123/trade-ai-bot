@@ -28,6 +28,7 @@ export interface Signal {
   timestamp: string;
   source: string;
   message?: string;
+  confidence?: number;
 }
 
 export type SignalType = 'BUY' | 'SELL' | 'LONG' | 'SHORT' | 'ALERT' | 'NEUTRAL';

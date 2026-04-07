@@ -1,5 +1,6 @@
 import { getLivePositions, updateLivePosition, LivePosition } from '@/lib/store/db';
-import { getMexcPrice, placeMexcMarketOrder } from '@/lib/exchange/mexcClient';
+import { getMexcPrice, placeMexcMarketOrder, placeMexcLimitOrder } from '@/lib/exchange/mexcClient';
+import { getExchangeInfoCached, getSymbolFilters, roundToStep } from '@/lib/v2/scouts/executionMexc';
 import { createLogger } from '@/lib/core/logger';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
 import { DNAExtractor } from '../superai/dnaExtractor';
@@ -73,18 +74,26 @@ export class PositionManager {
         log.info(`🎯 [PositionManager] Target 1 Hit for ${pos.symbol}! Securing partial profits.`);
         
         // Calculate 30% position exit size
-        const exitQty = pos.quantity * ASYMMETRIC_RULES.partialTakeProfitAmount;
+        const rawExitQty = pos.quantity * ASYMMETRIC_RULES.partialTakeProfitAmount;
         
         try {
+          const exchangeInfo = await getExchangeInfoCached();
+          const filters = getSymbolFilters(exchangeInfo, pos.symbol);
+          
+          const roundedExitQty = roundToStep(rawExitQty, filters.stepSize);
+          const limitPrice = roundToStep(currentPrice, filters.tickSize);
+
+          if (roundedExitQty < filters.minQty) throw new Error("quantity too low for LOT_SIZE");
+          if (roundedExitQty * limitPrice < filters.minNotional) throw new Error("notional below Min-Notional limit");
+
           // Asymmetric T1: Strict Limit Order to prevent Take-Profit slippage (T1 is guaranteed profit, no slippage allowed)
           // Hard Mode: We use MEXC Limit Order with precise price
-          const { placeMexcLimitOrder } = await import('@/lib/exchange/mexcClient');
-          await placeMexcLimitOrder(pos.symbol, isLong ? 'SELL' : 'BUY', exitQty, currentPrice);
-          log.info(`💸 [PositionManager] Limit T1 Executed: Sold ${ASYMMETRIC_RULES.partialTakeProfitAmount * 100}% of ${pos.symbol} at ${currentPrice}`);
+          await placeMexcLimitOrder(pos.symbol, isLong ? 'SELL' : 'BUY', roundedExitQty, limitPrice);
+          log.info(`💸 [PositionManager] Limit T1 Executed: Sold ${roundedExitQty} of ${pos.symbol} at ${limitPrice}`);
 
           updateLivePosition(pos.id, {
             partialTPHit: true,
-            quantity: pos.quantity - exitQty,
+            quantity: pos.quantity - roundedExitQty,
             highestPriceObserved,
             lowestPriceObserved
           });
@@ -126,7 +135,17 @@ export class PositionManager {
           log.warn(`🚨 [PositionManager] Trailing Stop Hit for ${pos.symbol} at ${currentPrice}. Closing remaining 70%.`);
           
           try {
-            await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', pos.quantity);
+            const exchangeInfo = await getExchangeInfoCached();
+            const filters = getSymbolFilters(exchangeInfo, pos.symbol);
+            const remainingQty = roundToStep(pos.quantity, filters.stepSize);
+            
+            if (remainingQty < filters.minQty) {
+              log.warn(`🚨 [PositionManager] Remaining qty ${remainingQty} is dust. Marking as CLOSED directly.`);
+              updateLivePosition(pos.id, { status: 'CLOSED' });
+              return;
+            }
+
+            await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty);
             
             updateLivePosition(pos.id, {
                status: 'CLOSED',
@@ -174,7 +193,17 @@ export class PositionManager {
           log.error(`🛑 [PositionManager] Initial Fixed SL Hit for ${pos.symbol} at ${currentPrice}. Closing full position.`);
           
           try {
-            await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', pos.quantity);
+            const exchangeInfo = await getExchangeInfoCached();
+            const filters = getSymbolFilters(exchangeInfo, pos.symbol);
+            const remainingQty = roundToStep(pos.quantity, filters.stepSize);
+            
+            if (remainingQty < filters.minQty) {
+              log.warn(`🚨 [PositionManager] Remaining qty ${remainingQty} is dust. Marking as CLOSED directly.`);
+              updateLivePosition(pos.id, { status: 'CLOSED' });
+              return;
+            }
+
+            await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty);
 
             updateLivePosition(pos.id, {
                status: 'CLOSED',

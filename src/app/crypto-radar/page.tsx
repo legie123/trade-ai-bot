@@ -27,14 +27,6 @@ interface TokenRow {
   exchange: string;
 }
 
-interface LogDecision {
-  id: string;
-  timestamp: string;
-  symbol: string;
-  signal: string;
-  outcome?: string;
-}
-
 const POLL_INTERVAL = 30_000; // 30 seconds (cost-optimized)
 
 const FILTER_PRESETS: { label: string; icon: string; filters: Partial<RadarFilters> }[] = [
@@ -90,8 +82,16 @@ export default function CryptoRadarPage() {
     minChange: '',
   });
   const debouncedSearch = useDebounce(filters.search, 300);
-  const [combatAudits, setCombatAudits] = useState<any[]>([]);
-  const [gladiators, setGladiators] = useState<any[]>([]);
+  interface CombatAudit {
+    id: string;
+    timestamp: string;
+    symbol: string;
+    finalDirection?: string;
+    weightedConfidence?: number;
+    opinions?: { seat: string; direction: string; confidence: number; reasoning: string }[];
+  }
+  const [combatAudits, setCombatAudits] = useState<CombatAudit[]>([]);
+  const [gladiators, setGladiators] = useState<Record<string, unknown>[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [indicators, setIndicators] = useState<any>(null);
 
@@ -544,7 +544,7 @@ export default function CryptoRadarPage() {
            {/* Radar Pulse Identity */}
            <div className="glass-card" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(145deg, rgba(6, 182, 212, 0.1), rgba(15, 23, 42, 0.6))' }}>
               <div>
-                <div style={{ fontSize: 11, color: 'var(--accent-cyan)', fontWeight: 600, letterSpacing: '0.05em' }}>TODAY'S ACTIVITY</div>
+                <div style={{ fontSize: 11, color: 'var(--accent-cyan)', fontWeight: 600, letterSpacing: '0.05em' }}>TODAY&apos;S ACTIVITY</div>
                 <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#fff' }}>{stats.totalSignalsToday} <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>SIGNALS</span></div>
               </div>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(6, 182, 212, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--accent-cyan)' }} className="pulse">
@@ -562,8 +562,7 @@ export default function CryptoRadarPage() {
              <div style={{ padding: 12, flex: 1, maxHeight: 450, overflowY: 'auto' }}>
                 {combatAudits.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {combatAudits.filter((s: any) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((audit: any) => (
+                    {combatAudits.filter((s) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((audit) => (
                       <div key={audit.id} style={{ display: 'flex', flexDirection: 'column', padding: 12, background: watchlist.includes(audit.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${audit.finalDirection === 'LONG' ? 'var(--accent-green)' : audit.finalDirection === 'SHORT' ? 'var(--accent-red)' : 'var(--text-muted)'}`, transition: 'background 0.2s' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(audit.timestamp)}</span>
@@ -581,7 +580,7 @@ export default function CryptoRadarPage() {
                         </div>
                         {audit.opinions && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                            {audit.opinions.map((op: any, i: number) => (
+                            {audit.opinions.map((op, i: number) => (
                               <div key={i} style={{ fontSize: 11, background: 'rgba(0,0,0,0.3)', padding: 8, borderRadius: 6 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                                   <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{op.seat}</span>
@@ -599,12 +598,12 @@ export default function CryptoRadarPage() {
                   </div>
                 ) : signals.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {signals.filter((s: any) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((s: any) => (
+                    {signals.filter((s) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((s) => (
                       <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: watchlist.includes(s.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${s.signal.includes('BUY') ? 'var(--accent-green)' : 'var(--accent-red)'}`, transition: 'background 0.2s' }}>
                         <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(s.timestamp)}</span>
                         <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.symbol} {watchlist.includes(s.symbol) && <span style={{ fontSize: 10, color: 'var(--accent-cyan)' }}>★</span>}</span>
                         <span className={`badge ${getSignalBadge(s.signal)}`} style={{ fontSize: 10 }}>{s.signal}</span>
-                        <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(s.confidence) }}>{s.confidence}%</span>
+                        <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(s.confidence || 0) }}>{s.confidence || 0}%</span>
                         
                         {/* Actionable CTAs */}
                         <div className="signal-cta-group">
