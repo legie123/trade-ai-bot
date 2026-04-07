@@ -133,6 +133,12 @@ export async function GET() {
       status: 'ok',
       version: 'Phoenix V2 (GTC)',
       stats,
+      activePositions: activePositions.map(p => ({
+        symbol: p.symbol,
+        side: p.side,
+        entryPrice: p.entryPrice,
+        size: 0.20 // 20% position size standard
+      })),
       decisions: allDecisions.slice(0, 50),
       performance,
       gladiators: gladiatorStore.getGladiators(),

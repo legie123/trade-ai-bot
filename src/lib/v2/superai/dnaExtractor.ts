@@ -57,7 +57,7 @@ export class DNAExtractor {
 
   public async logBattle(record: BattleRecord): Promise<void> {
     try {
-      addGladiatorDna(record as unknown as Record<string, unknown>);
+      await addGladiatorDna(record as unknown as Record<string, unknown>);
       log.info(`[DNA Bank] Logged battle for ${record.gladiatorId} on ${record.symbol} (Win: ${record.isWin}, PnL: ${record.pnlPercent.toFixed(2)}%)`);
     } catch (err) {
       log.error('Failed to log battle DNA', { error: (err as Error).message });

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 
 export interface LiveBotStats {
   mode: string;
@@ -32,27 +32,23 @@ const DEFAULT_STATS: LiveBotStats = {
   equity: 1000,
 };
 
-/**
- * Hook that fetches live bot stats from /api/bot every `intervalMs`.
- * Returns real-time equity, P&L, drawdown, win rate, etc.
- */
 export function useBotStats(intervalMs = 30_000) {
   const [stats, setStats] = useState<LiveBotStats>(DEFAULT_STATS);
+  const [activePositions, setActivePositions] = useState<{ symbol: string; side: 'LONG'|'SHORT'; entryPrice: number; size: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
 
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch('/api/bot', { signal: AbortSignal.timeout(8000) }).catch(() => null);
       if (!res || !res.ok) return;
       const data = await res.json();
-      const s = data.stats;
-      const config = data.config;
-      const equityCurve = data.equityCurve || [];
-      const lastEquity = equityCurve.length > 0
-        ? equityCurve[equityCurve.length - 1].balance
-        : config?.paperBalance || 1000;
+      const s = data.stats || {};
+      const config = data.config || {};
+      
+      setActivePositions(data.activePositions || []);
 
-      setStats({
+      setStats(prev => ({
         mode: s.mode || 'PAPER',
         totalDecisions: s.totalDecisions || 0,
         todayDecisions: s.todayDecisions || 0,
@@ -64,12 +60,12 @@ export function useBotStats(intervalMs = 30_000) {
         currentStreak: s.currentStreak || 0,
         streakType: s.streakType || 'NONE',
         strategyHealth: s.strategyHealth || 'GOOD',
-        paperBalance: config?.paperBalance || 1000,
-        equity: Math.round(lastEquity * 100) / 100,
-      });
+        paperBalance: s.paperBalance || config.paperBalance || prev.paperBalance,
+        equity: s.paperBalance || config.paperBalance || prev.paperBalance, // Will be overridden by live calculation
+      }));
       setLoading(false);
     } catch {
-      // silent — keep last known stats
+      // silent
     }
   }, []);
 
@@ -79,5 +75,51 @@ export function useBotStats(intervalMs = 30_000) {
     return () => { clearTimeout(timer); clearInterval(interval); };
   }, [fetchStats, intervalMs]);
 
-  return { stats, loading, refresh: fetchStats };
+  // LIVE WebSocket for open positions to tick Equity to the second
+  useEffect(() => {
+    if (activePositions.length === 0) return;
+
+    const symbols = activePositions.map(p => p.symbol.toLowerCase() + '@aggTrade');
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbols.join('/')}`);
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.s && data.p) {
+          const symbolStr = data.s.toUpperCase();
+          const p = parseFloat(data.p);
+          setLivePrices(prev => ({ ...prev, [symbolStr]: p }));
+        }
+      } catch {}
+    };
+
+    return () => ws.close();
+  }, [activePositions]);
+
+  // Compute live equity safely during render to avoid cascading updates
+  const computedStats = useMemo(() => {
+    if (activePositions.length === 0) {
+      return { ...stats, equity: stats.paperBalance };
+    }
+    
+    let floatingPnlValue = 0;
+    const currentBalance = stats.paperBalance || 1000;
+
+    for (const pos of activePositions) {
+      const currentPrice = livePrices[pos.symbol] || pos.entryPrice;
+      const rawDiff = currentPrice - pos.entryPrice;
+      const diffPercent = (rawDiff / pos.entryPrice) * 100;
+      const pnlPercent = pos.side === 'LONG' ? diffPercent : -diffPercent;
+      
+      const tradeImpact = currentBalance * pos.size * (pnlPercent / 100);
+      floatingPnlValue += tradeImpact;
+    }
+
+    return {
+      ...stats,
+      equity: Math.round((stats.paperBalance + floatingPnlValue) * 100) / 100
+    };
+  }, [livePrices, activePositions, stats]);
+
+  return { stats: computedStats, loading, refresh: fetchStats };
 }

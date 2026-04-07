@@ -263,10 +263,30 @@ export function saveGladiatorsToDb(gladiators: Gladiator[]): void {
 }
 
 // ─── DNA Bank (Gladiator Battles) ────────────────
-export function addGladiatorDna(record: Record<string, unknown>): void {
-  cache.gladiatorDna.unshift({ ...record, internalId: `dna-${Date.now()}-${Math.random()}` });
-  if (cache.gladiatorDna.length > 2000) cache.gladiatorDna.length = 2000;
-  syncToCloud('gladiator_dna', cache.gladiatorDna);
+export async function addGladiatorDna(record: Record<string, unknown>): Promise<void> {
+  const newRecord = { ...record, internalId: `dna-${Date.now()}-${Math.random()}` };
+
+  if (!supabaseUrl) {
+    cache.gladiatorDna.unshift(newRecord);
+    if (cache.gladiatorDna.length > 2000) cache.gladiatorDna.length = 2000;
+    return;
+  }
+
+  try {
+    // 🛡️ MULTI-INSTANCE FIX: Fetch absolute latest before appending
+    const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiator_dna').single();
+    const currentDna = (data?.data as Record<string, unknown>[]) || cache.gladiatorDna;
+    
+    currentDna.unshift(newRecord);
+    if (currentDna.length > 2000) currentDna.length = 2000;
+    
+    cache.gladiatorDna = currentDna;
+    syncToCloud('gladiator_dna', currentDna);
+  } catch {
+    // Fallback if network fails
+    cache.gladiatorDna.unshift(newRecord);
+    syncToCloud('gladiator_dna', cache.gladiatorDna);
+  }
 }
 
 export function getGladiatorDna(): Record<string, unknown>[] {
