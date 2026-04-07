@@ -1,7 +1,7 @@
 import { getPrice, getBalances, getExchangeInfo } from '@/lib/exchange/binanceClient';
 import { createLogger } from '@/lib/core/logger';
 import { sendMessage } from '@/lib/alerts/telegram';
-import { getBotConfig } from '@/lib/core/config';
+import { getBotConfig } from '@/lib/store/db';
 
 const log = createLogger('ExecutionBinance');
 
@@ -17,22 +17,22 @@ export async function getBinanceExchangeInfoCached() {
   return cachedExchangeInfo;
 }
 
-export function getBinanceSymbolFilters(exchangeInfo: any, symbol: string) {
+export function getBinanceSymbolFilters(exchangeInfo: { symbols?: Array<{ symbol: string; filters?: Array<{filterType: string; stepSize?: string; minQty?: string; minNotional?: string; tickSize?: string}> }> }, symbol: string) {
   let stepSize = 0.00001;
   let minQty = 0.00001;
   let minNotional = 5;
   let tickSize = 0.00001;
 
   if (exchangeInfo?.symbols) {
-    const found = exchangeInfo.symbols.find((s: any) => s.symbol === symbol);
+    const found = exchangeInfo.symbols.find(s => s.symbol === symbol);
     if (found?.filters) {
       for (const f of found.filters) {
         if (f.filterType === 'LOT_SIZE') {
           stepSize = parseFloat(f.stepSize || '0.00001');
           minQty = parseFloat(f.minQty || '0.00001');
         }
-        if (f.filterType === 'NOTIONAL') {
-          minNotional = parseFloat(f.minNotional || Number(f.minNotional) || '5');
+        if (f.filterType === 'NOTIONAL' || f.filterType === 'MIN_NOTIONAL') {
+          minNotional = parseFloat(f.minNotional || '5');
         }
         if (f.filterType === 'PRICE_FILTER') {
           tickSize = parseFloat(f.tickSize || '0.00001');
