@@ -8,6 +8,7 @@ import PipelineStatus from '@/components/PipelineStatus';
 import InstallPwaButton from '@/components/InstallPwaButton';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
+import { useBotStats } from '@/hooks/useBotStats';
 
 // ============================================================
 // Bot Command Center — Intelligence Dashboard
@@ -115,6 +116,9 @@ interface BotData {
 export default function BotCenterPage() {
   // ── Real-time SSE connection (replaces all polling) ──
   const { data: realtimeData, bot: rtBot, connectionStatus, lastUpdate, updateCount, forceRefresh, reconnect } = useRealtimeData();
+  
+  // ── Binance WebSocket for 0-latency live Equity ──
+  const { stats: botStats } = useBotStats(30_000);
 
   const [actionStatus, setActionStatus] = useState<string>('');
   const [binanceStatus, setBinanceStatus] = useState<string>('—');
@@ -268,7 +272,7 @@ export default function BotCenterPage() {
 
       {/* ---- KPI Metrics Bar ---- */}
       <KpiBar
-        equity={data?.config?.paperBalance || 1000}
+        equity={botStats?.equity || data?.config?.paperBalance || 1000}
         pnl24h={data?.stats?.todayPnlPercent || 0}
         maxDrawdown={data?.stats?.maxDrawdown || 0}
         riskMode={data?.stats?.mode || 'OFFLINE'}
@@ -492,9 +496,9 @@ export default function BotCenterPage() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Balance</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Balance (Real)</div>
                     <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                      ${(data.config?.paperBalance || 1000).toLocaleString()}
+                      ${(botStats?.equity || data.config?.paperBalance || 1000).toLocaleString()}
                     </div>
                   </div>
                   <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: 8 }}>
