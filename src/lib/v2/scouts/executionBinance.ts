@@ -52,7 +52,7 @@ export function roundToStepBinance(value: number, stepSize: number): number {
 export async function executeBinanceTrade(symbol: string, side: 'BUY' | 'SELL') {
   try {
     const config = getBotConfig();
-    const tradeAmount = config.tradeAmount || 20;
+    const tradeAmount = config.riskPerTrade || 20;
 
     const balances = await getBalances();
     const usdtBalance = balances.find((b: { asset: string; free: number }) => b.asset === 'USDT')?.free || 0;
