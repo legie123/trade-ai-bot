@@ -242,7 +242,9 @@ export function addSyndicateAudit(audit: Record<string, unknown>): void {
   if (cache.syndicateAudits.length > 500) cache.syndicateAudits.length = 500;
   
   if (supabaseUrl && dbInitialized) {
-    supabase.from('syndicate_audits').insert(newAudit).then(({ error }) => {
+    const cleanAudit = { ...newAudit };
+    delete (cleanAudit as Record<string, unknown>).finalDirection; // 🛡️ Fix scheme mismatch missing column
+    supabase.from('syndicate_audits').insert(cleanAudit).then(({ error }) => {
       if (error) log.error('Failed to insert syndicate audit', { error: error.message });
     });
   }

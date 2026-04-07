@@ -84,17 +84,49 @@ async function callOpenAI(prompt: string, timeout: number, signal?: AbortSignal)
   }
 }
 
+async function callGemini(prompt: string, timeout: number, signal?: AbortSignal): Promise<string> {
+  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing for fallback');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
+
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 300, temperature: 0.4 }
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text || text.length < 10) throw new Error('Empty Gemini response');
+    return text;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 async function executeDualEngineFallback(prompt: string, timeout: number): Promise<string> {
   try {
     return await callOpenAI(prompt, timeout);
   } catch (err) {
     log.warn(`OpenAI failed, bridging to DeepSeek Fallback in <5ms`, { error: (err as Error).message });
     try {
-      // Retain the remaining timeout
       return await callDeepSeek(prompt, timeout);
     } catch (dsErr) {
-      log.error(`Both OpenAI and DeepSeek Fallback failed`, { error: (dsErr as Error).message });
-      throw new Error(`LLM Engine Total Failure: ${(err as Error).message} | ${(dsErr as Error).message}`);
+      log.warn(`DeepSeek Fallback failed, bridging to Gemini Fallback in <5ms`);
+      try {
+        return await callGemini(prompt, timeout);
+      } catch (gemErr) {
+        log.error(`All 3 LLMs (OpenAI, DeepSeek, Gemini) completely failed.`, { error: (gemErr as Error).message });
+        throw new Error(`LLM Engine Total Failure: ${(gemErr as Error).message}`);
+      }
     }
   }
 }
