@@ -178,45 +178,26 @@ export async function sellAllAssetsToUsdt(): Promise<void> {
       const symbol = `${b.asset}USDT`;
       let quantity = b.free;
 
-      // Apply exchange filters if available
+      // Apply centralized exchange filters
       if (exchangeInfo && (exchangeInfo as { symbols?: unknown[] }).symbols) {
-        const symbols = (exchangeInfo as { symbols?: { symbol: string; filters?: { filterType: string; minQty?: string; stepSize?: string; minNotional?: string }[] }[] }).symbols || [];
-        const found = symbols.find(s => s.symbol === symbol);
+        const { getSymbolFilters, roundToStep } = await import('@/lib/v2/scouts/executionMexc');
+        const filters = getSymbolFilters(exchangeInfo, symbol);
         
-        if (found?.filters) {
-          let stepSize = 0.00001;
-          let minQty = 0.00001;
-          let minNotional = 5;
+        quantity = roundToStep(quantity, filters.stepSize);
 
-          for (const f of found.filters) {
-            if (f.filterType === 'LOT_SIZE') {
-              stepSize = parseFloat(f.stepSize || '0.00001');
-              minQty = parseFloat(f.minQty || '0.00001');
-            }
-            if (f.filterType === 'MIN_NOTIONAL') {
-              minNotional = parseFloat(f.minNotional || '5');
-            }
-          }
+        if (quantity < filters.minQty) {
+          console.log(`[Kill Switch] Skipping ${b.asset}: qty ${quantity} below minQty ${filters.minQty} (dust)`);
+          continue;
+        }
 
-          // Round to step size
-          const precision = Math.max(0, Math.ceil(-Math.log10(stepSize + Number.EPSILON)));
-          quantity = parseFloat((Math.floor((quantity + Number.EPSILON * 10) / stepSize) * stepSize).toFixed(precision));
-
-          if (quantity < minQty) {
-            console.log(`[Kill Switch] Skipping ${b.asset}: qty ${quantity} below minQty ${minQty} (dust)`);
+        try {
+          const price = await getMexcPrice(symbol);
+          if (price > 0 && quantity * price < filters.minNotional) {
+            console.log(`[Kill Switch] Skipping ${b.asset}: notional $${(quantity * price).toFixed(2)} below min $${filters.minNotional}`);
             continue;
           }
-
-          // Estimate notional (need price)
-          try {
-            const price = await getMexcPrice(symbol);
-            if (price > 0 && quantity * price < minNotional) {
-              console.log(`[Kill Switch] Skipping ${b.asset}: notional $${(quantity * price).toFixed(2)} below min $${minNotional}`);
-              continue;
-            }
-          } catch {
-            // Can't check notional, try anyway
-          }
+        } catch {
+          // Can't check notional, try anyway
         }
       }
 

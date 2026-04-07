@@ -1,4 +1,4 @@
-import { getMexcPrice, placeMexcLimitOrder, placeMexcMarketOrder, getMexcBalances, getMexcExchangeInfo } from '@/lib/exchange/mexcClient';
+import { getMexcPrice, placeMexcLimitOrder, getMexcBalances, getMexcExchangeInfo } from '@/lib/exchange/mexcClient';
 import { sendMessage } from '@/lib/alerts/telegram';
 import { createLogger } from '@/lib/core/logger';
 
@@ -131,8 +131,7 @@ export async function executeMexcTrade(
         await placeMexcLimitOrder(mexcSymbol, side, quantity, limitPrice);
         log.info(`[SLIPPAGE PROTECT] Sent LIMIT ${side} for ${mexcSymbol} @ max price $${limitPrice} (AI price: $${price})`);
       } catch (err) {
-        log.warn(`[LIMIT FAILED] ${(err as Error).message}. Falling back to Market Order with extreme caution.`);
-        await placeMexcMarketOrder(mexcSymbol, side, quantity);
+        throw new Error(`[LIMIT FAILED] ${(err as Error).message}. Vetoing fallback to prevent explicit double-spend.`);
       }
 
       const telegramMsg = `[TRADE EXECUTION V2]\nPair: ${mexcSymbol}\nSide: ${side}\nPrice: $${price}\nQty: ${quantity}\nValue: $${tradeAmount.toFixed(2)}\nBalance: $${usdtBalance.toFixed(2)}`;

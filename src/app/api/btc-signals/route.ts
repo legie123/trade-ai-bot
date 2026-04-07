@@ -13,6 +13,7 @@ const log = createLogger('BtcSignalsRoute');
 const manager = ManagerVizionar.getInstance();
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 let cache: { data: Record<string, unknown>; expiresAt: number } | null = null;
 const CACHE_TTL_MS = 15_000;

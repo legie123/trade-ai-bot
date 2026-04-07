@@ -214,6 +214,22 @@ export default function BotCenterPage() {
     : s?.strategyHealth === 'CAUTION' ? 'var(--accent-amber)'
     : 'var(--accent-red)';
 
+  const isKsEngaged = realtimeData?.dashboard?.killSwitch?.engaged || false;
+  const pendingDecisions = realtimeData?.dashboard?.trading?.pendingDecisions || 0;
+  const openPositions = realtimeData?.dashboard?.trading?.openPositions || 0;
+  const totalSignals = realtimeData?.dashboard?.trading?.totalSignals || 0;
+  
+  type StepStatus = 'ok' | 'degraded' | 'down' | 'idle';
+
+  const pipelineSteps = [
+    { id: 'scan', label: 'Scan', icon: '🔍', status: (isKsEngaged ? 'down' : 'ok') as StepStatus, detail: 'OSINT Gatherers' },
+    { id: 'aggregate', label: 'Aggregate', icon: '📡', status: (totalSignals > 0 ? 'ok' : 'idle') as StepStatus, detail: `${totalSignals} raw signals` },
+    { id: 'rank', label: 'Rank', icon: '🏅', status: (pendingDecisions > 0 ? 'ok' : 'idle') as StepStatus, detail: 'Arena Engine' },
+    { id: 'score', label: 'Score', icon: '🎯', status: (pendingDecisions > 0 ? 'ok' : 'idle') as StepStatus, detail: 'Syndicate Master' },
+    { id: 'risk', label: 'Risk', icon: '⚖️', status: (isKsEngaged ? 'down' : 'ok') as StepStatus, detail: isKsEngaged ? 'HALTED' : 'Shields UP' },
+    { id: 'execute', label: 'Execute', icon: '⚡', status: (openPositions > 0 ? 'ok' : 'idle') as StepStatus, detail: s?.mode || 'PAPER' },
+  ];
+
   return (
     <div className="page-container" style={{ maxWidth: 1600 }}>
       {/* ---- Action Status Toast ---- */}
@@ -282,7 +298,11 @@ export default function BotCenterPage() {
 
       {/* ---- Decision Pipeline Status ---- */}
       <div style={{ marginBottom: 16 }}>
-        <PipelineStatus signalCount={data?.stats?.todayDecisions || 0} />
+        <PipelineStatus 
+          steps={pipelineSteps} 
+          signalCount={data?.stats?.todayDecisions || 0} 
+          lastScan={new Date(realtimeData?.dashboard?.logs?.recent?.[0]?.ts || Date.now()).toLocaleTimeString()} 
+        />
       </div>
 
       {loading ? (
