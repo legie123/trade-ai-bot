@@ -79,7 +79,7 @@ export function useBotStats(intervalMs = 30_000) {
   useEffect(() => {
     if (activePositions.length === 0) return;
 
-    const symbols = activePositions.map(p => p.symbol.toLowerCase() + '@aggTrade');
+    const symbols = activePositions.map(p => p.symbol.replace('/', '').toLowerCase() + '@aggTrade');
     const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbols.join('/')}`);
 
     ws.onmessage = (event) => {
@@ -106,7 +106,8 @@ export function useBotStats(intervalMs = 30_000) {
     const currentBalance = stats.paperBalance || 1000;
 
     for (const pos of activePositions) {
-      const currentPrice = livePrices[pos.symbol] || pos.entryPrice;
+      const sanitizedSymbol = pos.symbol.replace('/', '').toUpperCase();
+      const currentPrice = livePrices[sanitizedSymbol] || pos.entryPrice;
       const rawDiff = currentPrice - pos.entryPrice;
       const diffPercent = (rawDiff / pos.entryPrice) * 100;
       const pnlPercent = pos.side === 'LONG' ? diffPercent : -diffPercent;
