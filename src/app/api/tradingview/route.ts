@@ -16,6 +16,14 @@ export async function POST(request: NextRequest) {
   try {
     const body: TradingViewWebhook = await request.json();
 
+    // Secure webhook secret auth (OMNI-Audit Protocol)
+    const authHeader = request.headers.get('authorization') || request.headers.get('x-tv-secret');
+    const expectedSecret = process.env.TV_SECRET_TOKEN || 'ANTIGRAVITY_HACK_ME_NOT';
+    if (authHeader !== expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
+      log.warn('Unauthorized TradingView Webhook access attempt thwarted');
+      return NextResponse.json({ error: 'Unauthorized. TV_SECRET_TOKEN invalid or missing.' }, { status: 401 });
+    }
+
     // Validate required fields
     if (!body.symbol) {
       log.warn('Rejected: missing symbol');

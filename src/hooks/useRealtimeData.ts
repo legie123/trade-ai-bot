@@ -283,6 +283,8 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
   }, []);
 
   // Live Binance WebSocket for Open Positions
+  const livePricesRef = useRef<Record<string, number>>({});
+  
   useEffect(() => {
     const activePositions = data?.bot?.activePositions || [];
     if (activePositions.length === 0) return;
@@ -296,12 +298,20 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
         if (payload.s && payload.p) {
           const symbolStr = payload.s.toUpperCase();
           const p = parseFloat(payload.p);
-          setLivePrices(prev => ({ ...prev, [symbolStr]: p }));
+          livePricesRef.current[symbolStr] = p; // mutate ref directly, NO UI re-render
         }
       } catch {}
     };
 
-    return () => ws.close();
+    // UI Throttler (updates screen at 1 frame per second max)
+    const renderThrottle = setInterval(() => {
+      setLivePrices(prev => ({ ...prev, ...livePricesRef.current }));
+    }, 1000);
+
+    return () => {
+      ws.close();
+      clearInterval(renderThrottle);
+    };
   }, [data?.bot?.activePositions]);
 
   // Compute augmented data with live Floating PnL
