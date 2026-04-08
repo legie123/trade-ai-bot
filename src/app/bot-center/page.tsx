@@ -9,6 +9,7 @@ import InstallPwaButton from '@/components/InstallPwaButton';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
 import EquityCurve from '@/components/EquityCurve';
+import ApiCreditsDashboard from '@/components/ApiCreditsDashboard';
 
 // ============================================================
 // Bot Command Center — Intelligence Dashboard
@@ -452,8 +453,9 @@ export default function BotCenterPage() {
                 )}
              </div>
 
-             {/* ================= COLUMN 2 (Connections) ================= */}
+             {/* ================= COLUMN 2 (Connections & API) ================= */}
              <div className="bento-col-4" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+               <ApiCreditsDashboard />
                <div className="glass-card" style={{ padding: '16px 20px', flex: 1 }}>
                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em', marginBottom: 16 }}>EXTERNAL LINKS (GATEKEEPER)</div>
                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

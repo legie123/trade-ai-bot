@@ -186,7 +186,23 @@ JSON Schema required:
 
   try {
     // Provide a long timeout (45s) since modern LLMs need thorough reasoning
-    const text = await executeDualEngineFallback(fullPrompt, _timeout);
+    let text = '';
+    
+    // OMEGA UPGRADE: Split-Brain Verification!
+    // The Oracle runs purely on DeepSeek to eliminate single-model bias.
+    if (identity === 'ORACLE' && process.env.DEEPSEEK_API_KEY) {
+       log.info(`[DualMaster] Oracle is invoking its primary engine: DeepSeek`);
+       try {
+         text = await callDeepSeek(fullPrompt, _timeout);
+       } catch (dsError) {
+         log.warn(`[DualMaster] Oracle DeepSeek failed, falling back to standard tree.`, { error: (dsError as Error).message });
+         text = await executeDualEngineFallback(fullPrompt, _timeout);
+       }
+    } else {
+       // Architect defaults to OpenAI primary
+       text = await executeDualEngineFallback(fullPrompt, _timeout);
+    }
+    
     return parseResponse(identity, text);
   } catch (err) {
     const errorMsg = (err as Error).message;
@@ -195,6 +211,7 @@ JSON Schema required:
     throw new Error(`Master ${identity} is offline: ${errorMsg}`);
   }
 }
+
 
 // ─── OMEGA: Hallucination Defense System ───
 

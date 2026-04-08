@@ -98,6 +98,21 @@ export async function runMemeEngineScan(): Promise<MemeResult> {
 
   for (const profile of validProfiles.slice(0, 5)) { // Luam doar top 5 hype pentru analiza
     
+    // Extragem prețul real pentru a trece de "Zero-Data Ban" din ManagerVizionar
+    let currentPrice = 0;
+    try {
+      const priceRes = await fetchWithRetry(`https://api.dexscreener.com/latest/dex/tokens/${profile.tokenAddress}`, { retries: 1, timeoutMs: 3000 });
+      const priceData = await priceRes.json();
+      if (priceData && priceData.pairs && priceData.pairs.length > 0) {
+        currentPrice = parseFloat(priceData.pairs[0].priceUsd) || 0;
+      }
+    } catch (e) {
+      log.warn(`[MemeEngine] Nu am putut extrage prețul pentru ${profile.tokenAddress}`, { error: String(e) });
+    }
+
+    // Trecem mai departe DOAR dacă avem date de preț (fără phantom data)
+    if (currentPrice <= 0) continue;
+
     const analysis: MemeAnalysis = {
       tokenAddress: profile.tokenAddress,
       chainId: profile.chainId,

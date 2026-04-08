@@ -2,7 +2,6 @@ import { createLogger } from '@/lib/core/logger';
 import { getBotConfig, saveBotConfig, getDecisions, getEquityCurve } from '@/lib/store/db';
 import { DualConsensus } from '@/lib/types/gladiator';
 import { Signal, DecisionSnapshot } from '@/lib/types/radar';
-import { sellAllAssetsToUsdt } from '@/lib/exchange/mexcClient';
 
 const log = createLogger('SentinelGuard');
 
@@ -282,9 +281,36 @@ export class SentinelGuard {
 
   private async emergencyExitAllPositions(): Promise<void> {
     try {
-      log.warn('⚠️ [Sentinel] emergencyExitAllPositions: Cancelling all orders and selling to USDT...');
-      await sellAllAssetsToUsdt();
-      log.info('🛡️ [Sentinel] emergencyExitAllPositions: SUCCESS. All assets are back in USDT.');
+      log.warn('⚠️ [Sentinel] emergencyExitAllPositions: Cancelling all orders and selling to USDT via Binance...');
+      
+      const { getBalances, cancelOrder, getOpenOrders, placeMarketOrder } = await import('@/lib/exchange/binanceClient');
+      
+      const balances = await getBalances();
+      const nonUsdt = balances.filter(b => b.asset !== 'USDT' && b.asset !== 'USDC' && b.asset !== 'BNB' && b.free > 0);
+      
+      if (nonUsdt.length === 0) {
+        log.info('🛡️ [Sentinel] No non-USD assets to sell on Binance.');
+        return;
+      }
+      
+      for (const b of nonUsdt) {
+         try {
+           const symbol = `${b.asset}USDT`;
+           // Best effort cancel open orders
+           const openOrders = await getOpenOrders(symbol).catch(() => []);
+           for (const order of openOrders) {
+             if (order.orderId) await cancelOrder(symbol, order.orderId as number).catch(() => {});
+           }
+           
+           // Sell market
+           await placeMarketOrder(symbol, 'SELL', b.free);
+           log.info(`[Sentinel Binance] Sold ${b.free} ${b.asset} for USDT`);
+         } catch (e) {
+           log.error(`[Sentinel Binance] Failed to liquidate ${b.asset}`, { error: (e as Error).message });
+         }
+      }
+
+      log.info('🛡️ [Sentinel] emergencyExitAllPositions: SUCCESS. All assets trigger attempt completed.');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       log.error(`[Sentinel] emergencyExitAllPositions FAILED: ${message}`);
