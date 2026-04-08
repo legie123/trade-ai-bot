@@ -118,9 +118,9 @@ export async function runMemeEngineScan(): Promise<MemeResult> {
           id: `meme_${Date.now()}_${profile.tokenAddress}`,
           symbol: `${profile.tokenAddress}_${profile.chainId.toUpperCase()}`,
           timeframe: '5m',
-          signal: 'LONG',
-          price: 0,
-          confidence: analysis.score / 100,
+          signal: 'LONG', // Memecoins are mostly long hype
+          price: currentPrice, // OBLIGATORIU: Nu mai e 0, a fost spartă interdicția
+          confidence: analysis.score / 100, // max 0.99
           source: 'Meme OSINT Engine',
           timestamp: new Date().toISOString(),
           message: `Momentum OSINT exploziv detectat în Top DexScreener Profiles. Se cere execuție rapidă via MEME_SNIPER.`

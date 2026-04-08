@@ -1,67 +1,33 @@
 import { createLogger } from '@/lib/core/logger';
 import { PromoterData } from '@/lib/types/gladiator';
-import { fetchWithRetry } from '@/lib/providers/base';
+import { WsStreamManager } from '@/lib/providers/wsStreams';
 
 const log = createLogger('AlphaScout');
 
-// Symbol → CoinGecko ID mapping
-const GECKO_IDS: Record<string, string> = {
-  BTC: 'bitcoin', BTCUSDT: 'bitcoin',
-  ETH: 'ethereum', ETHUSDT: 'ethereum',
-  SOL: 'solana', SOLUSDT: 'solana',
-  XRP: 'ripple', XRPUSDT: 'ripple',
-  DOGE: 'dogecoin', DOGEUSDT: 'dogecoin',
-  AVAX: 'avalanche-2', AVAXUSDT: 'avalanche-2',
-  WIF: 'dogwifcoin', WIFUSDT: 'dogwifcoin',
-  BONK: 'bonk', BONKUSDT: 'bonk',
-  JUP: 'jupiter', JUPUSDT: 'jupiter',
-  RAY: 'raydium', RAYUSDT: 'raydium',
-  JTO: 'jito-governance-token', JTOUSDT: 'jito-governance-token',
-  PYTH: 'pyth-network', PYTHUSDT: 'pyth-network',
-  RNDR: 'render-token', RNDRUSDT: 'render-token',
-};
-
-interface GeckoMarketData {
-  id: string;
-  current_price: number;
-  price_change_percentage_24h: number;
-  total_volume: number;
-  market_cap: number;
-  high_24h: number;
-  low_24h: number;
-}
-
-interface CCSocialData {
-  General: {
-    Points: number;
-    Name: string;
-  };
-  CryptoCompare: {
-    SimilarItems: { Id: number }[];
-    Points: number;
-    Followers: number;
-    Posts: number;
-  };
-  Twitter: {
-    followers: number;
-    statuses: number;
-    Points: number;
-  };
-  Reddit: {
-    subscribers: number;
-    active_users: number;
-    posts_per_hour: number;
-    comments_per_hour: number;
-    Points: number;
-  };
+export interface ZScoreData {
+  volumeZScore: number;
+  oib: number;
 }
 
 export class AlphaScout {
   private static instance: AlphaScout;
-  private cache: Map<string, { data: string; expiresAt: number }> = new Map();
-  private readonly CACHE_TTL = 60_000; // 60s per-symbol cache
+  private wsManager: WsStreamManager;
+  
+  // Rolling data storage
+  private klineData: Map<string, { close: number, volume: number }[]> = new Map();
+  private depthData: Map<string, { bids: number, asks: number }> = new Map();
+  private readonly WINDOW_SIZE = 60; // N periods for moving average
+  
+  // Hardcoded tracking list for High Volatility Pairs
+  private readonly TRACKED_SYMBOLS = [
+    'btcusdt', 'ethusdt', 'solusdt', 'xrpusdt', 'dogeusdt',
+    'avaxusdt', 'wifusdt', 'bonkusdt', 'jupusdt', 'pepeusdt'
+  ];
 
-  private constructor() {}
+  private constructor() {
+    this.wsManager = WsStreamManager.getInstance();
+    this.initStreams();
+  }
 
   public static getInstance(): AlphaScout {
     if (!AlphaScout.instance) {
@@ -70,140 +36,173 @@ export class AlphaScout {
     return AlphaScout.instance;
   }
 
+  private initStreams() {
+    const streams: string[] = [];
+    for (const sym of this.TRACKED_SYMBOLS) {
+      streams.push(`${sym}@kline_1m`); // Volume & Price
+      streams.push(`${sym}@depth10@100ms`); // Top 10 Order Book Depth
+      this.klineData.set(sym, []);
+    }
+    
+    this.wsManager.subscribe(streams);
+
+    // Listen to all messages
+    this.wsManager.on('message', (payload: any) => {
+      const streamName: string = payload.stream;
+      if (streamName.includes('@kline_1m')) {
+        this.processKline(payload.data);
+      } else if (streamName.includes('@depth')) {
+        this.processDepth(payload.data);
+      }
+    });
+  }
+
+  private processKline(data: any) {
+    const sym = data.s.toLowerCase();
+    const k = data.k;
+    if (!k) return;
+
+    if (k.x) { // kline closed
+      const arr = this.klineData.get(sym) || [];
+      arr.push({ close: parseFloat(k.c), volume: parseFloat(k.v) });
+      if (arr.length > this.WINDOW_SIZE) arr.shift(); // Keep moving window
+      this.klineData.set(sym, arr);
+    }
+  }
+
+  private processDepth(data: any) {
+    const sym = data.s.toLowerCase();
+    const bids = data.b || [];
+    const asks = data.a || [];
+
+    let totalBids = 0;
+    let totalAsks = 0;
+
+    for (let i = 0; i < bids.length; i++) totalBids += parseFloat(bids[i][1]);
+    for (let i = 0; i < asks.length; i++) totalAsks += parseFloat(asks[i][1]);
+
+    this.depthData.set(sym, { bids: totalBids, asks: totalAsks });
+  }
+
   /**
-   * Fetches real market data from CoinGecko for top crypto assets.
+   * Calculates current Volume Z-Score based on rolling window.
+   */
+  private getVolumeZScore(sym: string): number {
+    const arr = this.klineData.get(sym);
+    if (!arr || arr.length < 10) return 0; // Not enough data yet
+    
+    const volumes = arr.map(k => k.volume);
+    const lastVolume = volumes[volumes.length - 1];
+    
+    // Mean
+    const mean = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+    
+    // Standard Deviation
+    const sqDiffs = volumes.map(v => Math.pow(v - mean, 2));
+    const variance = sqDiffs.reduce((a, b) => a + b, 0) / sqDiffs.length;
+    const stdDev = Math.sqrt(variance);
+
+    if (stdDev === 0) return 0;
+    return (lastVolume - mean) / stdDev;
+  }
+
+  /**
+   * Order Book Imbalance (Bid/Ask pressure)
+   * > 0.6 = Heavy Buy Pressure
+   * < 0.4 = Heavy Sell Pressure
+   */
+  private getOrderBookImbalance(sym: string): number {
+    const depth = this.depthData.get(sym);
+    if (!depth) return 0.5;
+    const total = depth.bids + depth.asks;
+    if (total === 0) return 0.5;
+    return depth.bids / total;
+  }
+
+  /**
+   * Computes VWAP shift directly.
+   */
+  private getVwapShift(sym: string): number {
+    const arr = this.klineData.get(sym);
+    if (!arr || arr.length < 2) return 0;
+    
+    let sumPV = 0;
+    let sumV = 0;
+    for (const k of arr) {
+      sumPV += k.close * k.volume;
+      sumV += k.volume;
+    }
+    const vwap = sumPV / sumV;
+    const lastPrice = arr[arr.length - 1].close;
+    
+    return ((lastPrice - vwap) / vwap) * 100;
+  }
+
+  /**
+   * Fetches computed quant signals for all tracked assets.
+   * This REPLACES the lagging CoinGecko polling logic.
    */
   public async getMarketSignals(): Promise<PromoterData[]> {
-    log.info('🛰️ [AlphaScout] Scanning live market horizons...');
+    log.info('🛰️ [AlphaScout] Aggregating Live Quant Matrix...');
     const signals: PromoterData[] = [];
 
-    try {
-      const res = await fetchWithRetry(
-        'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=10&page=1&sparkline=false',
-        { retries: 2, timeoutMs: 8000 }
-      );
-      const coins: GeckoMarketData[] = await res.json();
+    for (const sym of this.TRACKED_SYMBOLS) {
+      const zScore = this.getVolumeZScore(sym);
+      const oib = this.getOrderBookImbalance(sym);
+      const shift = this.getVwapShift(sym);
 
-      for (const coin of coins) {
-        const change = coin.price_change_percentage_24h || 0;
-        let sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
-        let confidence = 0.5;
+      let sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
+      let confidence = 0.5;
 
-        if (change > 3) { sentiment = 'BULLISH'; confidence = Math.min(0.5 + change / 20, 0.95); }
-        else if (change < -3) { sentiment = 'BEARISH'; confidence = Math.min(0.5 + Math.abs(change) / 20, 0.95); }
+      // Antigravity Quant Protocol: Z-Score > 2.5 + Strong OIB
+      if (zScore > 2.5 && oib > 0.65) {
+        sentiment = 'BULLISH';
+        confidence = 0.85;
+      } else if (zScore > 2.5 && oib < 0.35) {
+        sentiment = 'BEARISH';
+        confidence = 0.85;
+      }
 
+      if (sentiment !== 'NEUTRAL') {
+        const uppercaseSym = sym.toUpperCase();
         signals.push({
-          source: 'COINGECKO_MARKET',
-          symbol: `${coin.id.toUpperCase()}USDT`,
+          source: 'LIVE_QUANT_WS',
+          symbol: uppercaseSym,
           sentiment,
-          confidenceRate: parseFloat(confidence.toFixed(2)),
+          confidenceRate: confidence,
           rawPayload: {
-            price: coin.current_price,
-            change24h: change,
-            volume24h: coin.total_volume,
-            marketCap: coin.market_cap,
-            high24h: coin.high_24h,
-            low24h: coin.low_24h,
+            zScore: parseFloat(zScore.toFixed(3)),
+            oib: parseFloat(oib.toFixed(3)),
+            vwapShift: parseFloat(shift.toFixed(3)),
           },
           timestamp: Date.now(),
         });
+        log.info(`🎯 [AlphaScout] Quant Trigger: ${uppercaseSym} | Z:${zScore.toFixed(2)} | OIB:${oib.toFixed(2)} -> ${sentiment}`);
       }
-    } catch (err) {
-      log.warn('[AlphaScout] CoinGecko scan failed, returning empty signals', { error: (err as Error).message });
+    }
+
+    // Connect to WS if not connected during first signals request
+    if (this.klineData.get(this.TRACKED_SYMBOLS[0])?.length === 0) {
+        this.wsManager.connect();
     }
 
     return signals;
   }
 
   /**
-   * Deep dive into a specific token using CoinGecko + CryptoCompare social data.
-   * Returns a rich text summary that feeds the Dual Master Syndicate.
+   * Replaces legacy CC/Gecko dive. Yields immediate memory quant output.
    */
   public async analyzeToken(symbol: string): Promise<string> {
-    // Check cache first
-    const cached = this.cache.get(symbol);
-    if (cached && Date.now() < cached.expiresAt) {
-      return cached.data;
+    const cleanSymbol = symbol.toLowerCase().replace('usd', 'usdt');
+    if (!this.TRACKED_SYMBOLS.includes(cleanSymbol)) {
+      return `Quant Data Unavailable. Token ${symbol} is outside real-time VWAP matrix.`;
     }
 
-    const cleanSymbol = symbol.replace('USDT', '').toUpperCase();
-    const geckoId = GECKO_IDS[cleanSymbol] || GECKO_IDS[symbol] || cleanSymbol.toLowerCase();
+    const zScore = this.getVolumeZScore(cleanSymbol).toFixed(3);
+    const oib = this.getOrderBookImbalance(cleanSymbol).toFixed(3);
+    const vwapShift = this.getVwapShift(cleanSymbol).toFixed(3);
 
-    log.info(`🔍 [AlphaScout] Deep dive: ${cleanSymbol} (gecko: ${geckoId})`);
-
-    // Parallel fetch: CoinGecko market + CryptoCompare social
-    const [marketSummary, socialSummary] = await Promise.all([
-      this.fetchGeckoSummary(geckoId),
-      this.fetchSocialSummary(cleanSymbol),
-    ]);
-
-    const result = `[LIVE INTEL for ${cleanSymbol}] ${marketSummary} | ${socialSummary}`;
-    
-    // Cache result
-    this.cache.set(symbol, { data: result, expiresAt: Date.now() + this.CACHE_TTL });
-    
-    return result;
-  }
-
-  private async fetchGeckoSummary(geckoId: string): Promise<string> {
-    try {
-      const res = await fetchWithRetry(
-        `https://api.coingecko.com/api/v3/coins/${geckoId}?localization=false&tickers=false&community_data=true&developer_data=false`,
-        { retries: 1, timeoutMs: 6000 }
-      );
-      const data = await res.json();
-
-      const price = data.market_data?.current_price?.usd || 0;
-      const change24h = data.market_data?.price_change_percentage_24h?.toFixed(2) || '0';
-      const change7d = data.market_data?.price_change_percentage_7d?.toFixed(2) || '0';
-      const volume = data.market_data?.total_volume?.usd || 0;
-      const mcap = data.market_data?.market_cap?.usd || 0;
-      const ath = data.market_data?.ath?.usd || 0;
-      const athChange = data.market_data?.ath_change_percentage?.usd?.toFixed(1) || '0';
-
-      return `Price: $${price}, 24h: ${change24h}%, 7d: ${change7d}%, Vol: $${(volume / 1e6).toFixed(1)}M, MCap: $${(mcap / 1e9).toFixed(2)}B, ATH: $${ath} (${athChange}% from ATH)`;
-    } catch (err) {
-      log.warn(`[AlphaScout] Gecko deep dive failed for ${geckoId}`, { error: (err as Error).message });
-      return `Market data unavailable for ${geckoId}`;
-    }
-  }
-
-  private async fetchSocialSummary(symbol: string): Promise<string> {
-    try {
-      const coinId = this.getCCSocialCoinId(symbol);
-      if (coinId === 0) return 'Social data unavailable (unmapped altcoin)';
-
-      const res = await fetchWithRetry(
-        `https://min-api.cryptocompare.com/data/social/coin/latest?coinId=${coinId}`,
-        { retries: 1, timeoutMs: 5000 }
-      );
-      const json = await res.json();
-      if (json?.Response === 'Error') return `Social data unavailable: ${json.Message || 'API locked'}`;
-      
-      const data: CCSocialData = json?.Data;
-      if (!data || Object.keys(data).length === 0) return 'Social data unavailable';
-
-      const twitterFollowers = data.Twitter?.followers || 0;
-      const redditSubs = data.Reddit?.subscribers || 0;
-      const redditActive = data.Reddit?.active_users || 0;
-      const postsPerHour = data.Reddit?.posts_per_hour || 0;
-      const socialScore = data.General?.Points || 0;
-
-      return `Social Score: ${socialScore}, Twitter: ${(twitterFollowers / 1000).toFixed(0)}K followers, Reddit: ${(redditSubs / 1000).toFixed(0)}K subs (${redditActive} active), ${postsPerHour.toFixed(1)} posts/hr`;
-    } catch (err) {
-      log.warn(`[AlphaScout] CryptoCompare social failed for ${symbol}`, { error: (err as Error).message });
-      return 'Social data unavailable';
-    }
-  }
-
-  // CryptoCompare uses numeric coin IDs for social endpoint
-  private getCCSocialCoinId(symbol: string): number {
-    const map: Record<string, number> = {
-      BTC: 1182, ETH: 7605, SOL: 934443, XRP: 5031,
-      DOGE: 4432, AVAX: 910584, ADA: 127380, DOT: 891958,
-      MATIC: 321992, LINK: 271745,
-    };
-    return map[symbol] || 0;
+    return `[QUANT MATRIX LIVE] Z-Score: ${zScore} | OIB: ${oib} | VWAP Shift: ${vwapShift}%`;
   }
 }
 
