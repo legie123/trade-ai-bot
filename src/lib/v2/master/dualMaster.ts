@@ -26,6 +26,7 @@ async function callDeepSeek(prompt: string, timeout: number, signal?: AbortSigna
       body: JSON.stringify({
         model: 'deepseek-chat',
         messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
         max_tokens: 300,
         temperature: 0.4,
       }),
@@ -63,6 +64,7 @@ async function callOpenAI(prompt: string, timeout: number, signal?: AbortSignal)
       body: JSON.stringify({
         model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
         max_tokens: 300,
         temperature: 0.4,
       }),
@@ -96,7 +98,7 @@ async function callGemini(prompt: string, timeout: number, signal?: AbortSignal)
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 300, temperature: 0.4 }
+        generationConfig: { maxOutputTokens: 300, temperature: 0.4, responseMimeType: 'application/json' }
       }),
       signal: controller.signal
     });
@@ -132,20 +134,41 @@ async function executeDualEngineFallback(prompt: string, timeout: number): Promi
 }
 
 function parseResponse(identity: DualMasterIdentity, text: string): MasterOpinion {
-  const directionMatch = text.match(/DIRECTION:\s*(LONG|SHORT|FLAT)/i);
-  const confidenceMatch = text.match(/CONFIDENCE:\s*([\d.]+)/);
+  let direction: 'LONG' | 'SHORT' | 'FLAT' = 'FLAT';
+  let confidence = 0.5;
+  let reasoning = 'JSON validation failed or empty.';
 
-  return {
-    identity,
-    direction: (directionMatch?.[1].toUpperCase() as 'LONG' | 'SHORT' | 'FLAT') || 'FLAT',
-    confidence: parseFloat(confidenceMatch?.[1] || '0.5'),
-    reasoning: text.slice(0, 500)
-  };
+  try {
+    const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(cleanText);
+
+    if (parsed.direction && ['LONG', 'SHORT', 'FLAT'].includes(parsed.direction.toUpperCase())) {
+      direction = parsed.direction.toUpperCase() as 'LONG' | 'SHORT' | 'FLAT';
+    }
+    if (typeof parsed.confidence === 'number' && parsed.confidence >= 0 && parsed.confidence <= 1) {
+      confidence = parsed.confidence;
+    } else if (typeof parsed.confidence === 'string') {
+      confidence = parseFloat(parsed.confidence) || 0.5;
+    }
+    if (parsed.reasoning) {
+      reasoning = String(parsed.reasoning).substring(0, 500);
+    }
+  } catch (err) {
+    log.warn(`[JSON Parse Failed] Master ${identity} hallucinated format. Extracting via Regex fallback.`);
+    const dirMatch = text.match(/"?direction"?\s*:\s*"?\s*(LONG|SHORT|FLAT)\s*"?/i) || text.match(/DIRECTION:\s*(LONG|SHORT|FLAT)/i);
+    const confMatch = text.match(/"?confidence"?\s*:\s*([\d.]+)/i) || text.match(/CONFIDENCE:\s*([\d.]+)/i);
+    
+    if (dirMatch) direction = dirMatch[1].toUpperCase() as 'LONG' | 'SHORT' | 'FLAT';
+    if (confMatch) confidence = parseFloat(confMatch[1]);
+    reasoning = text.substring(0, 500);
+  }
+
+  return { identity, direction, confidence, reasoning };
 }
 
 const PERSONAS: Record<DualMasterIdentity, string> = {
-  ARCHITECT: `You are the ARCHITECT (Master 1). Your focus is pure logic, probability, risk management, and math. Analyze the following data strictly objectively and numerically. You MUST reference specific numbers from the data (price, volume, percentages) in your reasoning.`,
-  ORACLE: `You are the ORACLE (Master 2). Your focus is intuition, sentiment edge, contrarian plays, and market psychology. Look beyond the math to the chaotic human element. You MUST reference specific market conditions from the data in your reasoning.`
+  ARCHITECT: `You are the ARCHITECT (Master 1 - Quantitative Quant). Your ONLY focus is Technical Analysis math, moving averages (EMA/SMA), volume weighting, and order book probability. Ignore all news or sentiment. You exist purely to crunch numbers. You MUST reference specific numbers (price, volume, EMA distance) in your reasoning.`,
+  ORACLE: `You are the ORACLE (Master 2 - Sentiment Behavioral). Your ONLY focus is market psychology, contrarian setups, liquidations, and fear/greed structure. Ignore pure TA math unless it forms a psychological trap. You MUST reference behavior, traps, whales, or panic in your reasoning.`
 };
 
 async function invokeMaster(identity: DualMasterIdentity, prompt: string, _timeout: number): Promise<MasterOpinion> {
@@ -153,10 +176,13 @@ async function invokeMaster(identity: DualMasterIdentity, prompt: string, _timeo
       
 Data: ${prompt}
       
-Response EXACTLY as:
-DIRECTION: [LONG/SHORT/FLAT]
-CONFIDENCE: [0.0-1.0]
-REASONING: [Brief breakdown referencing specific data points]`;
+You MUST output ONLY a valid JSON object. No markdown formatting, no intro, no outro.
+JSON Schema required:
+{
+  "direction": "LONG" | "SHORT" | "FLAT",
+  "confidence": <float between 0.0 and 1.0>,
+  "reasoning": "<string briefing referencing your persona's focus>"
+}`;
 
   try {
     // Provide a long timeout (45s) since modern LLMs need thorough reasoning

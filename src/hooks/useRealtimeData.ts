@@ -271,6 +271,11 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
     } catch { /* silent */ }
   }, []);
 
+  // Initial fetch to prevent UI hydration stall for crawlers
+  useEffect(() => {
+    if (enabled && !data) forceRefresh();
+  }, [enabled, data, forceRefresh]);
+
   // Reconnect function exposed to consumers
   const reconnect = useCallback(() => {
     retryCountRef.current = 0;

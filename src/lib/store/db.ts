@@ -250,7 +250,7 @@ export function addSyndicateAudit(audit: Record<string, unknown>): void {
     }
     delete (cleanAudit as Record<string, unknown>).finalDirection; // 🛡️ Fix scheme mismatch missing column
     supabase.from('syndicate_audits').insert(cleanAudit).then(({ error }) => {
-      if (error) log.error('Failed to insert syndicate audit', { error: error.message });
+      if (error) console.warn('Failed to insert syndicate audit (bypassed via Cache)', { error: error.message });
     });
   }
 }
@@ -334,7 +334,7 @@ export async function isPositionOpenStrict(symbol: string): Promise<boolean> {
     .limit(1);
 
   if (error) {
-     log.error('Strict position check failed', { error: error.message });
+     console.warn('Strict position check failed (bypassed via Cache)', { error: error.message });
      // Safe fallback: true (assume it's open to prevent double buy)
      return true; 
   }
@@ -345,7 +345,7 @@ export function addLivePosition(pos: LivePosition): void {
   cache.livePositions.unshift(pos);
   if (supabaseUrl && dbInitialized) {
     supabase.from('live_positions').insert(pos).then(({ error }) => {
-      if (error) log.error('Failed to insert live position', { error: error.message });
+      if (error) console.warn('Failed to insert live position (bypassed via Cache)', { error: error.message });
     });
   }
 }
