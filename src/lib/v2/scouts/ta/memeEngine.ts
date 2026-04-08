@@ -29,6 +29,7 @@ export interface MemeAnalysis {
 
 export interface MemeResult {
   tokens: MemeAnalysis[];
+  signals: Signal[];
   totalPotentials: number;
   timestamp: string;
 }
@@ -42,7 +43,7 @@ const g = globalThis as unknown as {
 };
 if (!g.__memeCache) {
   g.__memeCache = {
-    result: { data: { tokens: [], totalPotentials: 0, timestamp: '' }, ts: 0 },
+    result: { data: { tokens: [], signals: [], totalPotentials: 0, timestamp: '' }, ts: 0 },
   };
 }
 const cache = g.__memeCache;
@@ -92,6 +93,7 @@ export async function runMemeEngineScan(): Promise<MemeResult> {
   const validProfiles = rawProfiles.filter(p => p.chainId === 'solana' || p.chainId === 'base');
   
   const tokens: MemeAnalysis[] = [];
+  const signalsOut: Signal[] = [];
   let signalSentCount = 0;
 
   for (const profile of validProfiles.slice(0, 5)) { // Luam doar top 5 hype pentru analiza
@@ -121,16 +123,19 @@ export async function runMemeEngineScan(): Promise<MemeResult> {
           confidence: analysis.score / 100,
           source: 'Meme OSINT Engine',
           timestamp: new Date().toISOString(),
-          message: `Momentum OSINT exploziv detectat în Top DexScreener Profiles.`
-        };// Ruteaza doar spre agentii care inteleg DEEP_WEB
-        routeSignal(signal); 
+          message: `Momentum OSINT exploziv detectat în Top DexScreener Profiles. Se cere execuție rapidă via MEME_SNIPER.`
+        };
+
+        signalsOut.push(signal);
         signalSentCount++;
+        routeSignal(signal); 
       }
     }
   }
 
   const result: MemeResult = {
     tokens,
+    signals: signalsOut,
     totalPotentials: signalSentCount,
     timestamp: new Date().toISOString()
   };
