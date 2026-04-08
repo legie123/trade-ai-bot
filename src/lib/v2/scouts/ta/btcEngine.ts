@@ -62,25 +62,20 @@ function calcEMA(values: number[], period: number): number {
   return ema;
 }
 
-// ─── Fetch BTC OHLC with 3-provider fallback ──
-// Binance → OKX → CryptoCompare (handles Vercel IP blocks)
+// ─── Fetch BTC OHLC with Promise.any() Race ──
+// Binance, OKX, CryptoCompare queried simultaneously — fastest provider wins!
 async function fetchBTCCandles(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
-  // Provider 1: Binance
-  const binanceCandles = await fetchFromBinance(interval);
-  if (binanceCandles.length >= 20) return binanceCandles;
-
-  // Provider 2: OKX (no IP restrictions)
-  log.warn(`Binance failed for ${interval}, trying OKX...`);
-  const okxCandles = await fetchFromOKX(interval);
-  if (okxCandles.length >= 20) return okxCandles;
-
-  // Provider 3: CryptoCompare (most reliable, no restrictions)
-  log.warn(`OKX failed for ${interval}, trying CryptoCompare...`);
-  const ccCandles = await fetchFromCryptoCompare(interval);
-  if (ccCandles.length >= 20) return ccCandles;
-
-  log.error(`All 3 providers failed for ${interval}`);
-  return [];
+  try {
+    const candles = await Promise.any([
+      fetchFromBinance(interval).then(c => c.length >= 20 ? c : Promise.reject('Binance invalid')),
+      fetchFromOKX(interval).then(c => c.length >= 20 ? c : Promise.reject('OKX invalid')),
+      fetchFromCryptoCompare(interval).then(c => c.length >= 20 ? c : Promise.reject('CryptoCompare invalid'))
+    ]);
+    return candles;
+  } catch (err) {
+    log.error(`All 3 providers failed for ${interval}`);
+    return [];
+  }
 }
 
 async function fetchFromBinance(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
