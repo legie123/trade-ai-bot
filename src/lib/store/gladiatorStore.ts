@@ -44,6 +44,7 @@ class GladiatorStore {
         arena,
         rank,
         isLive: rank <= 3, // Only Top 3 are live
+        skills: arena === 'DEEP_WEB' ? ['MEME_SNIPER'] : [],
         stats: {
           winRate: 65 + Math.random() * 10,
           profitFactor: 1.5 + Math.random(),
@@ -194,6 +195,25 @@ class GladiatorStore {
     this.gladiators = gladiators;
   }
 
+  /**
+   * Evaluates if there is at least one active (Live) gladiator possessing the required skill.
+   */
+  public hasSkillLive(skill: string): boolean {
+    this.ensureLoaded();
+    return this.gladiators.some(g => g.isLive && g.skills && g.skills.includes(skill));
+  }
+
+  public addGladiator(gladiator: Gladiator): void {
+    this.ensureLoaded();
+    const exists = this.gladiators.findIndex(g => g.id === gladiator.id);
+    if (exists !== -1) {
+      this.gladiators[exists] = gladiator;
+    } else {
+      this.gladiators.push(gladiator);
+    }
+    this.recalibrateRanks();
+    saveGladiatorsToDb(this.gladiators);
+  }
 }
 
 export const gladiatorStore = GladiatorStore.getInstance();

@@ -24,6 +24,7 @@ export interface Gladiator {
     sharpeRatio: number;
     totalTrades: number;
   };
+  skills?: string[]; // Array of unique execution capabilities, e.g. MEME_SNIPER
   status?: 'ACTIVE' | 'IN_TRAINING' | 'RETIRED';
   trainingProgress?: number; // 0 to 100
   isOmega?: boolean; // True for the Super-AI Gladiator

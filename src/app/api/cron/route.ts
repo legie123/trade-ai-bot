@@ -59,7 +59,8 @@ export async function GET() {
       // Updated: 120s timeout allows DeepSeek/OpenAI 45s models to complete reasoning
       fetch(`${baseUrl}/api/btc-signals`, { signal: AbortSignal.timeout(120000) }).catch(() => null);
       fetch(`${baseUrl}/api/solana-signals`, { signal: AbortSignal.timeout(120000) }).catch(() => null);
-      log.info(`[Market Scanners] Background TA sweep triggered via cron at ${baseUrl}`);
+      fetch(`${baseUrl}/api/meme-signals`, { signal: AbortSignal.timeout(60000) }).catch(() => null);
+      log.info(`[Market Scanners] Background TA & Meme sweep triggered via cron at ${baseUrl}`);
     } catch (e) {
       log.error('Failed to trigger background scanners', { error: String(e) });
     }
