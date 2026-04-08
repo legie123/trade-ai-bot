@@ -56,7 +56,7 @@ export class TheForge {
       };
 
       // Add special custom field on runtime object storing the DNA params 
-      (newGladiator as any).dnaConfig = {
+      (newGladiator as Gladiator & { dnaConfig?: unknown }).dnaConfig = {
          timeframeBias: Math.random() > 0.5 ? '15m' : '1h',
          rsiThreshold: Math.floor(Math.random() * 20) + 20, // 20-40 lower bound mapping
          stopLossRisk: parseFloat((Math.random() * 0.05 + 0.01).toFixed(3)),

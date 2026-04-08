@@ -76,11 +76,15 @@ export class ArenaSimulator {
 
   /**
    * Evaluates open phantom trades using REAL market data from MEXC.
-   * Replaces previous Math.random() outcome logic.
    */
   public async evaluatePhantomTrades(): Promise<void> {
     const activePhantoms = getPhantomTrades();
     if (!activePhantoms.length) return;
+
+    // VERY IMPORTANT: Refresh Memory from True Source before evaluating
+    const { refreshGladiatorsFromCloud, getGladiatorsFromDb } = await import('@/lib/store/db');
+    await refreshGladiatorsFromCloud();
+    gladiatorStore.hydrate(getGladiatorsFromDb());
 
     const now = Date.now();
     const MIN_HOLD_SEC = 60;     // Minimum 60s for price to move

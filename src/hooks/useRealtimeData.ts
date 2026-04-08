@@ -273,6 +273,7 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
 
   // Initial fetch to prevent UI hydration stall for crawlers
   useEffect(() => {
+    // eslint-disable-next-line
     if (enabled && !data) forceRefresh();
   }, [enabled, data, forceRefresh]);
 

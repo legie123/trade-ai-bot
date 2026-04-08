@@ -161,28 +161,31 @@ export async function initDB() {
   }
 }
 
-// ─── Atomic Sync Queue (Ensures sequential Cloud writes) ───
-let syncQueue = Promise.resolve();
-let syncQueueLength = 0;
+// ─── Task Queue (Fixes memory leaks & debounces duplicates) ───
+const syncTasks: { id: string, data: unknown }[] = [];
+let isSyncing = false;
 let totalSyncsCompleted = 0;
 let lastSyncComplete = new Date().toISOString();
 
 export function getSyncQueueStats() {
   return {
-    pending: syncQueueLength,
+    pending: syncTasks.length,
     totalCompleted: totalSyncsCompleted,
     lastSyncComplete,
   };
 }
 
-function syncToCloud(id: string, data: unknown) {
-  if (!supabaseUrl || !dbInitialized) return;
-
-  syncQueueLength++;
-  syncQueue = syncQueue.then(async () => {
+async function processSyncQueue() {
+  if (isSyncing || syncTasks.length === 0) return;
+  isSyncing = true;
+  
+  while (syncTasks.length > 0) {
+    const task = syncTasks.shift();
+    if (!task) continue;
+    
     try {
-      const { error } = await supabase.from('json_store').upsert({ id, data });
-      if (error) log.error(`Supabase sync failed for ${id}`, { error: error.message });
+      const { error } = await supabase.from('json_store').upsert({ id: task.id, data: task.data });
+      if (error) log.error(`Supabase sync failed for ${task.id}`, { error: error.message });
       else {
           totalSyncsCompleted++;
           lastSyncComplete = new Date().toISOString();
@@ -190,11 +193,26 @@ function syncToCloud(id: string, data: unknown) {
       // Artificial delay to prevent Supabase rate limits (100ms)
       await new Promise(r => setTimeout(r, 100));
     } catch (err) {
-      log.error(`Critical error in syncQueue for ${id}`, { error: String(err) });
-    } finally {
-        syncQueueLength--;
+      log.error(`Critical error in syncQueue for ${task.id}`, { error: String(err) });
     }
-  });
+  }
+  
+  isSyncing = false;
+}
+
+function syncToCloud(id: string, data: unknown) {
+  if (!supabaseUrl || !dbInitialized) return;
+
+  // Debounce: overwrite existing task for the same ID to only upload the absolute latest version
+  const existingTaskIndex = syncTasks.findIndex(t => t.id === id);
+  if (existingTaskIndex !== -1) {
+    syncTasks[existingTaskIndex].data = data;
+  } else {
+    syncTasks.push({ id, data });
+  }
+  
+  // Fire and forget
+  processSyncQueue().catch(err => log.error('Sync process queue crashed', { error: String(err) }));
 }
 
 // ─── Decision Snapshots ────────────────────────────
@@ -225,9 +243,33 @@ export function addDecision(snapshot: DecisionSnapshot): void {
     return; // Silent drop — engine should have caught this
   }
   
-  cache.decisions.unshift(snapshot);
-  if (cache.decisions.length > 1000) cache.decisions.length = 1000;
-  syncToCloud('decisions', cache.decisions);
+  // Multi-Instance Race Condition Protection via Background Hydration
+  (async () => {
+    if (supabaseUrl && dbInitialized) {
+      try {
+        const { data } = await supabase.from('json_store').select('data').eq('id', 'decisions').single();
+        if (data?.data) {
+          const remote = data.data as DecisionSnapshot[];
+          // Merge arrays (dedupe by ID)
+          const localMap = new Map(cache.decisions.map(d => [d.id, d]));
+          for (const rd of remote) {
+            if (!localMap.has(rd.id)) cache.decisions.push(rd);
+          }
+          // Sort by timestamp desc and limit
+          cache.decisions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          if (cache.decisions.length > 1000) cache.decisions.length = 1000;
+        }
+      } catch {}
+    }
+    
+    // Add new decision only if it wasn't miraculously inserted
+    if (!cache.decisions.some((d) => d.signalId === snapshot.signalId)) {
+      cache.decisions.unshift(snapshot);
+      if (cache.decisions.length > 1000) cache.decisions.length = 1000;
+    }
+    
+    syncToCloud('decisions', cache.decisions);
+  })();
 }
 
 export function updateDecision(id: string, updates: Partial<DecisionSnapshot>): void {
@@ -264,9 +306,46 @@ export function getGladiatorsFromDb(): Gladiator[] {
   return cache.gladiators;
 }
 
+export async function refreshGladiatorsFromCloud(): Promise<void> {
+  if (supabaseUrl && dbInitialized) {
+    try {
+      const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiators').single();
+      if (data?.data) {
+        cache.gladiators = data.data as Gladiator[];
+      }
+    } catch {}
+  }
+}
+
+
 export function saveGladiatorsToDb(gladiators: Gladiator[]): void {
-  cache.gladiators = gladiators;
-  syncToCloud('gladiators', cache.gladiators);
+  (async () => {
+    if (supabaseUrl && dbInitialized) {
+      try {
+        const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiators').single();
+        if (data?.data) {
+          const remoteGladiators = data.data as Gladiator[];
+          // Safely merge based on totalTrades (assuming higher = more evolved)
+          for (const remote of remoteGladiators) {
+             const localIndex = gladiators.findIndex(g => g.id === remote.id);
+             if (localIndex === -1) {
+                 gladiators.push(remote); // Pick up Gladiators created by other instances
+             } else {
+                 const local = gladiators[localIndex];
+                 if ((remote.stats?.totalTrades || 0) > (local.stats?.totalTrades || 0)) {
+                     gladiators[localIndex] = remote;
+                 }
+             }
+          }
+        }
+      } catch (err) {
+        log.warn('Could not sync gladiators for merge. Overwriting directly.', { err: String(err) });
+      }
+    }
+    
+    cache.gladiators = gladiators;
+    syncToCloud('gladiators', cache.gladiators);
+  })();
 }
 
 // ─── DNA Bank (Gladiator Battles) ────────────────
@@ -306,9 +385,28 @@ export function getPhantomTrades(): PhantomTrade[] {
 }
 
 export function addPhantomTrade(trade: PhantomTrade): void {
-  cache.phantomTrades.unshift(trade);
-  if (cache.phantomTrades.length > 500) cache.phantomTrades.length = 500;
-  syncToCloud('phantom_trades', cache.phantomTrades);
+  (async () => {
+    if (supabaseUrl && dbInitialized) {
+      try {
+        const { data } = await supabase.from('json_store').select('data').eq('id', 'phantom_trades').single();
+        if (data?.data) {
+          const remote = data.data as PhantomTrade[];
+          const localMap = new Map(cache.phantomTrades.map(t => [t.id, t]));
+          for (const rt of remote) {
+            if (!localMap.has(rt.id)) cache.phantomTrades.push(rt);
+          }
+          cache.phantomTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        }
+      } catch {} // ignore network errors and fallback 
+    }
+    
+    if (!cache.phantomTrades.some(t => t.id === trade.id)) {
+      cache.phantomTrades.unshift(trade);
+      if (cache.phantomTrades.length > 500) cache.phantomTrades.length = 500;
+    }
+    
+    syncToCloud('phantom_trades', cache.phantomTrades);
+  })();
 }
 
 export function removePhantomTrade(id: string): void {
