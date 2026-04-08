@@ -8,8 +8,10 @@ const log = createLogger('SentinelGuard');
 
 export class SentinelGuard {
   private static instance: SentinelGuard;
-  private mddThreshold = 0.15; // 15% Maximum Drawdown Kill-Switch
+  private mddThreshold = 0.10; // 10% Maximum Drawdown Kill-Switch (hardened from 15%)
   private dailyLossLimit = 5;   // Max 5 losses per day
+  private minWinRate = 0.35;    // 35% minimum rolling WR
+  private maxLossStreak = 5;    // 5 consecutive losses = halt
 
   private constructor() {}
 
@@ -34,6 +36,20 @@ export class SentinelGuard {
 
     if (config.mode === 'LIVE' && this.isHalted()) {
       return { safe: false, reason: 'System is HALTED due to previous risk breach' };
+    }
+
+    // ═══ WIN RATE GUARD: Rolling WR on last 20 trades ═══
+    const wrCheck = this.checkWinRate();
+    if (!wrCheck.safe) {
+      await this.triggerKillSwitch(wrCheck.reason!);
+      return { safe: false, reason: wrCheck.reason };
+    }
+
+    // ═══ STREAK BREAKER: Consecutive loss streak ═══
+    const streakCheck = this.checkLossStreak();
+    if (!streakCheck.safe) {
+      await this.triggerKillSwitch(streakCheck.reason!);
+      return { safe: false, reason: streakCheck.reason };
     }
 
     // 2. Consensus Strength Check
@@ -162,6 +178,57 @@ export class SentinelGuard {
 
     return { safe: true };
   }
+
+  /**
+   * WIN RATE GUARD: If rolling WR on last 20 evaluated trades < 35% → HALT 8h
+   */
+  private checkWinRate(): { safe: boolean; reason?: string } {
+    const decisions = getDecisions();
+    const evaluated = decisions.filter((d: DecisionSnapshot) => d.outcome === 'WIN' || d.outcome === 'LOSS');
+    
+    if (evaluated.length < 10) return { safe: true }; // Not enough data
+    
+    const recent = evaluated.slice(0, 20); // Already sorted newest-first from db
+    const wins = recent.filter((d: DecisionSnapshot) => d.outcome === 'WIN').length;
+    const winRate = wins / recent.length;
+    
+    if (winRate < this.minWinRate) {
+      log.warn(`[SENTINEL WR GUARD] Rolling WR: ${(winRate*100).toFixed(1)}% < ${(this.minWinRate*100)}% threshold (${recent.length} trades)`);
+      return { 
+        safe: false, 
+        reason: `Win Rate Critical: ${(winRate*100).toFixed(1)}% on last ${recent.length} trades (threshold: ${(this.minWinRate*100)}%). System halted for recalibration.` 
+      };
+    }
+
+    return { safe: true };
+  }
+
+  /**
+   * STREAK BREAKER: If current consecutive loss streak >= 5 → HALT 4h
+   */
+  private checkLossStreak(): { safe: boolean; reason?: string } {
+    const decisions = getDecisions();
+    const evaluated = decisions.filter((d: DecisionSnapshot) => d.outcome === 'WIN' || d.outcome === 'LOSS');
+    
+    if (evaluated.length < 3) return { safe: true };
+    
+    let streak = 0;
+    for (const d of evaluated) {
+      if (d.outcome === 'LOSS') streak++;
+      else break; // First non-loss breaks the streak count
+    }
+    
+    if (streak >= this.maxLossStreak) {
+      log.warn(`[SENTINEL STREAK BREAKER] ${streak} consecutive losses detected. Halting.`);
+      return { 
+        safe: false, 
+        reason: `Loss Streak Critical: ${streak} consecutive losses (max: ${this.maxLossStreak}). Emergency cooldown activated.` 
+      };
+    }
+
+    return { safe: true };
+  }
+
 
   /**
    * Get current system risk metrics (for diagnostics endpoint)

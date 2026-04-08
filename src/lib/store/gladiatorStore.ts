@@ -190,6 +190,10 @@ class GladiatorStore {
       saveGladiatorsToDb(this.gladiators);
     }
   }
+  public hydrate(gladiators: Gladiator[]): void {
+    this.gladiators = gladiators;
+  }
+
 }
 
 export const gladiatorStore = GladiatorStore.getInstance();

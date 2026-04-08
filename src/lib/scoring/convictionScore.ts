@@ -44,7 +44,6 @@ export interface ConvictionResult {
     fearGreed: number;
     mtf: number;
   };
-  shouldTrade: boolean;   // Score >= 60
   reason: string;
 }
 
@@ -180,17 +179,14 @@ export function calculateConviction(input: ConvictionInput): ConvictionResult {
   else if (clampedScore >= 25) grade = 'D';
   else grade = 'F';
 
-  const shouldTrade = clampedScore >= 60;
-
   const reason = `Conviction ${clampedScore}/100 (${grade}) — VWAP:${components.vwap}/25, RSI:${components.rsi}/25, BB:${components.bb}/15, F&G:${components.fearGreed}/15, MTF:${components.mtf}/20`;
-
-  log.info('Conviction calculated', { score: clampedScore, grade, shouldTrade, direction: input.direction });
+  
+  log.info('Conviction Context Generated', { score: clampedScore, grade, direction: input.direction });
 
   return {
     score: clampedScore,
     grade,
     components,
-    shouldTrade,
     reason,
   };
 }

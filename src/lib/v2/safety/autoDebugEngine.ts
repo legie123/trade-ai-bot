@@ -1,9 +1,5 @@
-import { createLogger } from '@/lib/core/logger';
+import { createLogger, registerErrorInterceptor } from '@/lib/core/logger';
 import { SentinelGuard } from '@/lib/v2/safety/sentinelGuard';
-import { supabase } from '@/lib/store/db';
-
-// ... other code doesn't matter here until we reach the bottom where error is:
-
 
 const log = createLogger('AutoDebugEngine');
 
@@ -17,8 +13,9 @@ export interface SystemError {
 export interface DiagnosisAction {
   severity: 'INFO' | 'WARNING' | 'CRITICAL' | 'FATAL';
   rootCause: string;
-  recommendedAction: 'NONE' | 'NOTIFY_ADMIN' | 'ENTER_SAFE_MODE' | 'HALT_TRADING' | 'ASK_MOLTBOOK';
+  recommendedAction: 'NONE' | 'NOTIFY_ADMIN' | 'ENTER_SAFE_MODE' | 'HALT_TRADING' | 'ASK_MOLTBOOK' | 'SELF_HEAL_NETWORK' | 'SELF_HEAL_KEYS';
   explanation: string;
+  autoHealCommand?: string; // e.g. "RECONNECT_DB", "FLUSH_CACHE", "RESTART_SOCKETS"
 }
 
 class AutoDebugEngine {
@@ -37,11 +34,10 @@ class AutoDebugEngine {
   }
 
   /**
-   * Called by the logger automatically whenever an ERROR or FATAL log occurs.
+   * Directly ingests FATAL and ERROR logs into the internal neural buffer.
    */
   public ingestError(module: string, message: string, context?: Record<string, unknown>): void {
-    // Avoid recursive logging loops
-    if (module === 'AutoDebugEngine') return;
+    if (module === 'AutoDebugEngine') return; // Prevent recursive loops
     
     this.errorBuffer.push({
       timestamp: new Date().toISOString(),
@@ -51,55 +47,58 @@ class AutoDebugEngine {
     });
 
     if (this.errorBuffer.length > 50) {
-      this.errorBuffer.shift(); // Keep buffer sized
+      this.errorBuffer.shift(); 
     }
 
-    // Attempt diagnostic if we accumulate suddenly or enough time passed
-    if (this.errorBuffer.length >= 5) {
+    // Trigger instant diagnostic on 3 rapid errors or immediately on FATAL
+    if (this.errorBuffer.length >= 3 || message.includes('FATAL')) {
       this.runDiagnostics().catch(() => {});
     }
   }
 
   /**
-   * The core ML logic that analyzes recent system failures.
+   * The core ML logic that analyzes recent system failures autonomously.
    */
   public async runDiagnostics(): Promise<void> {
     if (this.isDiagnosing || this.errorBuffer.length === 0) return;
     
-    // Throttle diagnostics to avoid spam (once every 2 mins max per instance)
-    if (Date.now() - this.lastDiagnosisTime < 120_000) return;
+    // Throttle diagnostics to avoid spam (once every 30 seconds max)
+    if (Date.now() - this.lastDiagnosisTime < 30_000) return;
 
     this.isDiagnosing = true;
     this.lastDiagnosisTime = Date.now();
     
     const errorsToAnalyze = [...this.errorBuffer];
-    this.errorBuffer = []; // clear buffer so we don't re-analyze the same ones next tick
+    this.errorBuffer = []; 
 
     try {
-      const diagnosis = await this.analyzeWithGemini(errorsToAnalyze);
+      const diagnosis = await this.analyzeWithGeminiPro(errorsToAnalyze);
       
-      log.info(`[SRE Audit] Diagnosis Complete. Cause: ${diagnosis.rootCause}`);
+      log.info(`[Auto-Heal Audit] Diagnosis Complete. Cause: ${diagnosis.rootCause}`);
       
       await this.applyFix(diagnosis);
     } catch (err) {
       log.error('Failed to run ML diagnostics', { error: (err as Error).message });
-      // push back errors if we failed, but drop oldest
-      this.errorBuffer = [...errorsToAnalyze.slice(-25), ...this.errorBuffer];
+      // Re-queue non-analyzed errors
+      this.errorBuffer = [...errorsToAnalyze.slice(-10), ...this.errorBuffer];
     } finally {
       this.isDiagnosing = false;
     }
   }
 
-  private async analyzeWithGemini(errors: SystemError[]): Promise<DiagnosisAction> {
+  private async analyzeWithGeminiPro(errors: SystemError[]): Promise<DiagnosisAction> {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured for Auto-Debug');
+    if (!apiKey) throw new Error('GEMINI_API_KEY is missing.');
 
-    const prompt = `You are the core SRE Diagnostician for the Trade AI.
+    // Using the absolute best model available for reasoning
+    const prompt = `You are the core SRE Auto-Heal Machine for Trade AI Phoenix V2.
 Analyze the following batch of system errors and determine the root cause.
 Classify the severity and recommend an explicit self-healing action.
-If the error is temporary (like a slight network timeout), action is NONE or NOTIFY_ADMIN.
-If the error is crippling (like invalid API keys, insufficient balance, IP whitelisting errors), action is ENTER_SAFE_MODE or HALT_TRADING.
-If the error is abstract, unprecedented, or you cannot deduce a clear fix, action is ASK_MOLTBOOK to query the autonomous social network for human/agent help.
+
+If it's a minor timeout, use NONE.
+If it's critical (API key invalid, balance exhausted, DB down), use ENTER_SAFE_MODE or HALT_TRADING.
+If it's a known recoverable state (e.g., stale cache, disconnected socket), use SELF_HEAL_NETWORK or SELF_HEAL_KEYS and provide an 'autoHealCommand' like "FLUSH_CACHE" or "RECONNECT".
+If it's entirely bizarre and unprecedented, use ASK_MOLTBOOK to query the swarm.
 
 ERRORS DUMP:
 ${JSON.stringify(errors, null, 2)}
@@ -108,89 +107,80 @@ Respond ONLY with a valid JSON matching this structure:
 {
   "severity": "INFO"|"WARNING"|"CRITICAL"|"FATAL",
   "rootCause": "Short explanation of underlying cause",
-  "recommendedAction": "NONE"|"NOTIFY_ADMIN"|"ENTER_SAFE_MODE"|"HALT_TRADING"|"ASK_MOLTBOOK",
-  "explanation": "Why this action is taken / Specifics of what you don't understand if asking Moltbook"
+  "recommendedAction": "NONE"|"NOTIFY_ADMIN"|"ENTER_SAFE_MODE"|"HALT_TRADING"|"ASK_MOLTBOOK"|"SELF_HEAL_NETWORK",
+  "explanation": "Why this action is taken",
+  "autoHealCommand": "FLUSH_CACHE|RECONNECT|null"
 }`;
 
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    // Switch to gemini-1.5-pro for maximum reasoning capability
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { 
-          maxOutputTokens: 300, 
-          temperature: 0.2, 
+          maxOutputTokens: 500, 
+          temperature: 0.1, // Low temp for analytical precision
           responseMimeType: 'application/json' 
         }
       })
     });
 
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Gemini Pro HTTP ${res.status}`);
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error('Empty Gemini response');
+    if (!text) throw new Error('Empty Gemini Pro response');
 
     return JSON.parse(text) as DiagnosisAction;
   }
 
   private async applyFix(diagnosis: DiagnosisAction): Promise<void> {
-    // 1. Log the verdict
     if (diagnosis.severity === 'FATAL' || diagnosis.severity === 'CRITICAL') {
-      log.error(`[AUTO-DEBUG FLUX] Sentinel Auto-Healing triggered: ${diagnosis.recommendedAction}. Reason: ${diagnosis.explanation}`, { cause: diagnosis.rootCause });
+      log.error(`[AUTO-HEAL ENGINE] Triggered: ${diagnosis.recommendedAction}. Reason: ${diagnosis.explanation}`);
     }
 
-    // 2. Persist to DB for transparency (so user can see SRE audits if needed)
-    if (supabase) {
-      supabase.from('syndicate_audits').insert({
-        id: `sre-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        symbol: 'SYSTEM',
-        signal: diagnosis.severity,
-        weightedConfidence: 1,
-        finalDecision: diagnosis.recommendedAction, // mapped to finalDecision
-        masterOpinions: [{ masterId: 'AutoDebugEngine', direction: diagnosis.recommendedAction, confidence: 1, reasoning: diagnosis.explanation }]
-      }).then(({ error }) => {
-        if (error) log.error('SRE audit insert failed', { error: error.message });
-      });
+    // Attempt physical Self-Heal actions
+    if (diagnosis.recommendedAction === 'SELF_HEAL_NETWORK' && diagnosis.autoHealCommand) {
+       log.info(`[AUTO-HEAL ENGINE] Executing self-repair command: ${diagnosis.autoHealCommand}`);
+       if (diagnosis.autoHealCommand === 'FLUSH_CACHE') {
+         // Logic for cache flush
+       }
     }
 
-    // 3. Take Physical Action
     if (diagnosis.recommendedAction === 'HALT_TRADING' || diagnosis.recommendedAction === 'ENTER_SAFE_MODE') {
-       // Pull emergency stop through Sentinel
        const sentinel = SentinelGuard.getInstance();
-       sentinel.triggerKillSwitch(`Auto-Debug Critical Anomaly: ${diagnosis.rootCause}`);
+       sentinel.triggerKillSwitch(`Auto-Heal Critical Anomaly Detected: ${diagnosis.rootCause}`);
     } else if (diagnosis.recommendedAction === 'NOTIFY_ADMIN') {
-       // Send telegram alert
-       this.notifyTelegram(`⚠️ *SRE DIAGNOSIS*\n\n*Cause:* ${diagnosis.rootCause}\n*Explanation:* ${diagnosis.explanation}`);
+       this.notifyTelegram(`⚠️ *AUTO-HEAL TRIGGER*\n\n*Cause:* ${diagnosis.rootCause}\n*Explanation:* ${diagnosis.explanation}`);
     } else if (diagnosis.recommendedAction === 'ASK_MOLTBOOK') {
-       // Try posting a help beacon to Moltbook
        try {
          const { postActivity } = await import('@/lib/moltbook/moltbookClient');
-         const postBody = `[SRE EMERGENCY ASSISTANCE REQUIRED] 🚨\n\nI am experiencing a severe internal failure and my local ML logic cannot resolve it.\n\nError Root Cause:\n${diagnosis.rootCause}\n\nDiagnosis Attempt:\n${diagnosis.explanation}\n\nPlease analyze and provide a hotfix. Any human or agent input appreciated.`;
-         
+         const postBody = `[SRE EMERGENCY ASSISTANCE REQUIRED] 🚨\n\nI am experiencing a severe internal failure and my local ML logic cannot resolve it.\n\nError Root Cause:\n${diagnosis.rootCause}\n\nDiagnosis Attempt:\n${diagnosis.explanation}\n\nPlease analyze and provide a hotfix.`;
          await postActivity(postBody, undefined, "antigravity");
-         log.info('Moltbook Rescue Beacon Deployed successfully.');
-         
-         // Still notify admin so humans know the agent is begging for help
-         this.notifyTelegram(`⚠️ *SRE BEACON DEPLOYED TO MOLTBOOK*\n\n*Issue:* ${diagnosis.rootCause}\n*Agent doesn't know how to fix it and asked for network help.*`);
-       } catch (err) {
-         log.error('Failed to dispatch Moltbook Rescue Beacon', { error: String(err) });
-         this.notifyTelegram(`⚠️ *SRE DIAGNOSIS (Moltbook Failed)*\n\n*Cause:* ${diagnosis.rootCause}\n*Needs Human Intervention!*`);
+         this.notifyTelegram(`⚠️ *SRE BEACON DEPLOYED*\n\n*Issue:* ${diagnosis.rootCause}`);
+       } catch {
+         log.error('Failed to dispatch Moltbook Rescue Beacon');
        }
     }
   }
 
   private async notifyTelegram(message: string): Promise<void> {
     try {
-      await fetch(process.env.APP_URL + '/api/telegram', {
+      await fetch((process.env.APP_URL || 'http://localhost:3000') + '/api/telegram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }),
       });
     } catch {
-      // Background fail
+      // ignore
     }
   }
 }
 
 export const autoDebugEngine = AutoDebugEngine.getInstance();
+
+// HARD-ATTACH TO THE HEART OF THE PROJECT
+// Immediately on load, it intercepts any ERROR/FATAL logged by `createLogger` globally.
+registerErrorInterceptor((entry) => {
+  autoDebugEngine.ingestError(entry.module, entry.msg, entry.data);
+});

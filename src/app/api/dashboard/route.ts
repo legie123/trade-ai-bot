@@ -4,7 +4,7 @@ import { getWatchdogState, watchdogPing } from '@/lib/core/watchdog';
 import { getFreshHealthSnapshot, startHeartbeat } from '@/lib/core/heartbeat';
 import { getKillSwitchState } from '@/lib/core/killSwitch';
 import { getRecentLogs } from '@/lib/core/logger';
-import { getDecisions, getSyncQueueStats } from '@/lib/store/db';
+import { getDecisions, getSyncQueueStats, getLivePositions, getBotConfig } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { getMoltbookTelemetry } from '@/lib/moltbook/moltbookClient';
 
@@ -33,7 +33,8 @@ export async function GET() {
     const todayDecisions = decisions.filter(d => d.timestamp.startsWith(today) && d.outcome !== 'PENDING');
     
     const dailyPnlPercent = todayDecisions.reduce((acc, curr) => acc + (curr.pnlPercent || 0), 0);
-    const openPositions = decisions.filter(d => d.outcome === 'PENDING').length;
+    const pendingDecisions = decisions.filter(d => d.outcome === 'PENDING').length;
+    const openPositions = getLivePositions().filter(p => p.status === 'OPEN').length;
 
     const recentLogs = getRecentLogs(20);
     const memUsageMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
@@ -46,12 +47,16 @@ export async function GET() {
     const GENESIS_TIMESTAMP = 1775260800000;
     const uptimeSeconds = (Date.now() - GENESIS_TIMESTAMP) / 1000;
 
-    // Overall system status derived from heartbeat + watchdog + killswitch
+    // Overall system status derived from heartbeat + watchdog + killswitch + bot mode
     const heartbeatStatus = heartbeat?.status || 'YELLOW';
+    const botConfig = getBotConfig();
+    const isHalted = botConfig.haltedUntil && new Date(botConfig.haltedUntil) > new Date();
     const isSystemHealthy = watchdog.status === 'HEALTHY' && !killSwitch.engaged && heartbeatStatus !== 'RED';
     const systemStatus = killSwitch.engaged ? 'HALTED (KILL SWITCH)' 
+      : isHalted ? `HALTED — Cooldown until ${new Date(botConfig.haltedUntil!).toLocaleTimeString()}`
       : watchdog.status === 'DEAD' ? 'CRITICAL — Watchdog Dead'
       : heartbeatStatus === 'RED' ? 'DEGRADED — Heartbeat Red'
+      : botConfig.mode === 'OBSERVATION' ? 'OBSERVATION — No Execution'
       : isSystemHealthy ? 'LIVE - SUPER AI OMEGA' 
       : 'WARNING';
 
@@ -64,7 +69,7 @@ export async function GET() {
         moltbook: getMoltbookTelemetry(),
         modulesActive: activeGladiators,
         feedsLive: heartbeat?.providers ? Object.values(heartbeat.providers).filter((p: { ok: boolean }) => p.ok).length : 0,
-        sentinelsActive: 2, // Risk + Loss sentinels
+        sentinelsActive: 4, // Risk + Loss + WinRate + Streak sentinels
         streamStatus: heartbeat?.scanLoop?.running ? 'STREAMING' : 'IDLE',
         runtimeHealth: heartbeatStatus,
         lastSync: heartbeat?.timestamp || new Date().toISOString(),
@@ -93,7 +98,7 @@ export async function GET() {
       },
       trading: {
         totalSignals: decisions.length,
-        pendingDecisions: openPositions,
+        pendingDecisions,
         executionsToday: todayDecisions.length,
         dailyPnlPercent: Math.round(dailyPnlPercent * 100) / 100,
         openPositions,

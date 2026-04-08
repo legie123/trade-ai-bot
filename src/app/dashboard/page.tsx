@@ -67,16 +67,22 @@ export default function DashboardPage() {
   const loading = !data;
 
   if (loading) return <div className={styles.container}><div style={{textAlign:'center', marginTop:'20vh', color:'#a78bfa', fontFamily: 'monospace'}}>Initializing Agentic Core...</div></div>;
-  if (!data) return null;
 
-  const isRed = data.system.status === 'RED' || data.killSwitch.engaged;
-  const sysClass = isRed ? styles.statusRed : data.system.status === 'YELLOW' ? styles.statusYellow : styles.statusGreen;
+  // Defensive: ensure all nested objects exist to prevent client-side crash
+  const system = data?.system || { status: 'LOADING', uptime: 0, memoryUsageRssMB: 0 };
+  const trading = data?.trading || { totalSignals: 0, pendingDecisions: 0, executionsToday: 0, dailyPnlPercent: 0, openPositions: 0 };
+  const killSwitchState = data?.killSwitch || { engaged: false, reason: null };
+  const watchdogState = data?.watchdog || { status: 'UNKNOWN', crashCount: 0, alive: false };
+  const logsData = data?.logs || { recent: [], errorCount1h: 0 };
 
-  // Deriving some "Agentic" mock stats from real data
-  const baseConfidence = Math.min(100, Math.max(10, 50 + (data.trading.dailyPnlPercent * 10) - (data.trading.pendingDecisions * 2)));
-  const agentState = data.killSwitch.engaged ? 'HALTED (OVERRIDE)' 
-                     : data.trading.pendingDecisions > 0 ? 'SYNTHESIZING MARKET DATA...'
-                     : data.trading.openPositions > 0 ? 'MONITORING EXECUTIONS' 
+  const isRed = system.status === 'RED' || killSwitchState.engaged;
+  const sysClass = isRed ? styles.statusRed : system.status === 'YELLOW' ? styles.statusYellow : styles.statusGreen;
+
+  // Deriving some "Agentic" stats from real data
+  const baseConfidence = Math.min(100, Math.max(10, 50 + ((trading.dailyPnlPercent || 0) * 10) - ((trading.pendingDecisions || 0) * 2)));
+  const agentState = killSwitchState.engaged ? 'HALTED (OVERRIDE)' 
+                     : trading.pendingDecisions > 0 ? 'SYNTHESIZING MARKET DATA...'
+                     : trading.openPositions > 0 ? 'MONITORING EXECUTIONS' 
                      : 'SCANNING FREQUENCIES';
 
   return (
@@ -104,7 +110,7 @@ export default function DashboardPage() {
         </h1>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           {bot?.config?.haltedUntil && new Date(bot.config.haltedUntil) > new Date() && (
-            <div className={styles.haltBadge}>
+            <div className={styles.haltBadge} suppressHydrationWarning>
               🛡️ HALTED (COOLDOWN UNTIL {new Date(bot.config.haltedUntil).toLocaleTimeString()})
             </div>
           )}
@@ -115,9 +121,9 @@ export default function DashboardPage() {
             onReconnect={reconnect}
           />
           <span className={sysClass} style={{ fontWeight: 'bold' }}>
-            System: {data.system.status}
+            System: {system.status}
           </span>
-          {data.killSwitch.engaged ? (
+          {killSwitchState.engaged ? (
             <button
               className={`${styles.btn} ${styles.btnDanger}`}
               onClick={() => handleKillSwitch(false)}
@@ -152,19 +158,19 @@ export default function DashboardPage() {
             </div>
             <div className={styles.statRow}>
               <span>Memory Cortex</span>
-              <span className={styles.statValue}>{data.system.memoryUsageRssMB} MB</span>
+              <span className={styles.statValue}>{system.memoryUsageRssMB} MB</span>
             </div>
             <div className={styles.statRow}>
               <span>Uptime</span>
-              <span className={styles.statValue}>{(data.system.uptime / 3600).toFixed(1)}h</span>
+              <span className={styles.statValue}>{((system.uptime || 0) / 3600).toFixed(1)}h</span>
             </div>
             <div className={styles.statRow}>
               <span>Neural Watchdog</span>
-              <span className={data.watchdog.status === 'HEALTHY' ? styles.statusGreen : styles.statusRed}>
-                {data.watchdog.status}
+              <span className={watchdogState.status === 'HEALTHY' ? styles.statusGreen : styles.statusRed}>
+                {watchdogState.status}
               </span>
             </div>
-            {data.system.syncQueue && (
+            {system.syncQueue && (
               <>
                 <div style={{borderTop: '1px solid rgba(255,255,255,0.06)', margin: '0.6rem 0', paddingTop: '0.6rem'}}>
                   <div style={{fontSize: '0.75rem', color: '#22d3ee', fontWeight: 600, marginBottom: '0.4rem', letterSpacing: '0.05em'}}>⚡ SYNC PIPELINE</div>
@@ -172,23 +178,23 @@ export default function DashboardPage() {
                 <div className={styles.statRow}>
                   <span>Queue Pending</span>
                   <span style={{
-                    color: data.system.syncQueue.pending > 5 ? '#ef4444' : data.system.syncQueue.pending > 0 ? '#f59e0b' : '#10b981',
+                    color: system.syncQueue.pending > 5 ? '#ef4444' : system.syncQueue.pending > 0 ? '#f59e0b' : '#10b981',
                     fontWeight: 700,
                     fontFamily: 'monospace'
                   }}>
-                    {data.system.syncQueue.pending} {data.system.syncQueue.pending === 0 ? '✓' : '⏳'}
+                    {system.syncQueue.pending} {system.syncQueue.pending === 0 ? '✓' : '⏳'}
                   </span>
                 </div>
                 <div className={styles.statRow}>
                   <span>Total Synced</span>
                   <span className={styles.statValue} style={{fontFamily: 'monospace'}}>
-                    {data.system.syncQueue.totalCompleted.toLocaleString()}
+                    {system.syncQueue.totalCompleted.toLocaleString()}
                   </span>
                 </div>
                 <div className={styles.statRow}>
                   <span>Last Sync</span>
-                  <span style={{color: '#9ca3af', fontSize: '0.75rem', fontFamily: 'monospace'}}>
-                    {new Date(data.system.syncQueue.lastSyncComplete).toLocaleTimeString()}
+                  <span style={{color: '#9ca3af', fontSize: '0.75rem', fontFamily: 'monospace'}} suppressHydrationWarning>
+                    {new Date(system.syncQueue.lastSyncComplete).toLocaleTimeString()}
                   </span>
                 </div>
               </>
@@ -232,6 +238,34 @@ export default function DashboardPage() {
             ) : (
               <div style={{color:'#6b7280', fontSize:'0.85rem', padding:'1rem 0'}}>Preparing neural equity chart...</div>
             )}
+            
+            {/* NEW WINDOW FOR LIVE EQUITY DETAILED EXPLANATION */}
+            <div style={{ marginTop: '1.5rem', background: 'rgba(0,0,0,0.4)', borderRadius: '8px', padding: '1rem', border: '1px solid rgba(16,185,129,0.15)' }}>
+              <h3 style={{ fontSize: '0.85rem', color: '#10b981', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                <span className={styles.pulseGreen} style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }}></span>
+                LIVE EQUITY & SYSTEM EXPLANATION
+              </h3>
+              <div style={{ color: '#d1d5db', fontSize: '0.75rem', lineHeight: 1.6, fontFamily: 'monospace' }}>
+                {bot?.equityCurve && bot.equityCurve.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px', borderLeft: '2px solid var(--accent-cyan)' }}>
+                      <strong>[MARKET EXPOSURE]</strong> The Vanguard core is holding <strong style={{color: '#fff'}}>{trading.openPositions}</strong> active positions. Capital at risk: <strong style={{color: '#fff'}}>{trading.openPositions > 0 ? (trading.openPositions * (bot.config?.riskPerTrade || 2)).toFixed(1) + '%' : '0%'}</strong> of portfolio balance.
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px', borderLeft: '2px solid var(--accent-green)' }}>
+                      <strong>[LATEST ACTION]</strong> Most recent outcome was a <strong style={{color: bot.equityCurve[bot.equityCurve.length - 1].outcome === 'WIN' ? '#10b981' : bot.equityCurve[bot.equityCurve.length - 1].outcome === 'LOSS' ? '#ef4444' : '#f59e0b'}}>{bot.equityCurve[bot.equityCurve.length - 1].outcome}</strong> execution {bot.equityCurve[bot.equityCurve.length - 1].symbol ? `on ${bot.equityCurve[bot.equityCurve.length - 1].symbol}` : ''}.
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px', borderLeft: '2px solid var(--accent-purple)' }}>
+                      <strong>[TRAJECTORY SHIFT]</strong> Equity {bot.equityCurve[bot.equityCurve.length - 1].balance >= bot.config.paperBalance ? 'is expanding' : 'is compressing'}. Current live reserve stands at <strong style={{color: '#fff'}}>${bot.equityCurve[bot.equityCurve.length - 1].balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>.
+                    </div>
+                    <div style={{ fontStyle: 'italic', color: '#6b7280', marginTop: '4px' }}>
+                      &gt;_ Next recalculation depends on live order flow accumulation and multi-agent consensus validation across {arenaData?.activeFighters || 3} active sub-modules. Let the Syndicate orchestrate...
+                    </div>
+                  </div>
+                ) : (
+                  <div className="pulse" style={{ padding: '8px', textAlign: 'center', color: '#9ca3af' }}>Waiting for first trade execution to trace trajectory...</div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className={styles.glassPanel} style={{'--panel-accent': '#d4af37'} as React.CSSProperties}>
@@ -239,12 +273,12 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
               <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
                  <div style={{color: '#9ca3af', fontSize:'0.85rem'}}>Open Positions</div>
-                 <div style={{fontSize: '1.8rem', fontWeight: 700, color: '#fff'}}>{data.trading.openPositions}</div>
+                 <div style={{fontSize: '1.8rem', fontWeight: 700, color: '#fff'}}>{trading.openPositions}</div>
               </div>
               <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
                  <div style={{color: '#9ca3af', fontSize:'0.85rem'}}>Neural PnL (Daily)</div>
-                 <div className={data.trading.dailyPnlPercent >= 0 ? styles.statusGreen : styles.statusRed} style={{fontSize: '1.8rem', fontWeight: 700}}>
-                   {data.trading.dailyPnlPercent > 0 ? '+' : ''}{data.trading.dailyPnlPercent.toFixed(2)}%
+                 <div className={(trading.dailyPnlPercent || 0) >= 0 ? styles.statusGreen : styles.statusRed} style={{fontSize: '1.8rem', fontWeight: 700}}>
+                   {(trading.dailyPnlPercent || 0) > 0 ? '+' : ''}{(trading.dailyPnlPercent || 0).toFixed(2)}%
                  </div>
               </div>
               <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -268,10 +302,10 @@ export default function DashboardPage() {
           <div className={styles.glassPanel} style={{'--panel-accent': '#ef4444', padding: 0, flexGrow: 1, display: 'flex', flexDirection: 'column'} as React.CSSProperties}>
             <h2 className={styles.panelTitle} style={{padding: '1.2rem 1.5rem 0', marginBottom: '0.8rem'}}><span>💻</span> Neural Execution Log</h2>
             <div className={styles.terminalWrapper} style={{border: 'none', borderRadius: '0 0 16px 16px', flexGrow: 1}}>
-              {data.logs.recent.length === 0 ? (
+              {logsData.recent.length === 0 ? (
                 <div style={{color: '#6b7280'}}>Agent is idle. Waiting for market stimulus...</div>
               ) : (
-                data.logs.recent.map((log, i) => {
+                logsData.recent.map((log, i) => {
                   let levelClass = styles.logInfo;
                   if (log.msg.includes('AI') || log.msg.includes('Swarm') || log.msg.includes('Sentiment')) levelClass = styles.logNeural;
                   else if (log.level === 'WARN') levelClass = styles.logWarn;
@@ -280,7 +314,7 @@ export default function DashboardPage() {
 
                   return (
                     <div key={i} className={styles.logEntry}>
-                      <span className={styles.logTime}>[{new Date(log.ts).toLocaleTimeString()}]</span>
+                      <span className={styles.logTime} suppressHydrationWarning>[{new Date(log.ts).toLocaleTimeString()}]</span>
                       <span className={levelClass}>&gt; {log.msg}</span>
                     </div>
                   );

@@ -46,7 +46,7 @@ export default function PipelineStatus({ steps, signalCount = 0, lastScan }: Pip
         </span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {lastScan && (
-            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)' }} suppressHydrationWarning>
               Last: {lastScan}
             </span>
           )}

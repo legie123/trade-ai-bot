@@ -466,14 +466,49 @@ export interface EquityPoint {
 
 export function getEquityCurve(): EquityPoint[] {
   if (cache.equityHistory.length === 0) {
-    return [{
-      timestamp: new Date().toISOString(),
-      balance: cache.config.paperBalance || 1000,
-      pnl: 0,
-      outcome: 'WIN', // Dummy values to fulfill EquityPoint schema
-      signal: 'SEED',
-      symbol: 'SYSTEM',
-    }];
+    // ═══ BOOTSTRAP: Reconstruct equity curve from historical decisions ═══
+    const evaluated = cache.decisions
+      .filter(d => d.outcome === 'WIN' || d.outcome === 'LOSS' || d.outcome === 'NEUTRAL')
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    
+    if (evaluated.length === 0) {
+      return [{
+        timestamp: new Date().toISOString(),
+        balance: cache.config.paperBalance || 1000,
+        pnl: 0,
+        outcome: 'WIN',
+        signal: 'SEED',
+        symbol: 'SYSTEM',
+      }];
+    }
+
+    const startBalance = cache.config.paperBalance || 1000;
+    const positionSize = cache.config.riskPerTrade || 1.5;
+    let currentBalance = startBalance;
+    let cumulativePnl = 0;
+    const bootstrapped: EquityPoint[] = [];
+
+    for (const dec of evaluated) {
+      const pnlPct = dec.pnlPercent || 0;
+      cumulativePnl += pnlPct;
+      const tradeImpact = currentBalance * (positionSize / 100) * (pnlPct / 100);
+      currentBalance = Math.max(currentBalance + tradeImpact, 0);
+
+      bootstrapped.push({
+        timestamp: dec.timestamp,
+        balance: Math.round(currentBalance * 100) / 100,
+        pnl: Math.round(cumulativePnl * 100) / 100,
+        outcome: dec.outcome,
+        signal: dec.signal,
+        symbol: dec.symbol,
+      });
+    }
+
+    // Cache the bootstrapped curve so we don't reconstruct every time
+    cache.equityHistory = bootstrapped;
+    log.info(`[Equity Bootstrap] Reconstructed ${bootstrapped.length} points from decisions. Balance: $${currentBalance.toFixed(2)}`);
+    
+    return bootstrapped;
   }
   return cache.equityHistory;
 }

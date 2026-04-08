@@ -565,7 +565,7 @@ export default function CryptoRadarPage() {
                     {combatAudits.filter((s) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((audit) => (
                       <div key={audit.id} style={{ display: 'flex', flexDirection: 'column', padding: 12, background: watchlist.includes(audit.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${audit.finalDirection === 'LONG' ? 'var(--accent-green)' : audit.finalDirection === 'SHORT' ? 'var(--accent-red)' : 'var(--text-muted)'}`, transition: 'background 0.2s' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(audit.timestamp)}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }} suppressHydrationWarning>{formatTime(audit.timestamp)}</span>
                           <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{audit.symbol} {watchlist.includes(audit.symbol) && <span style={{ fontSize: 10, color: 'var(--accent-cyan)' }}>★</span>}</span>
                           <span className={`badge ${audit.finalDirection === 'LONG' ? 'badge-signal-buy' : audit.finalDirection === 'SHORT' ? 'badge-signal-sell' : 'badge-info'}`} style={{ fontSize: 10 }}>{audit.finalDirection || 'NEUTRAL'}</span>
                           <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(audit.weightedConfidence ? audit.weightedConfidence * 100 : 0) }}>
@@ -600,7 +600,7 @@ export default function CryptoRadarPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {signals.filter((s) => !mutedSymbols.includes(s.symbol)).slice(0, 15).map((s) => (
                       <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: watchlist.includes(s.symbol) ? 'rgba(6,182,212,0.08)' : 'rgba(0,0,0,0.2)', borderRadius: 8, borderLeft: `3px solid ${s.signal.includes('BUY') ? 'var(--accent-green)' : 'var(--accent-red)'}`, transition: 'background 0.2s' }}>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{formatTime(s.timestamp)}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }} suppressHydrationWarning>{formatTime(s.timestamp)}</span>
                         <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.symbol} {watchlist.includes(s.symbol) && <span style={{ fontSize: 10, color: 'var(--accent-cyan)' }}>★</span>}</span>
                         <span className={`badge ${getSignalBadge(s.signal)}`} style={{ fontSize: 10 }}>{s.signal}</span>
                         <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: getConfColor(s.confidence || 0) }}>{s.confidence || 0}%</span>

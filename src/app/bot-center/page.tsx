@@ -433,7 +433,7 @@ export default function BotCenterPage() {
                    <div className="table-wrap" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                      {data.decisions.slice(0, 7).map((d) => (
                        <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '80px 100px 100px 1fr 100px 80px', gap: 12, alignItems: 'center', background: 'rgba(0,0,0,0.15)', padding: '8px 12px', borderRadius: 6, borderLeft: d.outcome === 'WIN' ? '2px solid var(--accent-green)' : d.outcome === 'LOSS' ? '2px solid var(--accent-red)' : '2px solid var(--border)' }}>
-                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(d.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }} suppressHydrationWarning>{new Date(d.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
                          <span style={{ fontSize: 13, fontWeight: 700 }}>{d.symbol}</span>
                          <span className={`badge ${d.signal.includes('BUY') ? 'badge-signal-buy' : d.signal.includes('SELL') ? 'badge-signal-sell' : 'badge-info'}`} style={{ fontSize: 9 }}>
                            {d.signal} {d.direction === 'BULLISH' ? '▲' : '▼'}

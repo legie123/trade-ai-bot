@@ -8,8 +8,12 @@ import { Signal, DecisionSnapshot } from '../../types/radar';
 import { addDecision, addLivePosition, acquireTradeLock, releaseTradeLock, isPositionOpenStrict } from '@/lib/store/db';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
 import { createLogger } from '@/lib/core/logger';
+import { autoDebugEngine } from '@/lib/v2/safety/autoDebugEngine';
 
 const log = createLogger('ManagerVizionar');
+// Auto-initialize the debug engine
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _autoInit = autoDebugEngine;
 
 export class ManagerVizionar {
   private static instance: ManagerVizionar;
@@ -39,6 +43,12 @@ export class ManagerVizionar {
    */
   public async processSignal(gladiator: Gladiator, payload: Signal) {
     if (!gladiator) return;
+
+    // ═══ ZERO-DATA BAN: Reject any signal with invalid/missing price ═══
+    if (!payload.price || payload.price <= 0) {
+      log.warn(`[ZERO-DATA BAN] Signal rejected for ${payload.symbol}: price=${payload.price}. No phantom data allowed.`);
+      return;
+    }
 
     // 1. Extract Gladiator Intelligence (RL Context)
     const intelligence = this.dnaExtractor.extractIntelligence(gladiator.id);
@@ -97,8 +107,19 @@ export class ManagerVizionar {
   private applyRLModifier(consensus: DualConsensus, intelligence: IntelligenceDigest, symbol?: string): DualConsensus {
     // 1. CIRCUIT BREAKER: 4+ loss streak AND base confidence < 85% → refuse trade
     if (intelligence.currentStreak <= -4 && consensus.weightedConfidence < 0.85) {
-      console.warn(`[RL] CIRCUIT BREAKER: ${intelligence.gladiatorId} on ${intelligence.currentStreak} loss streak. Forcing FLAT.`);
+      log.warn(`[RL] CIRCUIT BREAKER: ${intelligence.gladiatorId} on ${intelligence.currentStreak} loss streak. Forcing FLAT.`);
       return { ...consensus, weightedConfidence: 0, finalDirection: 'FLAT' };
+    }
+
+    // ═══ CONFIDENCE CAP: Limit max confidence based on rolling win rate ═══
+    const wr = intelligence.overallWinRate || 0;
+    let confidenceCap = 1.0;
+    if (wr < 0.30) {
+      confidenceCap = 0.40; // WR < 30% → hard cap at 40% confidence
+      log.warn(`[RL CAP] ${intelligence.gladiatorId} WR=${(wr*100).toFixed(0)}% → confidence capped at 40%`);
+    } else if (wr < 0.50) {
+      confidenceCap = 0.65; // WR 30-50% → cap at 65%
+      log.info(`[RL CAP] ${intelligence.gladiatorId} WR=${(wr*100).toFixed(0)}% → confidence capped at 65%`);
     }
 
     // 2. SYMBOL EDGE CHECK: if gladiator has negative expectancy on THIS symbol, dampen extra
@@ -108,32 +129,42 @@ export class ManagerVizionar {
       const edge = intelligence.symbolEdges.find(e => e.symbol === cleanSymbol || e.symbol === symbol);
       if (edge && edge.totalTrades >= 5) {
         if (edge.expectancy < -0.5) {
-          symbolPenalty = 0.6; // Heavy dampen — gladiator historically loses on this asset
-          console.warn(`[RL] Symbol penalty for ${cleanSymbol}: expectancy ${edge.expectancy.toFixed(2)}% → penalty 0.6x`);
+          symbolPenalty = 0.6;
+          log.warn(`[RL] Symbol penalty for ${cleanSymbol}: expectancy ${edge.expectancy.toFixed(2)}% → penalty 0.6x`);
         } else if (edge.expectancy < 0) {
           symbolPenalty = 0.85;
         } else if (edge.expectancy > 0.5) {
-          symbolPenalty = 1.1; // Slight boost — gladiator historically profits on this asset
+          symbolPenalty = 1.1;
         }
       }
     }
 
-    // 3. Apply modifiers
+    // 3. Apply modifiers + cap
     const mod = intelligence.confidenceModifier;
     const adjusted = consensus.weightedConfidence * mod * symbolPenalty;
-    const final = Math.min(Math.max(adjusted, 0), 1);
+    const capped = Math.min(adjusted, confidenceCap);
+    const final = Math.min(Math.max(capped, 0), 1);
 
-    console.log(`[RL] ${intelligence.gladiatorId}: confidence ${(consensus.weightedConfidence * 100).toFixed(1)}% → ${(final * 100).toFixed(1)}% (mod: ${mod}, symbolPenalty: ${symbolPenalty})`);
+    log.info(`[RL] ${intelligence.gladiatorId}: confidence ${(consensus.weightedConfidence * 100).toFixed(1)}% → ${(final * 100).toFixed(1)}% (mod: ${mod}, symPen: ${symbolPenalty}, cap: ${confidenceCap})`);
 
     return {
       ...consensus,
       weightedConfidence: final,
-      finalDirection: final < 0.5 ? 'FLAT' : consensus.finalDirection, // Auto-FLAT if RL drops below 50%
+      finalDirection: final < 0.5 ? 'FLAT' : consensus.finalDirection,
     };
   }
 
   private async routeSignal(gladiator: Gladiator, payload: Signal, consensus: DualConsensus) {
+    // ═══ GLADIATOR MIN WR GATE: Block underperforming gladiators from live execution ═══
     if (gladiator.isLive) {
+      const dna = this.dnaExtractor.extractIntelligence(gladiator.id);
+      const totalTrades = dna.totalBattles || 0;
+      const winRate = dna.overallWinRate || 0;
+      if (totalTrades >= 10 && winRate < 0.40) {
+        log.warn(`[GLADIATOR GATE] ${gladiator.id} blocked from LIVE: WR=${(winRate*100).toFixed(0)}% < 40% (${totalTrades} trades). Demoting to shadow.`);
+        await this.executeShadowMode(gladiator.id, payload, consensus);
+        return;
+      }
       await this.executeLiveCapital(gladiator.id, payload, consensus);
     } else {
       await this.executeShadowMode(gladiator.id, payload, consensus);

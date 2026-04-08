@@ -21,6 +21,7 @@ import { engageKillSwitch, disengageKillSwitch, getKillSwitchState } from '@/lib
 import { getWatchdogState } from '@/lib/core/watchdog';
 import { BotStats } from '@/lib/types/radar';
 import { PromotersAggregator } from '@/lib/v2/promoters/promotersAggregator';
+import { SentinelGuard } from '@/lib/v2/safety/sentinelGuard';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
@@ -137,9 +138,10 @@ export async function GET() {
         symbol: p.symbol,
         side: p.side,
         entryPrice: p.entryPrice,
-        size: 0.20 // 20% position size standard
+        size: 0.20
       })),
-      decisions: allDecisions.slice(0, 50),
+      // Filter out pre-v4 zero-data artifacts from public API
+      decisions: allDecisions.filter(d => d.price > 0).slice(0, 50),
       performance,
       gladiators: gladiatorStore.getGladiators(),
       syndicateAudits: getSyndicateAudits().slice(0, 50),
@@ -156,8 +158,10 @@ export async function GET() {
           description: todayDecisions.length > 0 ? `Processing ${todayDecisions.length} decisions today. Consensus threshold: 70%.` : 'Waiting for market signals to process.'
         },
         sentinels: {
-          riskShield: { name: 'Risk Sentinel', limit: '15% MDD', active: true, triggered: maxDrawdown >= 15, currentValue: `${maxDrawdown.toFixed(2)}%`, lastIncident: maxDrawdown >= 15 ? 'MDD threshold breached' : null },
+          riskShield: { name: 'Risk Sentinel', limit: '10% MDD', active: true, triggered: maxDrawdown >= 10, currentValue: `${maxDrawdown.toFixed(2)}%`, lastIncident: maxDrawdown >= 10 ? 'MDD threshold breached (10%)' : null },
           lossDaily: { name: 'Loss Sentinel', limit: '5 Pierderi/Zi', active: true, triggered: todayEvaluated.filter(d => d.outcome === 'LOSS').length >= 5, currentValue: `${todayEvaluated.filter(d => d.outcome === 'LOSS').length} losses`, lastIncident: todayEvaluated.filter(d => d.outcome === 'LOSS').length >= 5 ? 'Daily loss limit reached' : null },
+          winRateGuard: { name: 'Win Rate Guard', limit: '35% Rolling WR', active: true, triggered: stats.overallWinRate < 35 && evaluated.length >= 10, currentValue: `${stats.overallWinRate}% WR (${evaluated.length} trades)` },
+          streakBreaker: { name: 'Streak Breaker', limit: '5 Consecutive Losses', active: true, triggered: streak >= 5 && streakType === 'LOSS', currentValue: `${streak} ${streakType}` },
           watchdog: { name: 'Neural Watchdog', limit: '5min timeout', active: true, triggered: getKillSwitchState().engaged, currentValue: getWatchdogState().status, lastPing: getWatchdogState().lastPing },
           killSwitch: { name: 'Kill Switch', limit: 'Manual Override', active: true, triggered: getKillSwitchState().engaged, currentValue: getKillSwitchState().engaged ? 'ENGAGED' : 'SAFE', reason: getKillSwitchState().reason },
         },
@@ -175,6 +179,20 @@ export async function GET() {
       optimizer,
       config,
       equityCurve: finalEquityCurve,
+      // ═══ AUDIT COHERENCE: Unified execution state machine ═══
+      riskGuards: SentinelGuard.getInstance().getRiskMetrics(),
+      executionPermitted: {
+        allowed: !config.haltedUntil || new Date(config.haltedUntil) < new Date(),
+        mode: config.mode,
+        haltedUntil: config.haltedUntil || null,
+        reason: config.haltedUntil && new Date(config.haltedUntil) > new Date()
+          ? `System halted until ${config.haltedUntil}` 
+          : stats.overallWinRate < 35 && evaluated.length >= 10 ? 'Win Rate Guard active (WR < 35%)'
+          : streak >= 5 && streakType === 'LOSS' ? 'Streak Breaker active (5+ consecutive losses)'
+          : maxDrawdown >= 10 ? 'MDD Guard active (DD >= 10%)'
+          : null,
+        confidenceCap: stats.overallWinRate < 30 ? 0.40 : stats.overallWinRate < 50 ? 0.65 : 1.0,
+      },
     });
   } catch (err) {
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });

@@ -9,7 +9,7 @@ const log = createLogger('ArenaSimulator');
 
 // In-memory price cache to avoid hammering MEXC per phantom trade
 const priceCache: Map<string, { price: number; expiresAt: number }> = new Map();
-const PRICE_CACHE_TTL = 10_000; // 10s — fast enough for phantom evaluations
+const PRICE_CACHE_TTL = 60_000; // 60s — optimized to protect MEXC rate limits
 
 async function getCachedPrice(symbol: string): Promise<number> {
   const cached = priceCache.get(symbol);

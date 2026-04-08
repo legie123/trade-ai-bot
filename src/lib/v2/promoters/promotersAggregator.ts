@@ -1,8 +1,9 @@
 import { PromoterData } from '../../types/gladiator';
 import { AlphaScout } from '../intelligence/alphaScout';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
-import { saveGladiatorsToDb } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
+import { TheButcher } from '../gladiators/butcher';
+import { TheForge } from './forge';
 
 const log = createLogger('PromoterRecruiter');
 
@@ -34,33 +35,18 @@ export class PromotersAggregator {
   }
 
   /**
-   * Evaluates the Arena. If bottom tier gladiators fail, Promoters "recruit" a new strategy.
-   * This ensures the DNA pool never goes stale.
+   * Evaluates the Arena. Weak gladiators are executed by The Butcher.
+   * New mutations are spawned via The Forge.
    */
-  public evaluateAndRecruit() {
-    const gladiators = gladiatorStore.getLeaderboard();
+  public async evaluateAndRecruit() {
+    // 1. Absolute Execution
+    const executedIds = TheButcher.getInstance().executeWeaklings();
     
-    // Find gladiators performing terribly
-    const weakLinks = gladiators.filter(g => g.stats.winRate < 45 && g.stats.totalTrades > 50);
-    
-    if (weakLinks.length > 0) {
-      log.info(`[Promoters] Found ${weakLinks.length} weak strategies. Firing them and recruiting fresh blood.`);
+    if (executedIds.length > 0) {
+      log.info(`[Promoters] The Butcher eliminated ${executedIds.length} strategies. Initiating new recruitment.`);
       
-      // In a real system we would remove them and push new ones.
-      // Here we just "retire" them by resetting their stats with a new mutated approach.
-      weakLinks.forEach(g => {
-        g.name = `${g.name} (Mutated V${Math.floor(Math.random() * 100)})`;
-        g.stats = {
-          winRate: 50,
-          profitFactor: 1.0,
-          maxDrawdown: 0,
-          sharpeRatio: 0.5,
-          totalTrades: 0
-        };
-        g.status = 'ACTIVE';
-        log.info(`[Promoters] Recruited: ${g.name} to the Arena.`);
-      });
-      saveGladiatorsToDb(gladiatorStore.getGladiators());
+      // 2. Genuine Genetic Mutation
+      await TheForge.getInstance().evaluateAndRecruit(executedIds);
     } else {
       log.info(`[Promoters] Arena crop is healthy. No new recruitment needed today.`);
     }
