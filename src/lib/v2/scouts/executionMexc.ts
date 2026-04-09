@@ -1,4 +1,4 @@
-import { getMexcPrice, placeMexcLimitOrder, getMexcBalances, getMexcExchangeInfo } from '@/lib/exchange/mexcClient';
+import { getMexcPrice, placeMexcLimitOrder, getMexcBalances, getMexcExchangeInfo, placeMexcStopLossOrder } from '@/lib/exchange/mexcClient';
 import { sendMessage } from '@/lib/alerts/telegram';
 import { createLogger } from '@/lib/core/logger';
 
@@ -66,7 +66,7 @@ export function roundToStep(quantity: number, stepSize: number): number {
  */
 function getPositionSize(balance: number, riskPercent: number = 1.5): number {
   const idealSize = balance * (riskPercent / 100);
-  const maxSize = balance * 0.20; // Never risk > 20% of balance in a single trade
+  const maxSize = balance * 0.05; // Hard Cap: Never risk > 5% of balance in a single trade to prevent margin cascade
   const minSize = 10; // MEXC minimum for most pairs
 
   if (balance < minSize * 2) return 0; // Not enough balance to trade safely
@@ -130,6 +130,20 @@ export async function executeMexcTrade(
       try {
         await placeMexcLimitOrder(mexcSymbol, side, quantity, limitPrice);
         log.info(`[SLIPPAGE PROTECT] Sent LIMIT ${side} for ${mexcSymbol} @ max price $${limitPrice} (AI price: $${price})`);
+        
+        // --- OMEGA NATIVE STOP LOSS ---
+        // Fire native MEXC trigger order so we don't depend on cron for crash protection.
+        if (side === 'BUY') {
+           const slPercent = 0.05; // 5% Hard stop loss
+           let stopPrice = price * (1 - slPercent);
+           stopPrice = roundToStep(stopPrice, filters.tickSize);
+           // Place STOP_LOSS_LIMIT. Because MEXC matching engine takes milliseconds, we don't await strictly.
+           placeMexcStopLossOrder(mexcSymbol, 'SELL', quantity, stopPrice, stopPrice).then(() => {
+              log.info(`[NATIVE SL] Registered Hardware Stop Loss on MEXC for ${mexcSymbol} at $${stopPrice}`);
+           }).catch((err: unknown) => {
+              log.warn(`[NATIVE SL WARNING] Could not immediately place Native SL for ${mexcSymbol}. (May not have filled yet). Error: ${(err as Error).message}`);
+           });
+        }
       } catch (err) {
         throw new Error(`[LIMIT FAILED] ${(err as Error).message}. Vetoing fallback to prevent explicit double-spend.`);
       }

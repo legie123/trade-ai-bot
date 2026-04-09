@@ -52,15 +52,15 @@ export async function GET() {
 
     // Trigger Market Scanners (so the AI trades even when the user's browser is closed)
     try {
-      const internalPort = process.env.PORT || 3000;
-      const baseUrl = `http://127.0.0.1:${internalPort}`;
+      // Fire directly using V8 internal JS context instead of looping back via Cloud Run HTTP
+      const { GET: runBtc } = await import('@/app/api/btc-signals/route');
+      const { GET: runSolana } = await import('@/app/api/solana-signals/route');
+      const { GET: runMeme } = await import('@/app/api/meme-signals/route');
       
-      // Fire and forget without awaiting so cron doesn't stall
-      // Updated: 120s timeout allows DeepSeek/OpenAI 45s models to complete reasoning
-      fetch(`${baseUrl}/api/btc-signals`, { signal: AbortSignal.timeout(120000) }).catch(() => null);
-      fetch(`${baseUrl}/api/solana-signals`, { signal: AbortSignal.timeout(120000) }).catch(() => null);
-      fetch(`${baseUrl}/api/meme-signals`, { signal: AbortSignal.timeout(60000) }).catch(() => null);
-      log.info(`[Market Scanners] Background TA & Meme sweep triggered via cron at ${baseUrl}`);
+      runBtc().catch(() => null);
+      runSolana().catch(() => null);
+      runMeme().catch(() => null);
+      log.info(`[Market Scanners] Background TA & Meme sweep triggered via direct function calls`);
     } catch (e) {
       log.error('Failed to trigger background scanners', { error: String(e) });
     }
@@ -86,16 +86,26 @@ export async function GET() {
     const allSymbols = [...new Set([...uniqueSymbols, ...liveSymbols])];
     const priceCache: Record<string, number> = {};
 
-    await Promise.all(
-      allSymbols.map(async (sym) => {
-        try {
-          const price = await getMexcPrice(sym);
-          if (price > 0) priceCache[sym] = price;
-        } catch {
-          log.warn(`Could not fetch price for ${sym}`);
-        }
-      })
-    );
+    // Fetch prices in chunks to prevent MEXC 429 Rate Limit
+    const CHUNK_SIZE = 15;
+    for (let i = 0; i < allSymbols.length; i += CHUNK_SIZE) {
+      const chunk = allSymbols.slice(i, i + CHUNK_SIZE);
+      await Promise.all(
+        chunk.map(async (sym) => {
+          try {
+            const price = await getMexcPrice(sym);
+            if (price > 0) priceCache[sym] = price;
+          } catch {
+            log.warn(`Could not fetch price for ${sym}`);
+          }
+        })
+      );
+      
+      // Add a tiny delay between chunks if we have multiple chunks
+      if (i + CHUNK_SIZE < allSymbols.length) {
+        await new Promise(res => setTimeout(res, 500));
+      }
+    }
 
     for (const dec of eligibleDecisions) {
       const currentPrice = priceCache[dec.symbol];

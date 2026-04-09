@@ -118,6 +118,16 @@ export class PositionManager {
         } catch (err: unknown) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           log.error(`[PositionManager] Failed to execute partial TP order for ${pos.symbol}:`, { error: errorMsg });
+          if (errorMsg.includes('Min-Notional') || errorMsg.includes('quantity too low') || errorMsg.includes('insufficient')) {
+             log.warn(`🚨 [ZOMBIE PREVENTION] Closing FULL position ${pos.symbol} at T1 because remaining size is untradable dust.`);
+             const exchangeInfo = await getExchangeInfoCached();
+             const filters = getSymbolFilters(exchangeInfo, pos.symbol);
+             const remainingQty = roundToStep(pos.quantity, filters.stepSize);
+             if (remainingQty >= filters.minQty) {
+                await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty).catch(() => {});
+             }
+             updateLivePosition(pos.id, { status: 'CLOSED' });
+          }
         }
         return; // State changed, exit evaluation block
       }

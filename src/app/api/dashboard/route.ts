@@ -4,7 +4,7 @@ import { getWatchdogState, watchdogPing } from '@/lib/core/watchdog';
 import { getFreshHealthSnapshot, startHeartbeat } from '@/lib/core/heartbeat';
 import { getKillSwitchState } from '@/lib/core/killSwitch';
 import { getRecentLogs } from '@/lib/core/logger';
-import { getDecisions, getSyncQueueStats, getLivePositions, getBotConfig } from '@/lib/store/db';
+import { getDecisions, getSyncQueueStats, getLivePositions, getBotConfig, getEquityCurve } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { getMoltbookTelemetry } from '@/lib/moltbook/moltbookClient';
 
@@ -111,7 +111,7 @@ export async function GET() {
         })),
         errorCount1h: recentLogs.filter((l: { level: string }) => l.level === 'ERROR' || l.level === 'FATAL').length,
       },
-      history: [],
+      history: getEquityCurve(),
     });
   } catch (err) {
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });

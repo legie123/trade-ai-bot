@@ -141,6 +141,23 @@ export async function cancelMexcOrder(symbol: string, orderId: string): Promise<
   return mexcRequest('DELETE', '/api/v3/order', { symbol, orderId });
 }
 
+export async function placeMexcStopLossOrder(
+  symbol: string,
+  side: 'BUY' | 'SELL',
+  quantity: number,
+  stopPrice: number,
+  limitPrice: number
+): Promise<Record<string, unknown>> {
+  return mexcRequest('POST', '/api/v3/order', {
+    symbol,
+    side,
+    type: 'STOP_LOSS_LIMIT',
+    quantity: quantity.toString(),
+    stopPrice: stopPrice.toString(),
+    price: limitPrice.toString(),
+  });
+}
+
 export async function getMexcOpenOrders(symbol?: string): Promise<Record<string, unknown>[]> {
   const params: Record<string, string | number> = {};
   if (symbol) params.symbol = symbol;
