@@ -332,7 +332,7 @@ export default function BotCenterPage() {
                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Role: {m.role}</div>
                        </div>
                     </div>
-                    <span className="badge badge-bullish">{m.status}</span>
+                    <span className={`badge ${m.status === 'ONLINE' || m.status === 'ACTIVE' ? 'badge-bullish' : 'badge-bearish'}`}>{m.status}</span>
                   </div>
                 ))}
               </div>

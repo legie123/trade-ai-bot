@@ -147,7 +147,7 @@ export async function GET() {
       syndicateAudits: getSyndicateAudits().slice(0, 50),
       v2Entities: {
         masters: [
-          { id: 'master_gemini', name: 'GPT-4o (Architect)', role: 'Master Principal (Architect)', status: process.env.OPENAI_API_KEY ? 'ONLINE' : 'NO_API_KEY', power: 100, reason: process.env.OPENAI_API_KEY ? 'API key configured' : 'Missing OPENAI_API_KEY in env' },
+          { id: 'master_gemini', name: 'Gemini 1.5 Pro (Architect)', role: 'Master Principal (Architect)', status: process.env.GEMINI_API_KEY ? 'ONLINE' : 'NO_API_KEY', power: 100, reason: process.env.GEMINI_API_KEY ? 'API key configured' : 'Missing GEMINI_API_KEY in env' },
           { id: 'master_fallback', name: 'GPT-4o (Oracle)', role: 'Oracle (Sentiment)', status: process.env.OPENAI_API_KEY ? 'ONLINE' : 'NO_API_KEY', power: 80, reason: process.env.OPENAI_API_KEY ? 'API key configured' : 'Missing OPENAI_API_KEY in env' },
           { id: 'master_deepseek', name: 'DeepSeek-R1', role: 'Math Logic', status: 'ACTIVE', power: 85, reason: 'Built-in heuristic engine — no API required' }
         ],

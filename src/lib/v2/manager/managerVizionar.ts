@@ -221,11 +221,11 @@ export class ManagerVizionar {
       evaluatedAt: null
     };
 
-    // Real Execution on MEXC (LIVE FUNDS PROCESSED)
+    // Execution on MEXC (Currently DRY RUN / Paper Trading per user request)
     try {
       const side = consensus.finalDirection === 'LONG' ? 'BUY' : 'SELL';
-      // By default routing live execution specifically. dryRun = false
-      const result = await executeMexcTrade(payload.symbol, side, undefined, false);
+      // Mapped to MEXC but strictly locked to TEST MONEY (dryRun = true)
+      const result = await executeMexcTrade(payload.symbol, side, undefined, true);
       if (result.executed) {
         console.log(`[EXECUTION SUCCESS] Trade placed on MEXC for ${payload.symbol} @ ${result.price}`);
         
