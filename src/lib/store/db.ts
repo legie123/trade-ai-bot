@@ -291,6 +291,7 @@ export function addSyndicateAudit(audit: Record<string, unknown>): void {
       (cleanAudit as Record<string, unknown>).signal = (cleanAudit as Record<string, unknown>).finalDirection;
     }
     delete (cleanAudit as Record<string, unknown>).finalDirection; // 🛡️ Fix scheme mismatch missing column
+    delete (cleanAudit as Record<string, unknown>).hallucinationReport; // 🛡️ Ensure schema compatibility
     supabase.from('syndicate_audits').insert(cleanAudit).then(({ error }) => {
       if (error) console.warn('Failed to insert syndicate audit (bypassed via Cache)', { error: error.message });
     });
