@@ -96,33 +96,34 @@ function triggerRestart(): void {
   }
 }
 
-// ─── Start watchdog monitor ─────────────────────────
+// ─── Start watchdog monitor (Cloud Run mode) ──────────
 export function startWatchdog(onRestart: () => void): void {
   restartCallback = onRestart;
   state.startedAt = new Date().toISOString();
   state.alive = true;
   state.status = 'HEALTHY';
 
-  // Clear existing timer
-  if (watchdogTimer) clearInterval(watchdogTimer);
+  // In Cloud Run, setInterval freezes. We rely on external cron `/api/cron` 
+  // to call checkWatchdogHealth() instead of an internal loop.
+  // The system is now serverless-first.
 
-  // Check liveness every 60 seconds
-  watchdogTimer = setInterval(() => {
-    if (!state.lastPing) return;
+  log.info('Watchdog initialized in Serverless Mode', { timeoutMs: WATCHDOG_TIMEOUT_MS });
+}
 
-    const elapsed = Date.now() - new Date(state.lastPing).getTime();
-    if (elapsed > WATCHDOG_TIMEOUT_MS) {
-      state.alive = false;
-      state.status = 'DEAD';
-      log.error('Scan loop appears dead — no heartbeat for 5 min', {
-        lastPing: state.lastPing,
-        elapsedMs: elapsed,
-      });
-      triggerRestart();
-    }
-  }, 60_000);
+// ─── Deterministic Health Check (Called by Cron) ────
+export function checkWatchdogHealth(): void {
+  if (!state.lastPing) return;
 
-  log.info('Watchdog started', { timeoutMs: WATCHDOG_TIMEOUT_MS });
+  const elapsed = Date.now() - new Date(state.lastPing).getTime();
+  if (elapsed > WATCHDOG_TIMEOUT_MS && state.alive) {
+    state.alive = false;
+    state.status = 'DEAD';
+    log.error('Scan loop appears dead — no heartbeat for 5 min', {
+      lastPing: state.lastPing,
+      elapsedMs: elapsed,
+    });
+    triggerRestart();
+  }
 }
 
 // ─── Stop watchdog ──────────────────────────────────

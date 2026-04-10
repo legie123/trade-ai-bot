@@ -1,5 +1,5 @@
 // GET /api/cron — Trading loop trigger (kicks BTC engine + watchdog ping)
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { watchdogPing } from '@/lib/core/watchdog';
 import { startHeartbeat } from '@/lib/core/heartbeat';
 import { createLogger } from '@/lib/core/logger';
@@ -12,7 +12,15 @@ export const dynamic = 'force-dynamic';
 
 let loopStarted = false;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Auth: require CRON_SECRET header (Railway/Vercel cron must send it)
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret) {
+    const auth = request.headers.get('authorization') || request.headers.get('x-cron-secret') || request.nextUrl.searchParams.get('secret');
+    if (auth !== cronSecret && auth !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: 'Unauthorized. Set x-cron-secret header.' }, { status: 401 });
+    }
+  }
   try {
     // Ensure heartbeat is running
     if (!loopStarted) {
@@ -29,11 +37,12 @@ export async function GET() {
       __autoScan?: { running: boolean; lastScanAt: string | null; scanCount: number };
     };
     if (!gScan.__autoScan) {
-      gScan.__autoScan = { running: true, lastScanAt: new Date().toISOString(), scanCount: 0 };
+      gScan.__autoScan = { running: false, lastScanAt: null, scanCount: 0 };
     }
     gScan.__autoScan.running = true;
     gScan.__autoScan.lastScanAt = new Date().toISOString();
     gScan.__autoScan.scanCount++;
+    const scanStart = Date.now();
 
     // Evaluate Phantom Trades for the Arena Combat Engine
     await ArenaSimulator.getInstance().evaluatePhantomTrades();
@@ -179,10 +188,14 @@ export async function GET() {
     const { extractWinningBehaviors } = await import('@/lib/v2/forge/dnaExtractor');
     const forgeStats = extractWinningBehaviors();
 
+    // Mark scan as complete so heartbeat doesn't report RED
+    gScan.__autoScan.running = false;
+
     return NextResponse.json({
       status: 'ok',
       message: 'Cron tick processed',
       scanCount: gScan.__autoScan.scanCount,
+      durationMs: Date.now() - scanStart,
       mainDecisionsEvaluated,
       livePositionsUpdated,
       pricesFetched: Object.keys(priceCache).length,
@@ -190,6 +203,11 @@ export async function GET() {
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
+    // Always reset running flag, even on error
+    const gScanErr = globalThis as unknown as {
+      __autoScan?: { running: boolean };
+    };
+    if (gScanErr.__autoScan) gScanErr.__autoScan.running = false;
     log.error('Cron loop error', { error: (err as Error).message });
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });
   }

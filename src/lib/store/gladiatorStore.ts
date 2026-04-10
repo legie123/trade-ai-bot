@@ -8,6 +8,7 @@ import { getGladiatorsFromDb, saveGladiatorsToDb } from '@/lib/store/db';
 class GladiatorStore {
   private static instance: GladiatorStore;
   private gladiators: Gladiator[] = [];
+  private lastRecalibrateTime: number = 0;
 
   private constructor() {}
 
@@ -94,23 +95,46 @@ class GladiatorStore {
     this.ensureLoaded();
     const gladiator = this.gladiators.find(g => g.id === id);
     if (!gladiator) return;
-    
+
+    // Initialize tracking fields if missing (migration from old format)
+    const ext = gladiator as Gladiator & { _totalWinPnl?: number; _totalLossPnl?: number; _peakEquity?: number; _currentEquity?: number };
+    if (ext._totalWinPnl === undefined) ext._totalWinPnl = 0;
+    if (ext._totalLossPnl === undefined) ext._totalLossPnl = 0;
+    if (ext._peakEquity === undefined) ext._peakEquity = 100;
+    if (ext._currentEquity === undefined) ext._currentEquity = 100;
+
     gladiator.stats.totalTrades += 1;
+    const total = gladiator.stats.totalTrades;
+
     if (tick.isWin) {
-      const total = gladiator.stats.totalTrades;
       const prevWins = (gladiator.stats.winRate / 100) * (total - 1);
       gladiator.stats.winRate = ((prevWins + 1) / total) * 100;
-      gladiator.stats.profitFactor += 0.01;
+      ext._totalWinPnl += Math.abs(tick.pnlPercent);
     } else {
-      const total = gladiator.stats.totalTrades;
       const prevWins = (gladiator.stats.winRate / 100) * (total - 1);
       gladiator.stats.winRate = (prevWins / total) * 100;
-      gladiator.stats.maxDrawdown += Math.abs(tick.pnlPercent) * 0.1;
+      ext._totalLossPnl += Math.abs(tick.pnlPercent);
     }
+
+    // Real ProfitFactor = total win PnL / total loss PnL
+    gladiator.stats.profitFactor = ext._totalLossPnl > 0
+      ? parseFloat((ext._totalWinPnl / ext._totalLossPnl).toFixed(2))
+      : ext._totalWinPnl > 0 ? 99 : 1.0;
+
+    // Real MaxDrawdown = peak-to-trough on equity curve
+    ext._currentEquity *= (1 + tick.pnlPercent / 100);
+    if (ext._currentEquity > ext._peakEquity) ext._peakEquity = ext._currentEquity;
+    const dd = ext._peakEquity > 0 ? ((ext._peakEquity - ext._currentEquity) / ext._peakEquity) * 100 : 0;
+    gladiator.stats.maxDrawdown = parseFloat(Math.max(gladiator.stats.maxDrawdown, dd).toFixed(2));
     gladiator.lastUpdated = Date.now();
     
-    // Trigger auto-promote/demote after every stats update
-    this.recalibrateRanks();
+    // Trigger auto-promote/demote max once every 60s to prevent V8 Event Loop Thrashing
+    const now = Date.now();
+    if (now - this.lastRecalibrateTime > 60000) {
+       this.recalibrateRanks();
+       this.lastRecalibrateTime = now;
+    }
+    
     saveGladiatorsToDb(this.gladiators);
   }
 
@@ -133,12 +157,14 @@ class GladiatorStore {
     }
 
     for (const [, group] of arenaGroups) {
-      // Performance score: weighted combination of winRate + profitFactor + recency
+      // Performance score: normalized components (all 0-100 scale)
       const scored = group.map(g => {
-        const recencyBonus = (Date.now() - g.lastUpdated) < 3600_000 ? 5 : 0; // Active in last hour
-        const tradeBonus = Math.min(g.stats.totalTrades / 10, 10); // More experience = bonus (cap at 10)
-        const ddPenalty = g.stats.maxDrawdown > 15 ? -10 : 0; // Heavy drawdown = penalize
-        const score = g.stats.winRate + (g.stats.profitFactor * 5) + recencyBonus + tradeBonus + ddPenalty;
+        const wrScore = g.stats.winRate; // 0-100
+        const pfScore = Math.min(g.stats.profitFactor / 3.0, 1.0) * 100; // PF 3.0 = max 100
+        const recencyBonus = (Date.now() - g.lastUpdated) < 3600_000 ? 10 : 0;
+        const tradeBonus = Math.min(g.stats.totalTrades / 50, 1.0) * 15; // 50 trades = full 15pts
+        const ddPenalty = g.stats.maxDrawdown > 15 ? -20 : g.stats.maxDrawdown > 10 ? -10 : 0;
+        const score = (wrScore * 0.4) + (pfScore * 0.35) + recencyBonus + tradeBonus + ddPenalty;
         return { gladiator: g, score };
       });
 

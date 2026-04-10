@@ -3,29 +3,14 @@ import { DNAExtractor } from '../superai/dnaExtractor';
 import { createLogger } from '@/lib/core/logger';
 import { RoutedSignal } from '@/lib/router/signalRouter';
 import { addPhantomTrade, getPhantomTrades, removePhantomTrade, PhantomTrade } from '@/lib/store/db';
-import { getMexcPrice } from '@/lib/exchange/mexcClient';
+import { getOrFetchPrice } from '@/lib/cache/priceCache';
 
 const log = createLogger('ArenaSimulator');
 
-// In-memory price cache to avoid hammering MEXC per phantom trade
-const priceCache: Map<string, { price: number; expiresAt: number }> = new Map();
-const PRICE_CACHE_TTL = 60_000; // 60s — optimized to protect MEXC rate limits
-
+// Delegate to global price cache (MEXC → Binance → OKX → DexScreener → CoinGecko)
 async function getCachedPrice(symbol: string): Promise<number> {
-  const cached = priceCache.get(symbol);
-  if (cached && Date.now() < cached.expiresAt) return cached.price;
-
-  const mexcSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
-  try {
-    const price = await getMexcPrice(mexcSymbol);
-    if (price > 0) {
-      priceCache.set(symbol, { price, expiresAt: Date.now() + PRICE_CACHE_TTL });
-      return price;
-    }
-  } catch {
-    log.warn(`[Arena] Failed to fetch price for ${symbol}`);
-  }
-  return 0;
+  const normalizedSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
+  return getOrFetchPrice(normalizedSymbol);
 }
 
 export class ArenaSimulator {

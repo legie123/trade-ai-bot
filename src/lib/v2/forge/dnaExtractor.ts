@@ -23,7 +23,7 @@ export function extractWinningBehaviors(): ForgeStats {
   // Filter for only WIN outcomes from the Top 3 (live) gladiators 
   // In V2, we might not always have gladiator ID attached to decisions from V1, 
   // so we take ALL winning decisions to feed the Omega initially for the bootstrap phase.
-  const winningDecisions: DecisionSnapshot[] = allDecisions.filter(d => (d.outcome === 'WIN' && d.pnlPercent && d.pnlPercent > 0.5));
+  const winningDecisions: DecisionSnapshot[] = allDecisions.filter(d => d.outcome === 'WIN' || (d.pnlPercent && d.pnlPercent > 0.5));
 
   const totalWinsAssimilated = winningDecisions.length;
   const progressPercent = Math.min(100, Math.round((totalWinsAssimilated / OMEGA_WIN_THRESHOLD) * 100));
@@ -47,9 +47,9 @@ export function extractWinningBehaviors(): ForgeStats {
       }
     });
 
-    // Approximate a projected win rate based on the assimilated strategies
-    // Starts at a theoretical 50% and improves as it extracts more behaviors
-    totalWinRateAcc = 50 + Math.min(45, (totalWinsAssimilated * 0.45)); // Max 95%
+    // Real win rate from actual data (not a synthetic formula)
+    const totalDecisions = allDecisions.filter(d => d.outcome === 'WIN' || d.outcome === 'LOSS').length;
+    totalWinRateAcc = totalDecisions > 0 ? (totalWinsAssimilated / totalDecisions) * 100 : 0;
   } else {
     totalWinRateAcc = 0;
   }

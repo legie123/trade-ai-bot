@@ -112,7 +112,7 @@ export async function checkVWAP(
 
   // 4. Volume surge = recent 3-bar average vs 20-bar average
   // Relaxed from 1.2x to 0.8x (normal volume) to prevent bot death during low volatility sessions
-  const volumeSurge = volumeRatio >= 0.8;
+  const volumeSurge = volumeRatio >= 1.5; // Audit fix: 0.8 was BELOW average, 1.5x = real surge
 
   // 5. Final confirmation logic
   // For trend-following, require price on correct side of VWAP with normal volume

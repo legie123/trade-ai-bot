@@ -17,11 +17,15 @@ export async function POST(request: NextRequest) {
     const body: TradingViewWebhook = await request.json();
 
     // Secure webhook secret auth (OMNI-Audit Protocol)
+    const expectedSecret = process.env.TV_SECRET_TOKEN;
+    if (!expectedSecret) {
+      log.error('TV_SECRET_TOKEN not configured — webhook endpoint disabled for safety');
+      return NextResponse.json({ error: 'Webhook not configured. Set TV_SECRET_TOKEN env var.' }, { status: 503 });
+    }
     const authHeader = request.headers.get('authorization') || request.headers.get('x-tv-secret');
-    const expectedSecret = process.env.TV_SECRET_TOKEN || 'ANTIGRAVITY_HACK_ME_NOT';
     if (authHeader !== expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
       log.warn('Unauthorized TradingView Webhook access attempt thwarted');
-      return NextResponse.json({ error: 'Unauthorized. TV_SECRET_TOKEN invalid or missing.' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized. TV_SECRET_TOKEN invalid.' }, { status: 401 });
     }
 
     // Validate required fields

@@ -1,9 +1,13 @@
 // ============================================================
 // OKX Client — V5 REST API with HMAC SHA256 + Base64 signing
+// Hardened: retry + backoff, timeout, health tracking
 // Docs: https://www.okx.com/docs-v5/en/
 // ============================================================
 import crypto from 'crypto';
+import { recordProviderHealth } from '@/lib/core/heartbeat';
+import { createLogger } from '@/lib/core/logger';
 
+const log = createLogger('OkxClient');
 const OKX_BASE_URL = 'https://www.okx.com';
 
 function getOkxConfig() {
@@ -24,10 +28,10 @@ async function okxRequest(
   method: 'GET' | 'POST',
   path: string,
   params: Record<string, string | number> = {},
-  signed = true
+  signed = true,
+  retries = 2
 ): Promise<Record<string, unknown>> {
   const { apiKey, passphrase } = getOkxConfig();
-  const timestamp = new Date().toISOString();
 
   let url = `${OKX_BASE_URL}${path}`;
   let body = '';
@@ -44,24 +48,56 @@ async function okxRequest(
     ? `${path}?${Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&')}`
     : path;
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+  let lastError: Error | null = null;
+  const start = Date.now();
 
-  if (signed) {
-    headers['OK-ACCESS-KEY'] = apiKey;
-    headers['OK-ACCESS-SIGN'] = sign(timestamp, method, requestPath, body);
-    headers['OK-ACCESS-TIMESTAMP'] = timestamp;
-    headers['OK-ACCESS-PASSPHRASE'] = passphrase;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const timestamp = new Date().toISOString();
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (signed) {
+        headers['OK-ACCESS-KEY'] = apiKey;
+        headers['OK-ACCESS-SIGN'] = sign(timestamp, method, requestPath, body);
+        headers['OK-ACCESS-TIMESTAMP'] = timestamp;
+        headers['OK-ACCESS-PASSPHRASE'] = passphrase;
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch(url, { method, headers, body: body || undefined, signal: controller.signal });
+      clearTimeout(timer);
+
+      if (res.status === 429) {
+        const wait = 1000 * Math.pow(2, attempt);
+        log.warn(`[OKX] Rate limited, backing off ${wait}ms`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+
+      const data = await res.json();
+
+      if (data.code && data.code !== '0') {
+        throw new Error(`OKX Error ${data.code}: ${data.msg}`);
+      }
+
+      recordProviderHealth('okx', true, Date.now() - start);
+      return data;
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
+      }
+    }
   }
 
-  const res = await fetch(url, { method, headers, body: body || undefined });
-  const data = await res.json();
-
-  if (data.code && data.code !== '0') {
-    throw new Error(`OKX Error ${data.code}: ${data.msg}`);
-  }
-  return data;
+  recordProviderHealth('okx', false, Date.now() - start);
+  log.error(`[OKX] Request failed after ${retries + 1} attempts: ${path}`, { error: lastError?.message });
+  throw lastError ?? new Error('OKX request failed');
 }
 
 // ─── Public endpoints ────────────────────────────

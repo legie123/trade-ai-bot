@@ -1,5 +1,5 @@
 import { getLivePositions, updateLivePosition, LivePosition } from '@/lib/store/db';
-import { getMexcPrice, placeMexcMarketOrder, placeMexcLimitOrder } from '@/lib/exchange/mexcClient';
+import { getMexcPrice, placeMexcMarketOrder, placeMexcLimitOrder, cancelAllMexcOrders } from '@/lib/exchange/mexcClient';
 import { getExchangeInfoCached, getSymbolFilters, roundToStep } from '@/lib/v2/scouts/executionMexc';
 import { createLogger } from '@/lib/core/logger';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
@@ -124,6 +124,7 @@ export class PositionManager {
              const filters = getSymbolFilters(exchangeInfo, pos.symbol);
              const remainingQty = roundToStep(pos.quantity, filters.stepSize);
              if (remainingQty >= filters.minQty) {
+                await cancelAllMexcOrders(pos.symbol).catch(() => {});
                 await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty).catch(() => {});
              }
              updateLivePosition(pos.id, { status: 'CLOSED' });
@@ -155,6 +156,7 @@ export class PositionManager {
               return;
             }
 
+            await cancelAllMexcOrders(pos.symbol).catch(() => {});
             await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty);
             
             updateLivePosition(pos.id, {
@@ -213,6 +215,7 @@ export class PositionManager {
               return;
             }
 
+            await cancelAllMexcOrders(pos.symbol).catch(() => {});
             await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty);
 
             updateLivePosition(pos.id, {

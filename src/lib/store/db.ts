@@ -589,9 +589,10 @@ export function getEquityCurve(): EquityPoint[] {
 
     for (const dec of evaluated) {
       const pnlPct = dec.pnlPercent || 0;
-      cumulativePnl += pnlPct;
       const tradeImpact = currentBalance * (positionSize / 100) * (pnlPct / 100);
       currentBalance = Math.max(currentBalance + tradeImpact, 0);
+      // Real cumulative PnL derived from balance (compounded, not linear sum)
+      cumulativePnl = ((currentBalance - startBalance) / startBalance) * 100;
 
       bootstrapped.push({
         timestamp: dec.timestamp,
@@ -628,9 +629,11 @@ export function appendToEquityCurve(dec: DecisionSnapshot, pnlPct: number): void
     currentBalance = last.balance;
   }
 
-  currentPnl += pnlPct;
   const tradeImpact = currentBalance * (positionSize / 100) * (pnlPct / 100);
   currentBalance = Math.max(currentBalance + tradeImpact, 0);
+  // Real cumulative PnL from balance (compounded)
+  const startBal = cache.config.paperBalance || 1000;
+  currentPnl = ((currentBalance - startBal) / startBal) * 100;
 
   // Auto-compound into the master config so baseline goes up
   saveBotConfig({ paperBalance: currentBalance });

@@ -137,8 +137,8 @@ export async function executeMexcTrade(
            const slPercent = 0.05; // 5% Hard stop loss
            let stopPrice = price * (1 - slPercent);
            stopPrice = roundToStep(stopPrice, filters.tickSize);
-           // Place STOP_LOSS_LIMIT. Because MEXC matching engine takes milliseconds, we don't await strictly.
-           placeMexcStopLossOrder(mexcSymbol, 'SELL', quantity, stopPrice, stopPrice).then(() => {
+           // Place Native Market STOP_LOSS to prevent slippage gaps.
+           placeMexcStopLossOrder(mexcSymbol, 'SELL', quantity, stopPrice).then(() => {
               log.info(`[NATIVE SL] Registered Hardware Stop Loss on MEXC for ${mexcSymbol} at $${stopPrice}`);
            }).catch((err: unknown) => {
               log.warn(`[NATIVE SL WARNING] Could not immediately place Native SL for ${mexcSymbol}. (May not have filled yet). Error: ${(err as Error).message}`);

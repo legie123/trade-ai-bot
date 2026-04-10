@@ -1,11 +1,29 @@
 // ============================================================
 // MEXC Client — V3 Spot API with HMAC SHA256 signing
+// Hardened: retry + backoff, timeout, rate limiter, health tracking
 // API docs: https://mexcdevelop.github.io/apidocs/spot_v3_en/
 // ============================================================
 import crypto from 'crypto';
 import { addInvalidSymbol, isSymbolValid } from '@/lib/store/db';
+import { recordProviderHealth } from '@/lib/core/heartbeat';
+import { createLogger } from '@/lib/core/logger';
 
+const log = createLogger('MexcClient');
 const MEXC_BASE_URL = 'https://api.mexc.com';
+
+// ─── Rate Limiter (MEXC allows ~20 req/s for public, 10/s signed) ──
+const rateLimiter = {
+  lastCall: 0,
+  minIntervalMs: 60, // 60ms minimum between calls (~16 req/s)
+  async wait() {
+    const now = Date.now();
+    const elapsed = now - this.lastCall;
+    if (elapsed < this.minIntervalMs) {
+      await new Promise(r => setTimeout(r, this.minIntervalMs - elapsed));
+    }
+    this.lastCall = Date.now();
+  }
+};
 
 function getMexcConfig() {
   return {
@@ -23,7 +41,8 @@ async function mexcRequest(
   method: 'GET' | 'POST' | 'DELETE',
   endpoint: string,
   params: Record<string, string | number> = {},
-  signed = true
+  signed = true,
+  retries = 2
 ): Promise<Record<string, unknown>> {
   const { apiKey } = getMexcConfig();
 
@@ -49,13 +68,46 @@ async function mexcRequest(
     headers['X-MEXC-APIKEY'] = apiKey;
   }
 
-  const res = await fetch(url, { method, headers });
-  const data = await res.json();
+  let lastError: Error | null = null;
+  const start = Date.now();
 
-  if (data.code && data.code !== 200 && data.code !== 0) {
-    throw new Error(`MEXC Error ${data.code}: ${data.msg}`);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      await rateLimiter.wait();
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch(url, { method, headers, signal: controller.signal });
+      clearTimeout(timer);
+
+      // Rate-limited — back off exponentially
+      if (res.status === 429) {
+        const wait = 1000 * Math.pow(2, attempt);
+        log.warn(`[MEXC] Rate limited, backing off ${wait}ms (attempt ${attempt + 1})`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+
+      const data = await res.json();
+
+      if (data.code && data.code !== 200 && data.code !== 0) {
+        throw new Error(`MEXC Error ${data.code}: ${data.msg}`);
+      }
+
+      recordProviderHealth('mexc', true, Date.now() - start);
+      return data;
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
+      }
+    }
   }
-  return data;
+
+  recordProviderHealth('mexc', false, Date.now() - start);
+  log.error(`[MEXC] Request failed after ${retries + 1} attempts: ${endpoint}`, { error: lastError?.message });
+  throw lastError ?? new Error('MEXC request failed');
 }
 
 // ─── Public endpoints ────────────────────────────
@@ -145,16 +197,14 @@ export async function placeMexcStopLossOrder(
   symbol: string,
   side: 'BUY' | 'SELL',
   quantity: number,
-  stopPrice: number,
-  limitPrice: number
+  stopPrice: number
 ): Promise<Record<string, unknown>> {
   return mexcRequest('POST', '/api/v3/order', {
     symbol,
     side,
-    type: 'STOP_LOSS_LIMIT',
+    type: 'STOP_LOSS',
     quantity: quantity.toString(),
     stopPrice: stopPrice.toString(),
-    price: limitPrice.toString(),
   });
 }
 

@@ -9,7 +9,7 @@ export class SentinelGuard {
   private static instance: SentinelGuard;
   private mddThreshold = 0.10; // 10% Maximum Drawdown Kill-Switch (hardened from 15%)
   private dailyLossLimit = 5;   // Max 5 losses per day
-  private minWinRate = 0.00;    // DISABLED FOR HARD TEST (was 0.35)
+  private minWinRate = 0.35;    // Re-enabled: 35% min WR (audit fix #4)
   private maxLossStreak = 5;    // 5 consecutive losses = halt
 
   private constructor() {}
