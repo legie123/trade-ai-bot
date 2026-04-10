@@ -121,28 +121,37 @@ export async function executeMexcTrade(
     if (dryRun) {
       log.info(`[DRY RUN] Would execute ${side} ${mexcSymbol}: ${quantity} @ $${price} ($${tradeAmount.toFixed(2)}) | Balance: $${usdtBalance.toFixed(2)}`);
     } else {
-      // ANTI-SLIPPAGE BOMB: Replace vulnerable Market Order with a Tolerant Limit Order
-      // Max Slippage allowed is 0.4% from the AI analysed price.
-      const MAX_SLIPPAGE = 0.004;
+      // ANTI-SLIPPAGE: Tolerant Limit Order (0.15% max slippage — audit fix from 0.4%)
+      const MAX_SLIPPAGE = 0.0015;
       let limitPrice = side === 'BUY' ? price * (1 + MAX_SLIPPAGE) : price * (1 - MAX_SLIPPAGE);
       limitPrice = roundToStep(limitPrice, filters.tickSize);
 
       try {
         await placeMexcLimitOrder(mexcSymbol, side, quantity, limitPrice);
         log.info(`[SLIPPAGE PROTECT] Sent LIMIT ${side} for ${mexcSymbol} @ max price $${limitPrice} (AI price: $${price})`);
-        
-        // --- OMEGA NATIVE STOP LOSS ---
-        // Fire native MEXC trigger order so we don't depend on cron for crash protection.
+
+        // --- NATIVE STOP LOSS (AWAITED + RETRY) ---
+        // Must verify SL exists before continuing — no fire-and-forget
         if (side === 'BUY') {
            const slPercent = 0.05; // 5% Hard stop loss
            let stopPrice = price * (1 - slPercent);
            stopPrice = roundToStep(stopPrice, filters.tickSize);
-           // Place Native Market STOP_LOSS to prevent slippage gaps.
-           placeMexcStopLossOrder(mexcSymbol, 'SELL', quantity, stopPrice).then(() => {
-              log.info(`[NATIVE SL] Registered Hardware Stop Loss on MEXC for ${mexcSymbol} at $${stopPrice}`);
-           }).catch((err: unknown) => {
-              log.warn(`[NATIVE SL WARNING] Could not immediately place Native SL for ${mexcSymbol}. (May not have filled yet). Error: ${(err as Error).message}`);
-           });
+
+           let slPlaced = false;
+           for (let attempt = 0; attempt < 3 && !slPlaced; attempt++) {
+             try {
+               await placeMexcStopLossOrder(mexcSymbol, 'SELL', quantity, stopPrice);
+               log.info(`[NATIVE SL] Hardware Stop Loss placed on MEXC for ${mexcSymbol} at $${stopPrice}`);
+               slPlaced = true;
+             } catch (slErr: unknown) {
+               log.warn(`[NATIVE SL] Attempt ${attempt + 1}/3 failed for ${mexcSymbol}: ${(slErr as Error).message}`);
+               if (attempt < 2) await new Promise(r => setTimeout(r, 500));
+             }
+           }
+           if (!slPlaced) {
+             log.error(`[NATIVE SL CRITICAL] Could NOT place SL for ${mexcSymbol} after 3 attempts — position has NO hardware protection`);
+             sendMessage(`⚠️ *SL FAILED* for ${mexcSymbol}\nPosition has NO hardware stop loss!\nManual intervention required.`).catch(() => {});
+           }
         }
       } catch (err) {
         throw new Error(`[LIMIT FAILED] ${(err as Error).message}. Vetoing fallback to prevent explicit double-spend.`);

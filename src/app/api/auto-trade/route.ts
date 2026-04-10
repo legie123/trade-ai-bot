@@ -1,7 +1,8 @@
 // GET /api/auto-trade — return engine running status (Informational - Phoenix V2)
-// POST /api/auto-trade — test connections
+// POST /api/auto-trade — test connections (auth required)
 import { NextResponse } from 'next/server';
 import { testConnection, getBalances, getPrice } from '@/lib/exchange/binanceClient';
+import { isAuthenticated } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!isAuthenticated(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const body = await request.json();
 

@@ -688,26 +688,37 @@ export async function acquireTradeLock(symbol: string): Promise<boolean> {
 
   try {
     const expiresAt = new Date(now + LOCK_TTL_MS).toISOString();
-    
-    // First: cleanup expired locks from other instances
-    await supabase.from('trade_locks').delete().lt('expires_at', new Date().toISOString());
-    
-    // Then: attempt to acquire lock via INSERT (conflict = another instance has it)
-    const { error } = await supabase.from('trade_locks').insert({
-      symbol,
-      instance_id: instanceId,
-      expires_at: expiresAt,
+
+    // ATOMIC: UPSERT — only acquire if no active lock exists for this symbol
+    // ON CONFLICT: if lock exists AND not expired, reject. If expired, overwrite.
+    const { data, error } = await supabase.rpc('acquire_trade_lock', {
+      p_symbol: symbol,
+      p_instance_id: instanceId,
+      p_expires_at: expiresAt,
     });
 
-    if (error) {
-      // Conflict = another instance already locked this symbol
-      if (error.code === '23505') { // unique_violation
-        log.warn(`[TradeLock] DISTRIBUTED lock conflict for ${symbol} — another instance is handling it.`);
-        localLocks.delete(symbol); // Release local lock since we can't get distributed
-        return false;
+    // If RPC doesn't exist, fallback to INSERT with conflict detection
+    if (error && error.message?.includes('function')) {
+      // Cleanup expired + insert (non-atomic fallback)
+      await supabase.from('trade_locks').delete().lt('expires_at', new Date().toISOString());
+      const { error: insertErr } = await supabase.from('trade_locks').insert({
+        symbol, instance_id: instanceId, expires_at: expiresAt,
+      });
+      if (insertErr) {
+        if (insertErr.code === '23505') {
+          log.warn(`[TradeLock] DISTRIBUTED lock conflict for ${symbol} — another instance is handling it.`);
+          localLocks.delete(symbol);
+          return false;
+        }
+        log.warn(`[TradeLock] Supabase error (${insertErr.message}), proceeding with local lock only.`);
       }
-      // Other Supabase error — treat as lock acquired (graceful degradation)
+    } else if (error) {
       log.warn(`[TradeLock] Supabase error (${error.message}), proceeding with local lock only.`);
+    } else if (data === false) {
+      // RPC returned false = lock held by another instance
+      log.warn(`[TradeLock] DISTRIBUTED lock conflict for ${symbol} — another instance is handling it.`);
+      localLocks.delete(symbol);
+      return false;
     }
 
     return true;

@@ -70,6 +70,18 @@ export function engageKillSwitch(reason: string, auto = false): void {
   saveToDisk();
 
   log.fatal(`KILL SWITCH ENGAGED: ${reason}`, { auto, reason });
+
+  // CRITICAL: Actually close all positions on MEXC (not advisory-only)
+  import('@/lib/exchange/mexcClient').then(({ sellAllAssetsToUsdt }) => {
+    sellAllAssetsToUsdt().catch(err => {
+      log.error('KILL SWITCH: Failed to liquidate positions', { error: (err as Error).message });
+    });
+  }).catch(() => {});
+
+  // Send Telegram alert
+  import('@/lib/alerts/telegram').then(({ sendMessage }) => {
+    sendMessage(`🚨 *KILL SWITCH ENGAGED*\nReason: ${reason}\nAuto: ${auto}\nAll positions being liquidated.`).catch(() => {});
+  }).catch(() => {});
 }
 
 // ─── Disengage kill switch ──────────────────────────
