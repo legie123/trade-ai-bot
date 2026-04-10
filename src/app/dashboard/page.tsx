@@ -75,8 +75,10 @@ export default function DashboardPage() {
   const watchdogState = data?.watchdog || { status: 'UNKNOWN', crashCount: 0, alive: false };
   const logsData = data?.logs || { recent: [], errorCount1h: 0 };
 
-  const isRed = system.status === 'RED' || killSwitchState.engaged;
-  const sysClass = isRed ? styles.statusRed : system.status === 'YELLOW' ? styles.statusYellow : styles.statusGreen;
+  const sysStateStr = system.status || '';
+  const isRed = sysStateStr.includes('CRITICAL') || sysStateStr.includes('DEGRADED') || sysStateStr.includes('HALTED') || killSwitchState.engaged;
+  const isYellow = sysStateStr.includes('WARNING') || sysStateStr.includes('OBSERVATION') || sysStateStr.includes('LOADING');
+  const sysClass = isRed ? styles.statusRed : isYellow ? styles.statusYellow : styles.statusGreen;
 
   // Deriving some "Agentic" stats from real data
   const baseConfidence = Math.min(100, Math.max(10, 50 + ((trading.dailyPnlPercent || 0) * 10) - ((trading.pendingDecisions || 0) * 2)));
@@ -255,7 +257,7 @@ export default function DashboardPage() {
                       <strong>[LATEST ACTION]</strong> Most recent outcome was a <strong style={{color: bot.equityCurve[bot.equityCurve.length - 1].outcome === 'WIN' ? '#10b981' : bot.equityCurve[bot.equityCurve.length - 1].outcome === 'LOSS' ? '#ef4444' : '#f59e0b'}}>{bot.equityCurve[bot.equityCurve.length - 1].outcome}</strong> execution {bot.equityCurve[bot.equityCurve.length - 1].symbol ? `on ${bot.equityCurve[bot.equityCurve.length - 1].symbol}` : ''}.
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px', borderLeft: '2px solid var(--accent-purple)' }}>
-                      <strong>[TRAJECTORY SHIFT]</strong> Equity {bot.equityCurve[bot.equityCurve.length - 1].balance >= bot.config.paperBalance ? 'is expanding' : 'is compressing'}. Current live reserve stands at <strong style={{color: '#fff'}}>${bot.equityCurve[bot.equityCurve.length - 1].balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>.
+                      <strong>[TRAJECTORY SHIFT]</strong> Equity {bot.config && bot.equityCurve[bot.equityCurve.length - 1].balance >= bot.config.paperBalance ? 'is expanding' : 'is compressing'}. Current live reserve stands at <strong style={{color: '#fff'}}>${bot.equityCurve[bot.equityCurve.length - 1].balance.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>.
                     </div>
                     <div style={{ fontStyle: 'italic', color: '#6b7280', marginTop: '4px' }}>
                       &gt;_ Next recalculation depends on live order flow accumulation and multi-agent consensus validation across {arenaData?.activeFighters || 3} active sub-modules. Let the Syndicate orchestrate...
