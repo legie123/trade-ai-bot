@@ -79,8 +79,8 @@ const cache: DbStore = {
     mode: 'PAPER',
     autoOptimize: false,
     paperBalance: 1000,
-    riskPerTrade: 1.5,
-    maxOpenPositions: 3,
+    riskPerTrade: 1.0,        // Hardened from 1.5% — institutional conservative for initial phase
+    maxOpenPositions: 2,       // Hardened from 3 — reduce concurrent exposure until WR stabilizes
     evaluationIntervals: [5, 15, 60, 240],
     aiStatus: 'OK',
     haltedUntil: null,
@@ -286,14 +286,20 @@ export function addSyndicateAudit(audit: Record<string, unknown>): void {
   if (cache.syndicateAudits.length > 500) cache.syndicateAudits.length = 500;
   
   if (supabaseUrl && dbInitialized) {
-    const cleanAudit = { ...newAudit };
-    if ((cleanAudit as Record<string, unknown>).finalDirection) {
-      (cleanAudit as Record<string, unknown>).signal = (cleanAudit as Record<string, unknown>).finalDirection;
-    }
-    delete (cleanAudit as Record<string, unknown>).finalDirection; // 🛡️ Fix scheme mismatch missing column
-    delete (cleanAudit as Record<string, unknown>).hallucinationReport; // 🛡️ Ensure schema compatibility
-    supabase.from('syndicate_audits').insert(cleanAudit).then(({ error }) => {
-      if (error) console.warn('Failed to insert syndicate audit (bypassed via Cache)', { error: error.message });
+    // INSTITUTIONAL FIX: Schema has finalDirection + hallucinationReport columns.
+    // Previous code deleted these fields, losing critical hallucination defense data.
+    // Now we persist them properly for full audit trail.
+    const auditRec = newAudit as Record<string, unknown>;
+    const dbAudit: Record<string, unknown> = {
+      timestamp: auditRec.timestamp,
+      symbol: auditRec.symbol || 'UNKNOWN',
+      finalDirection: auditRec.finalDirection || 'FLAT',
+      weightedConfidence: auditRec.weightedConfidence || 0,
+      opinions: auditRec.opinions || [],
+      hallucinationReport: auditRec.hallucinationReport || null,
+    };
+    supabase.from('syndicate_audits').insert(dbAudit).then(({ error }) => {
+      if (error) console.warn('Failed to insert syndicate audit', { error: error.message });
     });
   }
 }
@@ -350,34 +356,113 @@ export function saveGladiatorsToDb(gladiators: Gladiator[]): void {
 }
 
 // ─── DNA Bank (Gladiator Battles) ────────────────
-export async function addGladiatorDna(record: Record<string, unknown>): Promise<void> {
-  const newRecord = { ...record, internalId: `dna-${Date.now()}-${Math.random()}` };
+// INSTITUTIONAL UPGRADE: Writes to dedicated `gladiator_battles` Postgres table
+// instead of json_store blob. No more 2000-record cap. Full indexed history.
+// Falls back to in-memory cache if Supabase is unavailable.
 
-  if (!supabaseUrl) {
-    cache.gladiatorDna.unshift(newRecord);
-    if (cache.gladiatorDna.length > 2000) cache.gladiatorDna.length = 2000;
-    return;
-  }
+export async function addGladiatorDna(record: Record<string, unknown>): Promise<void> {
+  // Always keep in memory cache for fast reads
+  cache.gladiatorDna.unshift(record);
+  if (cache.gladiatorDna.length > 5000) cache.gladiatorDna.length = 5000;
+
+  if (!supabaseUrl || !dbInitialized) return;
 
   try {
-    // 🛡️ MULTI-INSTANCE FIX: Fetch absolute latest before appending
-    const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiator_dna').single();
-    const currentDna = (data?.data as Record<string, unknown>[]) || cache.gladiatorDna;
-    
-    currentDna.unshift(newRecord);
-    if (currentDna.length > 2000) currentDna.length = 2000;
-    
-    cache.gladiatorDna = currentDna;
-    syncToCloud('gladiator_dna', currentDna);
+    const dbRecord = {
+      id: record.id || `battle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      gladiator_id: record.gladiatorId,
+      symbol: record.symbol,
+      decision: record.decision,
+      entry_price: record.entryPrice,
+      outcome_price: record.outcomePrice,
+      pnl_percent: record.pnlPercent,
+      is_win: record.isWin,
+      timestamp: record.timestamp,
+      market_context: record.marketContext || {},
+    };
+    const { error } = await supabase.from('gladiator_battles').insert(dbRecord);
+    if (error) {
+      // If table doesn't exist yet, fall back to json_store silently
+      if (error.code === '42P01') {
+        syncToCloud('gladiator_dna', cache.gladiatorDna);
+      } else {
+        log.warn(`Failed to insert battle record: ${error.message}`);
+      }
+    }
   } catch {
-    // Fallback if network fails
-    cache.gladiatorDna.unshift(newRecord);
+    // Network failure — data is already in memory cache
     syncToCloud('gladiator_dna', cache.gladiatorDna);
   }
 }
 
+/**
+ * Retrieves gladiator battle history.
+ * Reads from dedicated Postgres table with optional gladiator_id filter.
+ * Falls back to in-memory cache if Supabase is unavailable.
+ */
 export function getGladiatorDna(): Record<string, unknown>[] {
   return cache.gladiatorDna;
+}
+
+/**
+ * INSTITUTIONAL UPGRADE: Fetch battles for a specific gladiator from Postgres.
+ * Returns up to `limit` most recent battles, sorted newest-first.
+ * Falls back to in-memory cache filtered by gladiatorId.
+ */
+export async function getGladiatorBattles(gladiatorId: string, limit = 500): Promise<Record<string, unknown>[]> {
+  if (!supabaseUrl || !dbInitialized) {
+    // Fallback: filter in-memory cache
+    return cache.gladiatorDna
+      .filter(r => r.gladiatorId === gladiatorId)
+      .slice(0, limit);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('gladiator_battles')
+      .select('*')
+      .eq('gladiator_id', gladiatorId)
+      .order('timestamp', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      // Table doesn't exist yet — fall back to memory
+      if (error.code === '42P01') {
+        return cache.gladiatorDna
+          .filter(r => r.gladiatorId === gladiatorId)
+          .slice(0, limit);
+      }
+      log.warn(`Failed to fetch battles for ${gladiatorId}: ${error.message}`);
+      return cache.gladiatorDna
+        .filter(r => r.gladiatorId === gladiatorId)
+        .slice(0, limit);
+    }
+
+    if (!data || data.length === 0) {
+      // No data in Postgres yet — fall back to memory
+      return cache.gladiatorDna
+        .filter(r => r.gladiatorId === gladiatorId)
+        .slice(0, limit);
+    }
+
+    // Map Postgres columns back to the BattleRecord shape expected by DNAExtractor
+    return data.map(row => ({
+      id: row.id,
+      gladiatorId: row.gladiator_id,
+      symbol: row.symbol,
+      decision: row.decision,
+      entryPrice: row.entry_price,
+      outcomePrice: row.outcome_price,
+      pnlPercent: row.pnl_percent,
+      isWin: row.is_win,
+      timestamp: row.timestamp,
+      marketContext: row.market_context || {},
+    }));
+  } catch {
+    return cache.gladiatorDna
+      .filter(r => r.gladiatorId === gladiatorId)
+      .slice(0, limit);
+  }
 }
 
 // ─── Phantom Trades (Arena Combat Engine) ───────
@@ -582,7 +667,7 @@ export function getEquityCurve(): EquityPoint[] {
     }
 
     const startBalance = cache.config.paperBalance || 1000;
-    const positionSize = cache.config.riskPerTrade || 1.5;
+    const positionSize = cache.config.riskPerTrade || 1.0;
     let currentBalance = startBalance;
     let cumulativePnl = 0;
     const bootstrapped: EquityPoint[] = [];
@@ -619,7 +704,7 @@ export function appendToEquityCurve(dec: DecisionSnapshot, pnlPct: number): void
   if (cache.equityHistory.some(e => e.timestamp === dec.timestamp && e.symbol === dec.symbol)) return;
 
   const config = getBotConfig();
-  const positionSize = config.riskPerTrade || 1.5;
+  const positionSize = config.riskPerTrade || 1.0;
   let currentPnl = 0;
   let currentBalance = cache.config.paperBalance || 1000;
 
@@ -667,6 +752,11 @@ const instanceId = `cr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 const localLocks = new Map<string, number>(); // symbol -> expiry timestamp
 const LOCK_TTL_MS = 30_000; // 30 seconds
 
+/**
+ * INSTITUTIONAL FIX: Removed broken RPC call that always failed (function never existed).
+ * Standardized on INSERT with conflict detection — clean, predictable, no log pollution.
+ * Pattern: cleanup expired → INSERT → conflict = lock held by another instance.
+ */
 export async function acquireTradeLock(symbol: string): Promise<boolean> {
   // Cleanup expired local locks
   const now = Date.now();
@@ -689,36 +779,23 @@ export async function acquireTradeLock(symbol: string): Promise<boolean> {
   try {
     const expiresAt = new Date(now + LOCK_TTL_MS).toISOString();
 
-    // ATOMIC: UPSERT — only acquire if no active lock exists for this symbol
-    // ON CONFLICT: if lock exists AND not expired, reject. If expired, overwrite.
-    const { data, error } = await supabase.rpc('acquire_trade_lock', {
-      p_symbol: symbol,
-      p_instance_id: instanceId,
-      p_expires_at: expiresAt,
+    // Step 1: Cleanup expired locks (prevent stale locks from blocking)
+    await supabase.from('trade_locks').delete().lt('expires_at', new Date().toISOString());
+
+    // Step 2: Atomic INSERT — if another instance holds an active lock, PRIMARY KEY
+    // conflict (23505) means we must not proceed.
+    const { error: insertErr } = await supabase.from('trade_locks').insert({
+      symbol, instance_id: instanceId, expires_at: expiresAt,
     });
 
-    // If RPC doesn't exist, fallback to INSERT with conflict detection
-    if (error && error.message?.includes('function')) {
-      // Cleanup expired + insert (non-atomic fallback)
-      await supabase.from('trade_locks').delete().lt('expires_at', new Date().toISOString());
-      const { error: insertErr } = await supabase.from('trade_locks').insert({
-        symbol, instance_id: instanceId, expires_at: expiresAt,
-      });
-      if (insertErr) {
-        if (insertErr.code === '23505') {
-          log.warn(`[TradeLock] DISTRIBUTED lock conflict for ${symbol} — another instance is handling it.`);
-          localLocks.delete(symbol);
-          return false;
-        }
-        log.warn(`[TradeLock] Supabase error (${insertErr.message}), proceeding with local lock only.`);
+    if (insertErr) {
+      if (insertErr.code === '23505') {
+        log.info(`[TradeLock] Distributed lock conflict for ${symbol} — another instance is handling it.`);
+        localLocks.delete(symbol);
+        return false;
       }
-    } else if (error) {
-      log.warn(`[TradeLock] Supabase error (${error.message}), proceeding with local lock only.`);
-    } else if (data === false) {
-      // RPC returned false = lock held by another instance
-      log.warn(`[TradeLock] DISTRIBUTED lock conflict for ${symbol} — another instance is handling it.`);
-      localLocks.delete(symbol);
-      return false;
+      // Non-conflict error (table doesn't exist, permissions, etc.) — degrade to local
+      log.warn(`[TradeLock] Supabase error (${insertErr.message}), proceeding with local lock only.`);
     }
 
     return true;

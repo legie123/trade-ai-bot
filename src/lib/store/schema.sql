@@ -61,7 +61,35 @@ CREATE TABLE IF NOT EXISTS public.gladiator_stats (
     confidence_modifier NUMERIC(5, 4) DEFAULT 1.0
 );
 
--- 5. Set correct RLS (Row Level Security) if the API is exposed
+-- 5. Gladiator Battle History (dedicated RL memory — replaces json_store blob)
+-- This is the core reinforcement learning table. Every phantom and live trade result
+-- is recorded here with full context. No more 2000-record cap.
+CREATE TABLE IF NOT EXISTS public.gladiator_battles (
+    id TEXT PRIMARY KEY,
+    gladiator_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    decision TEXT NOT NULL,                   -- 'LONG' | 'SHORT' | 'FLAT'
+    entry_price NUMERIC(20, 8) NOT NULL,
+    outcome_price NUMERIC(20, 8) NOT NULL,
+    pnl_percent NUMERIC(10, 4) NOT NULL,
+    is_win BOOLEAN NOT NULL,
+    timestamp BIGINT NOT NULL,
+    market_context JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_battles_gladiator ON public.gladiator_battles(gladiator_id);
+CREATE INDEX IF NOT EXISTS idx_battles_symbol ON public.gladiator_battles(symbol);
+CREATE INDEX IF NOT EXISTS idx_battles_timestamp ON public.gladiator_battles(timestamp DESC);
+
+-- 6. Distributed Trade Locks (prevents duplicate execution across Cloud Run instances)
+CREATE TABLE IF NOT EXISTS public.trade_locks (
+    symbol TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
+-- 6. Set correct RLS (Row Level Security) if the API is exposed
 -- If the API uses ANON_KEY and we want it completely permissive for the bot (since it's only server-side accessed in Cloud Run)
 ALTER TABLE public.equity_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.syndicate_audits ENABLE ROW LEVEL SECURITY;
@@ -72,3 +100,9 @@ CREATE POLICY "Enable read/write for all users" ON public.equity_history FOR ALL
 CREATE POLICY "Enable read/write for all users" ON public.syndicate_audits FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Enable read/write for all users" ON public.live_positions FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Enable read/write for all users" ON public.gladiator_stats FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.gladiator_battles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable read/write for all users" ON public.gladiator_battles FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.trade_locks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable read/write for all users" ON public.trade_locks FOR ALL USING (true) WITH CHECK (true);

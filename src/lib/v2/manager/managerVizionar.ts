@@ -50,8 +50,8 @@ export class ManagerVizionar {
       return;
     }
 
-    // 1. Extract Gladiator Intelligence (RL Context)
-    const intelligence = this.dnaExtractor.extractIntelligence(gladiator.id);
+    // 1. Extract Gladiator Intelligence (RL Context) — async for Postgres-backed reads
+    const intelligence = await this.dnaExtractor.extractIntelligenceAsync(gladiator.id);
 
     // 2. Get Live Market Context (Alpha Scouts — CoinGecko + CryptoCompare)
     const context = await this.scouts.analyzeToken(payload.symbol);

@@ -1,5 +1,6 @@
 import { getLivePositions, updateLivePosition, LivePosition } from '@/lib/store/db';
-import { getMexcPrice, placeMexcMarketOrder, placeMexcLimitOrder, cancelAllMexcOrders } from '@/lib/exchange/mexcClient';
+import { placeMexcMarketOrder, placeMexcLimitOrder, cancelAllMexcOrders } from '@/lib/exchange/mexcClient';
+import { getOrFetchPrice } from '@/lib/cache/priceCache';
 import { getExchangeInfoCached, getSymbolFilters, roundToStep } from '@/lib/v2/scouts/executionMexc';
 import { createLogger } from '@/lib/core/logger';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
@@ -43,7 +44,9 @@ export class PositionManager {
   }
 
   private async evaluateSinglePosition(pos: LivePosition) {
-    const currentPrice = await getMexcPrice(pos.symbol);
+    // INSTITUTIONAL FIX: Use global PriceCache (MEXC → Binance → OKX → DexScreener → CoinGecko)
+    // instead of hitting MEXC directly per position. Prevents IP bans at scale.
+    const currentPrice = await getOrFetchPrice(pos.symbol);
     if (!currentPrice || currentPrice <= 0) return;
 
     const isLong = pos.side === 'LONG';

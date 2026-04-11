@@ -2,6 +2,7 @@ import { TheButcher } from '@/lib/v2/gladiators/butcher';
 import { TheForge } from '@/lib/v2/promoters/forge';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+import { saveGladiatorsToDb } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
 
@@ -36,14 +37,20 @@ export async function runDailyRotation() {
     }
 
     // 4. Update the Leaderboard Live status
-    // Ensure the top 3 (by Expectancy/Profit Factor) are set to isLive = true
+    // INSTITUTIONAL RULE: isLive requires 20+ trades, WR >= 45%, PF >= 1.1 (hardened thresholds)
     const gladiators = gladiatorStore.getLeaderboard();
     gladiators.forEach((g, idx) => {
       g.rank = idx + 1;
-      g.isLive = g.rank <= 3 && g.stats.totalTrades >= 20 && g.stats.winRate >= 40; 
+      const meetsThreshold = g.stats.totalTrades >= 20
+        && g.stats.winRate >= 45
+        && g.stats.profitFactor >= 1.1;
+      g.isLive = g.rank <= 3 && meetsThreshold;
     });
 
-    log.info('🛡️ [Darwinian Cycle] Rotation Complete. Arena is optimized.');
+    // CRITICAL FIX: Persist leaderboard changes to Supabase
+    // Without this, rank/isLive changes are lost on cold start.
+    saveGladiatorsToDb(gladiatorStore.getGladiators());
+    log.info('🛡️ [Darwinian Cycle] Rotation Complete. Leaderboard persisted to DB.');
 
     // 5. Broadcast to Moltbook
     const message = `🏛️ [TRADE AI ARENA] Rulaj Zilnic Efectuat 🏛️\n\n` + 

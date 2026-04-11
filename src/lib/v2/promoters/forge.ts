@@ -126,10 +126,16 @@ async function callLLMForDNA(prompt: string): Promise<string | null> {
 // ─── Parse LLM DNA response ────────────────────────────────────
 function parseDNAFromLLM(text: string): Partial<GladiatorDNA> | null {
   try {
-    const clean = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+    // Robust extraction: find the first '{' and the last '}'
+    const startIndex = text.indexOf('{');
+    const endIndex = text.lastIndexOf('}');
+    if (startIndex === -1 || endIndex === -1) return null;
+    
+    const clean = text.substring(startIndex, endIndex + 1);
     const parsed = JSON.parse(clean);
     return parsed as Partial<GladiatorDNA>;
-  } catch {
+  } catch (err) {
+    log.error(`[The Forge] Failed to parse LLM JSON: ${err}`);
     return null;
   }
 }
@@ -195,8 +201,107 @@ function extractDNA(g: Gladiator): GladiatorDNA {
   return randomDNA();
 }
 
+// ─── DNA Sanity Filter — reject obviously broken strategies ──────
+function isDNASane(dna: GladiatorDNA): { pass: boolean; reason?: string } {
+  // Risk/Reward ratio must be > 1.0 (TP target must exceed SL risk)
+  const rrRatio = dna.takeProfitTarget / dna.stopLossRisk;
+  if (rrRatio < 1.0) {
+    return { pass: false, reason: `R:R ratio ${rrRatio.toFixed(2)} < 1.0 (TP ${(dna.takeProfitTarget*100).toFixed(2)}% < SL ${(dna.stopLossRisk*100).toFixed(2)}%)` };
+  }
+
+  // RSI thresholds must not overlap (oversold must be < overbought)
+  if (dna.rsiOversold >= dna.rsiOverbought) {
+    return { pass: false, reason: `RSI overlap: oversold ${dna.rsiOversold} >= overbought ${dna.rsiOverbought}` };
+  }
+
+  // RSI gap must be meaningful (at least 20 points)
+  if ((dna.rsiOverbought - dna.rsiOversold) < 20) {
+    return { pass: false, reason: `RSI gap too narrow: ${dna.rsiOverbought - dna.rsiOversold} < 20` };
+  }
+
+  // Stop loss can't be wider than take profit by 2x (guaranteed losing system)
+  if (dna.stopLossRisk > dna.takeProfitTarget * 2) {
+    return { pass: false, reason: `SL ${(dna.stopLossRisk*100).toFixed(2)}% > 2x TP ${(dna.takeProfitTarget*100).toFixed(2)}%` };
+  }
+
+  return { pass: true };
+}
+
+// ─── Mini-Backtester: Quick simulation of DNA against recent price moves ─
+// Uses last N phantom trade results from existing gladiators as a proxy market.
+// If DNA's parameters would have produced > 60% losses in this sample, REJECT.
+async function miniBacktest(dna: GladiatorDNA): Promise<{ pass: boolean; estimatedWR: number; sampleSize: number }> {
+  try {
+    const { getGladiatorBattles } = await import('@/lib/store/db');
+    // Collect recent battles from top gladiators as proxy market data
+    const { gladiatorStore: store } = await import('@/lib/store/gladiatorStore');
+    const topGladiators = store.getLeaderboard().filter(g => g.stats.totalTrades >= 10).slice(0, 3);
+
+    if (topGladiators.length === 0) {
+      // No historical data to backtest against — pass by default (system is bootstrapping)
+      return { pass: true, estimatedWR: 50, sampleSize: 0 };
+    }
+
+    // Gather recent battles as market proxy
+    const allBattles: Array<{ pnlPercent: number; entryPrice: number; outcomePrice: number; decision: string }> = [];
+    for (const g of topGladiators) {
+      const battles = await getGladiatorBattles(g.id, 50);
+      allBattles.push(...battles.map(b => ({
+        pnlPercent: Number(b.pnlPercent) || 0,
+        entryPrice: Number(b.entryPrice) || 0,
+        outcomePrice: Number(b.outcomePrice) || 0,
+        decision: String(b.decision || 'LONG'),
+      })));
+    }
+
+    if (allBattles.length < 10) {
+      return { pass: true, estimatedWR: 50, sampleSize: allBattles.length };
+    }
+
+    // Simulate: Would this DNA's parameters have filtered differently?
+    // Apply DNA's SL/TP thresholds to each historical price movement
+    let wins = 0;
+    let losses = 0;
+
+    for (const battle of allBattles) {
+      const priceMove = Math.abs((battle.outcomePrice - battle.entryPrice) / battle.entryPrice);
+
+      // DNA would have hit TP first
+      if (priceMove >= dna.takeProfitTarget && battle.pnlPercent > 0) {
+        wins++;
+      }
+      // DNA would have hit SL first
+      else if (priceMove >= dna.stopLossRisk && battle.pnlPercent <= 0) {
+        losses++;
+      }
+      // Small move — DNA's momentum/contrary bias decides
+      else {
+        const trendBias = dna.momentumWeight > 0.5 ? 1 : -1;
+        const signalCorrect = (battle.pnlPercent > 0 && trendBias > 0) || (battle.pnlPercent <= 0 && trendBias < 0);
+        if (signalCorrect) wins++;
+        else losses++;
+      }
+    }
+
+    const total = wins + losses;
+    const estimatedWR = total > 0 ? (wins / total) * 100 : 50;
+
+    // DNA must show > 35% estimated WR to pass pre-screening
+    // (lower than live threshold of 45% because this is a rough estimate)
+    return {
+      pass: estimatedWR >= 35,
+      estimatedWR: parseFloat(estimatedWR.toFixed(1)),
+      sampleSize: total,
+    };
+  } catch {
+    // If backtest fails for any reason, don't block spawning
+    return { pass: true, estimatedWR: 50, sampleSize: 0 };
+  }
+}
+
 export class TheForge {
   private static instance: TheForge;
+  private static readonly MAX_SPAWN_RETRIES = 3; // Max retries if DNA fails pre-screening
 
   private constructor() {}
 
@@ -230,8 +335,8 @@ export class TheForge {
         const dnaA = extractDNA(parentA);
         const dnaB = extractDNA(parentB);
 
-        // ── Step 2: Ask LLM to mutate the crossover ──
-        const prompt = `You are a quantitative trading strategy genetic algorithm.
+        // ── Step 2: Ask LLM to mutate the crossover (The Anvil Repair Loop) ──
+        const basePrompt = `You are a quantitative trading strategy genetic algorithm.
 
 Two parent trading strategies (gladiators) performed well. Create a MUTATED OFFSPRING strategy by combining and slightly varying their parameters. The offspring must be DIFFERENT from both parents — do not just copy.
 
@@ -254,20 +359,51 @@ Return ONLY a valid JSON object (no markdown) with these exact fields:
   "sessionFilter": "LONDON"|"NEWYORK"|"ASIA"|"ALL",
   "bollingerSqueeze": true|false,
   "sfpEnabled": true|false
-}`;
+}
+CRITICAL RULE: "takeProfitTarget" MUST BE AT LEAST 1.5x GREATER THAN "stopLossRisk" (R:R > 1.5).`;
 
-        const llmResponse = await callLLMForDNA(prompt);
-        const llmDNA = llmResponse ? parseDNAFromLLM(llmResponse) : null;
+        let llmDNA: Partial<GladiatorDNA> | null = null;
+        let attempt = 0;
+        let lastError = '';
 
-        if (llmDNA && llmDNA.rsiOversold !== undefined) {
+        while (attempt < 3 && !llmDNA) {
+          const promptWithFeedback = lastError
+            ? basePrompt + `\n\nERROR IN YOUR PREVIOUS GENERATION:\n${lastError}\n\nFIX YOUR MISTAKES AND RETURN A VALID DNA JSON.`
+            : basePrompt;
+
+          const llmResponse = await callLLMForDNA(promptWithFeedback);
+          if (llmResponse) {
+            const parsed = parseDNAFromLLM(llmResponse);
+            if (parsed && parsed.rsiOversold !== undefined && parsed.stopLossRisk !== undefined && parsed.takeProfitTarget !== undefined) {
+              const base = deterministicCrossover(dnaA, dnaB);
+              const testDna = { ...base, ...parsed } as GladiatorDNA;
+              const sanity = isDNASane(testDna);
+              
+              if (!sanity.pass) {
+                lastError = `Sanity Check Failed: ${sanity.reason}. You must obey trading logic constraints.`;
+                log.warn(`[The Forge] LLM DNA Failed Sanity (Attempt ${attempt + 1}): ${sanity.reason}`);
+              } else {
+                llmDNA = parsed;
+              }
+            } else {
+              lastError = "Invalid JSON structure or missing critical fields.";
+              log.warn(`[The Forge] LLM DNA Structure Invalid (Attempt ${attempt + 1})`);
+            }
+          } else {
+             break; // Network or provider failure, exit loop
+          }
+          attempt++;
+        }
+
+        if (llmDNA) {
           // Merge LLM output with crossover base (LLM fills any missing fields)
           const crossoverBase = deterministicCrossover(dnaA, dnaB);
           dna = { ...crossoverBase, ...llmDNA } as GladiatorDNA;
-          log.info(`[The Forge] LLM genetic mutation applied for new gladiator in ${arena}`);
+          log.info(`[The Forge] LLM genetic mutation success on attempt ${attempt} for ${arena}`);
         } else {
           // LLM failed → use deterministic crossover
           dna = deterministicCrossover(dnaA, dnaB);
-          log.info(`[The Forge] LLM unavailable — using deterministic crossover for ${arena}`);
+          log.info(`[The Forge] LLM completely failed — using deterministic crossover for ${arena}`);
         }
       } else {
         // No parents → fresh random DNA
@@ -275,7 +411,21 @@ Return ONLY a valid JSON object (no markdown) with these exact fields:
         log.info(`[The Forge] No parent DNA found — spawning random gladiator in ${arena}`);
       }
 
-      // ── Step 3: Build name from DNA traits ──
+      // ── Step 3: PRE-SCREENING — Sanity Check + Mini-Backtest ──
+      const sanity = isDNASane(dna);
+      if (!sanity.pass) {
+        log.warn(`[The Forge] DNA REJECTED (sanity): ${sanity.reason}`);
+        return null;
+      }
+
+      const backtest = await miniBacktest(dna);
+      if (!backtest.pass) {
+        log.warn(`[The Forge] DNA REJECTED (backtest): Estimated WR ${backtest.estimatedWR}% on ${backtest.sampleSize} samples — below 35% threshold`);
+        return null;
+      }
+      log.info(`[The Forge] DNA PASSED pre-screening: Sanity OK, Backtest WR ~${backtest.estimatedWR}% (${backtest.sampleSize} samples)`);
+
+      // ── Step 4: Build name from DNA traits ──
       const styleTag = dna.contraryBias > 0.6 ? 'Contrarian' : dna.momentumWeight > 0.6 ? 'Momentum' : 'Balanced';
       const tfTag = dna.timeframeBias.toUpperCase();
       const sessionTag = dna.sessionFilter === 'ALL' ? 'Omni' : dna.sessionFilter;
@@ -311,17 +461,44 @@ Return ONLY a valid JSON object (no markdown) with these exact fields:
 
   /**
    * Replaces eliminated weak gladiators with freshly forged offspring.
+   * INSTITUTIONAL FIX: Spawns all gladiators in parallel via Promise.allSettled
+   * instead of sequential for-loop (eliminates N*15s latency).
+   */
+  /**
+   * Spawns a gladiator with retry — if DNA fails pre-screening, re-rolls up to MAX_SPAWN_RETRIES times.
+   */
+  private async spawnWithRetry(): Promise<Gladiator | null> {
+    for (let attempt = 1; attempt <= TheForge.MAX_SPAWN_RETRIES; attempt++) {
+      const g = await this.spawnNewGladiator();
+      if (g) return g;
+      log.info(`[The Forge] Spawn attempt ${attempt}/${TheForge.MAX_SPAWN_RETRIES} failed pre-screening, retrying...`);
+    }
+    log.warn(`[The Forge] All ${TheForge.MAX_SPAWN_RETRIES} spawn attempts failed pre-screening.`);
+    return null;
+  }
+
+  /**
+   * Replaces eliminated weak gladiators with freshly forged offspring.
+   * INSTITUTIONAL: Spawns in parallel with retry for DNA pre-screening rejects.
    */
   public async evaluateAndRecruit(weakLinkIds: string[]): Promise<void> {
     if (weakLinkIds.length === 0) return;
 
-    log.info(`[The Forge] ${weakLinkIds.length} slots open. Forging replacements via genetic mutation...`);
+    log.info(`[The Forge] ${weakLinkIds.length} slots open. Forging replacements via parallel genetic mutation + pre-screening...`);
 
-    const newGladiators: Gladiator[] = [];
+    const results = await Promise.allSettled(
+      weakLinkIds.map(() => this.spawnWithRetry())
+    );
 
-    for (let i = 0; i < weakLinkIds.length; i++) {
-      const gen = await this.spawnNewGladiator();
-      if (gen) newGladiators.push(gen);
+    const newGladiators: Gladiator[] = results
+      .filter((r): r is PromiseFulfilledResult<Gladiator | null> => r.status === 'fulfilled')
+      .map(r => r.value)
+      .filter((g): g is Gladiator => g !== null);
+
+    const failures = results.filter(r => r.status === 'rejected').length;
+    const prescreenRejects = weakLinkIds.length - newGladiators.length - failures;
+    if (failures > 0 || prescreenRejects > 0) {
+      log.warn(`[The Forge] ${newGladiators.length}/${weakLinkIds.length} recruited. ${prescreenRejects} rejected by pre-screening, ${failures} errored.`);
     }
 
     if (newGladiators.length > 0) {

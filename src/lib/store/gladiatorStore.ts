@@ -31,27 +31,31 @@ class GladiatorStore {
 
   private seedGladiators() {
     // Map initial strategies to the 4 Phoenix Arenas
+    // INSTITUTIONAL RULE: All stats start at ZERO. No gladiator gets live access
+    // until it earns it through 20+ real phantom trades via the Darwinian loop.
     this.gladiators = INITIAL_STRATEGIES.map((strat, index) => {
       let arena: ArenaType = 'DAY_TRADING';
       if (strat.id.toLowerCase().includes('scalp')) arena = 'SCALPING';
       if (strat.id.toLowerCase().includes('swing') || strat.id.toLowerCase().includes('follow')) arena = 'SWING';
       if (strat.id.toLowerCase().includes('solana') || strat.id.toLowerCase().includes('eco')) arena = 'DEEP_WEB';
 
-      const rank = (index % 10) + 1; // 1-10
+      const rank = index + 1;
 
       return {
         id: strat.id,
         name: strat.name,
         arena,
         rank,
-        isLive: rank <= 3, // Only Top 3 are live
+        isLive: false, // NO gladiator gets live capital until proven via phantom trades
+        status: 'IN_TRAINING' as const,
+        trainingProgress: 0,
         skills: arena === 'DEEP_WEB' ? ['MEME_SNIPER'] : [],
         stats: {
-          winRate: 65 + Math.random() * 10,
-          profitFactor: 1.5 + Math.random(),
-          maxDrawdown: 5 + Math.random() * 5,
-          sharpeRatio: 1.2 + Math.random(),
-          totalTrades: 50 + Math.floor(Math.random() * 200),
+          winRate: 0,
+          profitFactor: 1.0,
+          maxDrawdown: 0,
+          sharpeRatio: 0,
+          totalTrades: 0,
         },
         lastUpdated: Date.now(),
       };
@@ -172,9 +176,14 @@ class GladiatorStore {
       scored.sort((a, b) => b.score - a.score);
 
       // Assign ranks and live status
+      // INSTITUTIONAL RULE: Only gladiators with 20+ trades AND WR >= 40% AND PF >= 1.0
+      // can compete for live capital slots. Raw rank alone is insufficient.
       scored.forEach((entry, index) => {
         entry.gladiator.rank = index + 1;
-        entry.gladiator.isLive = index < 3; // Top 3 get real capital
+        const meetsThreshold = entry.gladiator.stats.totalTrades >= 20
+          && entry.gladiator.stats.winRate >= 45   // Hardened from 40% — institutional gate
+          && entry.gladiator.stats.profitFactor >= 1.1; // Hardened from 1.0 — must prove edge
+        entry.gladiator.isLive = index < 3 && meetsThreshold;
       });
     }
   }

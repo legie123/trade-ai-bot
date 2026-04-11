@@ -8,9 +8,9 @@ const log = createLogger('SentinelGuard');
 export class SentinelGuard {
   private static instance: SentinelGuard;
   private mddThreshold = 0.10; // 10% Maximum Drawdown Kill-Switch (hardened from 15%)
-  private dailyLossLimit = 5;   // Max 5 losses per day
-  private minWinRate = 0.35;    // Re-enabled: 35% min WR (audit fix #4)
-  private maxLossStreak = 5;    // 5 consecutive losses = halt
+  private dailyLossLimit = 3;   // Max 3 losses per day (hardened from 5 — institutional conservative)
+  private minWinRate = 0.40;    // 40% min WR (aligned with Butcher/Gladiator Gate threshold)
+  private maxLossStreak = 4;    // 4 consecutive losses = halt (hardened from 5 — faster reaction)
 
   private constructor() {}
 
@@ -51,9 +51,10 @@ export class SentinelGuard {
       return { safe: false, reason: streakCheck.reason };
     }
 
-    // 2. Consensus Strength Check
-    if (consensus.finalDirection === 'FLAT' || consensus.weightedConfidence < 0.70) {
-      return { safe: false, reason: `Insufficient Consensus (${(consensus.weightedConfidence * 100).toFixed(2)}%)` };
+    // 2. Consensus Strength Check — LIVE mode requires higher confidence (0.75) than PAPER (0.70)
+    const confidenceThreshold = config.mode === 'LIVE' ? 0.75 : 0.70;
+    if (consensus.finalDirection === 'FLAT' || consensus.weightedConfidence < confidenceThreshold) {
+      return { safe: false, reason: `Insufficient Consensus (${(consensus.weightedConfidence * 100).toFixed(2)}% < ${(confidenceThreshold * 100).toFixed(0)}% [${config.mode}])` };
     }
 
     // 3. Equity-Curve Drawdown Check (Omega upgrade: real compounding MDD)
@@ -279,41 +280,80 @@ export class SentinelGuard {
     await this.emergencyExitAllPositions();
   }
 
+  /**
+   * EMERGENCY EXIT — INSTITUTIONAL GRADE
+   * Priority 1: MEXC (primary broker where live positions exist)
+   * Priority 2: Binance (fallback for assets that ended up there)
+   * Both execute best-effort: failure on one does not block the other.
+   */
   private async emergencyExitAllPositions(): Promise<void> {
+    // ═══ PRIORITY 1: MEXC — Primary Broker ═══
     try {
-      log.warn('⚠️ [Sentinel] emergencyExitAllPositions: Cancelling all orders and selling to USDT via Binance...');
-      
-      const { getBalances, cancelOrder, getOpenOrders, placeMarketOrder } = await import('@/lib/exchange/binanceClient');
-      
+      log.warn('🚨 [Sentinel] EMERGENCY EXIT: Liquidating ALL MEXC positions...');
+      const { sellAllAssetsToUsdt } = await import('@/lib/exchange/mexcClient');
+      await sellAllAssetsToUsdt();
+      log.info('🛡️ [Sentinel] MEXC emergency exit completed.');
+    } catch (mexcErr: unknown) {
+      const msg = mexcErr instanceof Error ? mexcErr.message : String(mexcErr);
+      log.error(`[Sentinel] MEXC emergency exit FAILED: ${msg}`);
+    }
+
+    // Also close positions tracked in our DB that MEXC might have missed
+    try {
+      const { getLivePositions, updateLivePosition } = await import('@/lib/store/db');
+      const { cancelAllMexcOrders, placeMexcMarketOrder } = await import('@/lib/exchange/mexcClient');
+      const { getExchangeInfoCached, getSymbolFilters, roundToStep } = await import('@/lib/v2/scouts/executionMexc');
+      const exchangeInfo = await getExchangeInfoCached().catch(() => null);
+
+      const openPositions = getLivePositions().filter(p => p.status === 'OPEN');
+      for (const pos of openPositions) {
+        try {
+          await cancelAllMexcOrders(pos.symbol).catch(() => {});
+          const isLong = pos.side === 'LONG';
+          let qty = pos.quantity;
+
+          if (exchangeInfo) {
+            const filters = getSymbolFilters(exchangeInfo, pos.symbol);
+            qty = roundToStep(qty, filters.stepSize);
+            if (qty < filters.minQty) {
+              log.warn(`[Sentinel] Position ${pos.symbol} is dust (${qty}), marking CLOSED.`);
+              updateLivePosition(pos.id, { status: 'CLOSED' });
+              continue;
+            }
+          }
+
+          await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', qty);
+          updateLivePosition(pos.id, { status: 'CLOSED' });
+          log.info(`[Sentinel] Force-closed MEXC position: ${pos.symbol} (${qty})`);
+        } catch (e) {
+          log.error(`[Sentinel] Failed to close tracked position ${pos.symbol}`, { error: (e as Error).message });
+          // Mark closed in DB to prevent re-evaluation of zombie position
+          updateLivePosition(pos.id, { status: 'CLOSED' });
+        }
+      }
+    } catch (dbErr: unknown) {
+      log.error(`[Sentinel] DB-tracked position cleanup failed`, { error: (dbErr as Error).message });
+    }
+
+    // ═══ PRIORITY 2: Binance — Fallback for stray assets ═══
+    try {
+      const { getBalances, placeMarketOrder } = await import('@/lib/exchange/binanceClient');
       const balances = await getBalances();
       const nonUsdt = balances.filter(b => b.asset !== 'USDT' && b.asset !== 'USDC' && b.asset !== 'BNB' && b.free > 0);
-      
-      if (nonUsdt.length === 0) {
-        log.info('🛡️ [Sentinel] No non-USD assets to sell on Binance.');
-        return;
-      }
-      
-      for (const b of nonUsdt) {
-         try {
-           const symbol = `${b.asset}USDT`;
-           // Best effort cancel open orders
-           const openOrders = await getOpenOrders(symbol).catch(() => []);
-           for (const order of openOrders) {
-             if (order.orderId) await cancelOrder(symbol, order.orderId as number).catch(() => {});
-           }
-           
-           // Sell market
-           await placeMarketOrder(symbol, 'SELL', b.free);
-           log.info(`[Sentinel Binance] Sold ${b.free} ${b.asset} for USDT`);
-         } catch (e) {
-           log.error(`[Sentinel Binance] Failed to liquidate ${b.asset}`, { error: (e as Error).message });
-         }
-      }
 
-      log.info('🛡️ [Sentinel] emergencyExitAllPositions: SUCCESS. All assets trigger attempt completed.');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.error(`[Sentinel] emergencyExitAllPositions FAILED: ${message}`);
+      if (nonUsdt.length > 0) {
+        log.warn(`[Sentinel] Found ${nonUsdt.length} stray Binance assets. Liquidating...`);
+        for (const b of nonUsdt) {
+          try {
+            await placeMarketOrder(`${b.asset}USDT`, 'SELL', b.free);
+            log.info(`[Sentinel Binance] Sold ${b.free} ${b.asset}`);
+          } catch { /* best effort */ }
+        }
+      }
+    } catch {
+      // Binance is secondary — failure is acceptable
     }
+
+    log.info('🛡️ [Sentinel] emergencyExitAllPositions: COMPLETE.');
   }
 }

@@ -16,6 +16,8 @@ async function getCachedPrice(symbol: string): Promise<number> {
 export class ArenaSimulator {
   private static instance: ArenaSimulator;
   private dnaBank: DNAExtractor;
+  private lastGladiatorRefresh: number = 0;
+  private static readonly REFRESH_TTL_MS = 60_000; // 60 seconds between cloud refreshes
 
   private constructor() {
     this.dnaBank = DNAExtractor.getInstance();
@@ -66,12 +68,15 @@ export class ArenaSimulator {
     const activePhantoms = getPhantomTrades();
     if (!activePhantoms.length) return;
 
-    // VERY IMPORTANT: Refresh Memory from True Source before evaluating
-    const { refreshGladiatorsFromCloud, getGladiatorsFromDb } = await import('@/lib/store/db');
-    await refreshGladiatorsFromCloud();
-    gladiatorStore.hydrate(getGladiatorsFromDb());
-
+    // Refresh Memory from True Source — but with TTL to prevent unnecessary Supabase reads
     const now = Date.now();
+    if (now - this.lastGladiatorRefresh > ArenaSimulator.REFRESH_TTL_MS) {
+      const { refreshGladiatorsFromCloud, getGladiatorsFromDb } = await import('@/lib/store/db');
+      await refreshGladiatorsFromCloud();
+      gladiatorStore.hydrate(getGladiatorsFromDb());
+      this.lastGladiatorRefresh = now;
+    }
+
     const MIN_HOLD_SEC = 60;     // Minimum 60s for price to move
     const MAX_HOLD_SEC = 900;    // Maximum 15min — force-close stale phantoms
 
