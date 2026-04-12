@@ -51,10 +51,10 @@ function winColor(wr: string) {
 
 function statusStyle(status: string) {
   switch (status) {
-    case 'LIVE':      return { color: C.green,      bg: 'rgba(0,230,118,0.15)',  border: \`\${C.green}50\` };
-    case 'SHADOW':    return { color: C.blue,       bg: 'rgba(41,182,246,0.15)',   border: \`\${C.blue}50\` };
+    case 'LIVE':      return { color: C.green,      bg: 'rgba(0,230,118,0.15)',  border: `\${C.green}50` };
+    case 'SHADOW':    return { color: C.blue,       bg: 'rgba(41,182,246,0.15)',   border: `\${C.blue}50` };
     case 'STANDBY':   return { color: C.mutedLight, bg: 'rgba(155,165,190,0.1)', border: 'rgba(155,165,190,0.3)' };
-    case 'ELIMINATED':return { color: C.red,        bg: 'rgba(255,61,87,0.15)',    border: \`\${C.red}50\` };
+    case 'ELIMINATED':return { color: C.red,        bg: 'rgba(255,61,87,0.15)',    border: `\${C.red}50` };
     default:          return { color: C.mutedLight, bg: 'transparent', border: 'rgba(255,255,255,0.1)' };
   }
 }
@@ -166,7 +166,7 @@ export default function ArenaPage() {
 
       {/* ── TOP NAV ───────────────────────────────── */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(5, 6, 9, 0.8)',
-        backdropFilter: 'blur(20px)', borderBottom: \`1px solid rgba(255,255,255,0.05)\`, padding: '14px 24px',
+        backdropFilter: 'blur(20px)', borderBottom: `1px solid rgba(255,255,255,0.05)`, padding: '14px 24px',
         display: 'flex', alignItems: 'center', gap: 20 }}>
         
         <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.15em', color: C.text, textShadow: '0 0 10px rgba(255,255,255,0.2)' }}>
@@ -176,7 +176,7 @@ export default function ArenaPage() {
         <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)' }} />
         
         <div style={{ display: 'flex', gap: 16, fontSize: 12, fontWeight: 800, fontFamily: 'monospace' }}>
-           <div><span style={{ color: C.green, textShadow: \`0 0 10px \${C.green}80\` }}>{data.activeFighters}</span> LIVE</div>
+           <div><span style={{ color: C.green, textShadow: `0 0 10px \${C.green}80` }}>{data.activeFighters}</span> LIVE</div>
            <div style={{ color: C.mutedLight }}><span>{data.leaderboard.length}</span> TOTAL</div>
         </div>
 
@@ -186,7 +186,7 @@ export default function ArenaPage() {
             </span>
             <span style={{
               width: 8, height: 8, borderRadius: '50%',
-              background: C.green, boxShadow: \`0 0 10px \${C.green}\`,
+              background: C.green, boxShadow: `0 0 10px \${C.green}`,
               animation: 'pulseGlow 2s infinite',
             }} />
         </div>
@@ -202,7 +202,7 @@ export default function ArenaPage() {
               ELITE STRIKE TEAM (TOP 3)
             </div>
             
-            <div style={{ display: 'grid', gridTemplateColumns: \`repeat(\${top3.length}, 1fr)\`, gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(\${top3.length}, 1fr)`, gap: 20 }}>
               {top3.map((g, i) => {
                 const ss = statusStyle(g.status);
                 const isFirst = i === 0;
@@ -213,24 +213,24 @@ export default function ArenaPage() {
                     position: 'relative', padding: isFirst ? '28px' : '20px',
                     margin: isFirst ? '-8px 0 0 0' : '0', // Pop slightly up
                     background: isFirst ? 'rgba(25, 30, 45, 0.6)' : 'rgba(12, 15, 26, 0.4)',
-                    border: \`1px solid \${isFirst ? \`\${rankColor}80\` : 'rgba(255,255,255,0.05)'}\`,
+                    border: `1px solid ${isFirst ? rankColor + '80' : 'rgba(255,255,255,0.05)'}`,
                     borderRadius: 16, display: 'flex', flexDirection: 'column', gap: 12,
-                    boxShadow: isFirst ? \`0 10px 40px \${rankColor}20\` : 'none',
+                    boxShadow: isFirst ? `0 10px 40px ${rankColor}20` : 'none',
                     animation: isFirst ? 'pulseGlow 3s infinite' : 'none'
                   }}>
                     {/* Rank Badge */}
-                    <div style={{ position: 'absolute', top: -14, left: 20, background: 'rgba(5, 6, 9, 0.9)', border: \`1px solid \${rankColor}\`, padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 800, color: rankColor, boxShadow: \`0 0 15px \${rankColor}60\` }}>
+                    <div style={{ position: 'absolute', top: -14, left: 20, background: 'rgba(5, 6, 9, 0.9)', border: `1px solid \${rankColor}`, padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 800, color: rankColor, boxShadow: `0 0 15px \${rankColor}60` }}>
                       RANK {i + 1}
                     </div>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: isFirst ? 10 : 0 }}>
                        <div style={{ fontSize: isFirst ? 20 : 16, fontWeight: 800, color: C.text, letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden' }}>{g.name}</div>
-                       <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 6, color: ss.color, background: ss.bg, border: \`1px solid \${ss.border}\` }}>
+                       <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 6, color: ss.color, background: ss.bg, border: `1px solid \${ss.border}` }}>
                           {g.status}
                        </span>
                     </div>
 
-                    <div style={{ fontSize: isFirst ? 36 : 28, fontWeight: 800, fontFamily: 'monospace', color: winColor(g.winRate), textShadow: \`0 0 20px \${winColor(g.winRate)}50\` }}>
+                    <div style={{ fontSize: isFirst ? 36 : 28, fontWeight: 800, fontFamily: 'monospace', color: winColor(g.winRate), textShadow: `0 0 20px \${winColor(g.winRate)}50` }}>
                       {g.winRate}%
                     </div>
 
@@ -253,12 +253,12 @@ export default function ArenaPage() {
 
         {/* ── OMEGA PROGRESS CYBERNETIC BAR ─────────── */}
         {omega && (
-          <div className="glass-card" style={{ padding: '24px', border: \`1px solid \${C.purple}50\`, boxShadow: \`0 0 20px \${C.purple}15\` }}>
+          <div className="glass-card" style={{ padding: '24px', border: `1px solid \${C.purple}50`, boxShadow: `0 0 20px \${C.purple}15` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 12, height: 12, background: C.purple, borderRadius: '50%', boxShadow: \`0 0 10px \${C.purple}\`, animation: 'pulseGlow 1.5s infinite' }} />
+                <div style={{ width: 12, height: 12, background: C.purple, borderRadius: '50%', boxShadow: `0 0 10px \${C.purple}`, animation: 'pulseGlow 1.5s infinite' }} />
                 <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '0.2em', color: C.text }}>SUPER AI OMEGA</div>
-                <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: \`\${C.purple}20\`, color: C.purple, border: \`1px solid \${C.purple}50\`, fontWeight: 800 }}>
+                <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: `\${C.purple}20`, color: C.purple, border: `1px solid \${C.purple}50`, fontWeight: 800 }}>
                   {omega.status}
                 </span>
               </div>
@@ -271,8 +271,8 @@ export default function ArenaPage() {
             <div style={{ position: 'relative', width: '100%', height: 16, background: 'rgba(0,0,0,0.4)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)', overflow: 'hidden' }}>
               <div className="stripe-bg" style={{ 
                 position: 'absolute', top: 0, left: 0, height: '100%',
-                width: \`\${omega.trainingProgress}%\`, 
-                background: \`linear-gradient(90deg, \${C.purple}88, \${C.purple})\`,
+                width: `\${omega.trainingProgress}%`, 
+                background: `linear-gradient(90deg, \${C.purple}88, \${C.purple})`,
                 transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
               }}>
                 <div className="stripe-bg" style={{ width: '100%', height: '100%' }} />
@@ -314,7 +314,7 @@ export default function ArenaPage() {
              {sorted.map((g, i) => {
                const ss = statusStyle(g.status);
                return (
-                 <div key={g.id} className="fighter-plate" style={{ display: 'flex', alignItems: 'center', gap: 20, animation: \`slideRightCard 0.3s ease \${i * 30}ms both\` }}>
+                 <div key={g.id} className="fighter-plate" style={{ display: 'flex', alignItems: 'center', gap: 20, animation: `slideRightCard 0.3s ease \${i * 30}ms both` }}>
                    
                    <div style={{ minWidth: 24, fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: C.mutedLight }}>
                      #{i + 1}
@@ -323,7 +323,7 @@ export default function ArenaPage() {
                    <div style={{ flex: 1, minWidth: 200 }}>
                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                        <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{g.name}</span>
-                       <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, color: ss.color, background: ss.bg, border: \`1px solid \${ss.border}\` }}>
+                       <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, color: ss.color, background: ss.bg, border: `1px solid \${ss.border}` }}>
                           {g.status}
                        </span>
                      </div>
@@ -356,7 +356,7 @@ export default function ArenaPage() {
                    
                    {/* Mini progress bar internal */}
                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'transparent' }}>
-                      <div style={{ width: \`\${g.winRate}%\`, height: '100%', background: \`linear-gradient(90deg, transparent, \${winColor(g.winRate)})\` }} />
+                      <div style={{ width: `\${g.winRate}%`, height: '100%', background: `linear-gradient(90deg, transparent, \${winColor(g.winRate)})` }} />
                    </div>
                  </div>
                );

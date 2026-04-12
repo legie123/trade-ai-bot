@@ -10,109 +10,119 @@ import { omegaExtractor } from '../superai/omegaExtractor';
 const log = createLogger('DualMaster');
 
 // ─── Shared LLM call with retry + timeout (DRY) ───
+
+async function fetchWithBackoff(
+  provider: string,
+  url: string,
+  options: RequestInit,
+  timeout: number,
+  signal?: AbortSignal
+): Promise<Response> {
+  const MAX_RETRIES = 3;
+  let attempt = 0;
+
+  while (attempt <= MAX_RETRIES) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
+
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+
+      if (res.status === 429) {
+        if (attempt === MAX_RETRIES) throw new Error(`${provider} HTTP 429 Too Many Requests`);
+        const waitMs = 1000 * Math.pow(2, attempt);
+        log.warn(`[DualMaster] ${provider} 429 Rate limited, backing off ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, waitMs));
+        attempt++;
+        continue;
+      }
+
+      if (!res.ok) throw new Error(`${provider} HTTP ${res.status}`);
+      return res;
+    } catch (err) {
+      clearTimeout(timer);
+      const errName = (err as Error).name;
+      if (errName === 'AbortError' || errName === 'TimeoutError') {
+        throw new Error(`${provider} request timed out or aborted`);
+      }
+      if (attempt === MAX_RETRIES) throw err;
+      
+      // Also backoff on network errors
+      const waitMs = 1000 * Math.pow(2, attempt);
+      log.warn(`[DualMaster] ${provider} Network error, backing off ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+      await new Promise(r => setTimeout(r, waitMs));
+      attempt++;
+    }
+  }
+  throw new Error(`${provider} Max retries exceeded`);
+}
+
 async function callDeepSeek(prompt: string, timeout: number, signal?: AbortSignal): Promise<string> {
   if (!process.env.DEEPSEEK_API_KEY) throw new Error('DEEPSEEK_API_KEY missing for fallback');
   
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
+  const response = await fetchWithBackoff('DeepSeek', 'https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      max_tokens: 300,
+      temperature: 0.4,
+    })
+  }, timeout, signal);
 
-  try {
-    const response = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        max_tokens: 300,
-        temperature: 0.4,
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timer);
-
-    if (!response.ok) throw new Error(`DeepSeek HTTP ${response.status}`);
-
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content;
-    if (!text || text.length < 10) throw new Error('Empty DeepSeek response');
-    return text;
-  } catch (err) {
-    clearTimeout(timer);
-    throw err;
-  }
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text || text.length < 10) throw new Error('Empty DeepSeek response');
+  return text;
 }
 
 async function callOpenAI(prompt: string, timeout: number, signal?: AbortSignal): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY missing');
 
-  if (signal) {
-    signal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
+  const response = await fetchWithBackoff('OpenAI', 'https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      max_tokens: 300,
+      temperature: 0.4,
+    })
+  }, timeout, signal);
 
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        max_tokens: 300,
-        temperature: 0.4,
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timer);
-
-    if (!response.ok) {
-      throw new Error(`OpenAI HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content;
-    if (!text || text.length < 10) throw new Error('Empty LLM response');
-    return text;
-  } catch (err) {
-    clearTimeout(timer);
-    throw err;
-  }
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text || text.length < 10) throw new Error('Empty LLM response');
+  return text;
 }
 
 async function callGemini(prompt: string, timeout: number, signal?: AbortSignal): Promise<string> {
   if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing for fallback');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
+  
+  const response = await fetchWithBackoff('Gemini', `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 300, temperature: 0.4, responseMimeType: 'application/json' }
+    })
+  }, timeout, signal);
 
-  try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 300, temperature: 0.4, responseMimeType: 'application/json' }
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timer);
-    if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text || text.length < 10) throw new Error('Empty Gemini response');
-    return text;
-  } catch (err) {
-    clearTimeout(timer);
-    throw err;
-  }
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text || text.length < 10) throw new Error('Empty Gemini response');
+  return text;
 }
 
 async function executeDualEngineFallback(prompt: string, timeout: number): Promise<string> {
@@ -123,7 +133,7 @@ async function executeDualEngineFallback(prompt: string, timeout: number): Promi
     try {
       return await callDeepSeek(prompt, timeout);
     } catch (dsErr) {
-      log.warn(`DeepSeek Fallback failed, bridging to Gemini Fallback in <5ms`);
+      log.warn(`DeepSeek Fallback failed, bridging to Gemini Fallback in <5ms`, { error: (dsErr as Error).message });
       try {
         return await callGemini(prompt, timeout);
       } catch (gemErr) {
@@ -154,7 +164,7 @@ function parseResponse(identity: DualMasterIdentity, text: string): MasterOpinio
     if (parsed.reasoning) {
       reasoning = String(parsed.reasoning).substring(0, 500);
     }
-  } catch (err) {
+  } catch {
     log.warn(`[JSON Parse Failed] Master ${identity} hallucinated format. Extracting via Regex fallback.`);
     const dirMatch = text.match(/"?direction"?\s*:\s*"?\s*(LONG|SHORT|FLAT)\s*"?/i) || text.match(/DIRECTION:\s*(LONG|SHORT|FLAT)/i);
     const confMatch = text.match(/"?confidence"?\s*:\s*([\d.]+)/i) || text.match(/CONFIDENCE:\s*([\d.]+)/i);

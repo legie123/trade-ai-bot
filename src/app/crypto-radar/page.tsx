@@ -216,7 +216,7 @@ export default function CryptoRadarPage() {
 
       {/* ── TOP HEADER ──────────────────────────────── */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(5, 6, 9, 0.8)',
-        backdropFilter: 'blur(20px)', borderBottom: \`1px solid rgba(255,255,255,0.05)\`, padding: '14px 24px',
+        backdropFilter: 'blur(20px)', borderBottom: `1px solid rgba(255,255,255,0.05)`, padding: '14px 24px',
         display: 'flex', alignItems: 'center', gap: 20 }}>
 
         <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.15em', color: C.text, textShadow: '0 0 10px rgba(255,255,255,0.2)' }}>
@@ -226,14 +226,14 @@ export default function CryptoRadarPage() {
         {btcData && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(255,255,255,0.03)', padding: '6px 16px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.05)' }}>
             <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700 }}>
-              BTC <span style={{ color: btcData.price >= btcData.dailyOpen ? C.green : C.red, textShadow: \`0 0 10px \${btcData.price >= btcData.dailyOpen ? C.green : C.red}80\` }}>${formatNum(btcData.price)}</span>
+              BTC <span style={{ color: btcData.price >= btcData.dailyOpen ? C.green : C.red, textShadow: `0 0 10px \${btcData.price >= btcData.dailyOpen ? C.green : C.red}80` }}>${formatNum(btcData.price)}</span>
             </span>
             <div style={{ display: 'flex', gap: 6 }}>
               {btcData.signals.slice(0, 2).map((sig, i) => (
                 <span key={i} style={{
                   fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 6,
                   background: directionBg(sig.signal), color: directionColor(sig.signal),
-                  border: \`1px solid \${directionColor(sig.signal)}40\`,
+                  border: `1px solid \${directionColor(sig.signal)}40`,
                 }}>{sig.signal}</span>
               ))}
             </div>
@@ -247,18 +247,18 @@ export default function CryptoRadarPage() {
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: 8 }}>
             <span style={{ fontSize: 11, color: C.mutedLight, fontWeight: 600, letterSpacing: '0.05em' }}>
-              {syncing ? 'UPDATING...' : \`\${lastSync}\`}
+              {syncing ? 'UPDATING...' : `\${lastSync}`}
             </span>
             <span style={{
               width: 8, height: 8, borderRadius: '50%',
               background: syncing ? C.yellow : C.blue,
-              boxShadow: \`0 0 10px \${syncing ? C.yellow : C.blue}\`,
+              boxShadow: `0 0 10px \${syncing ? C.yellow : C.blue}`,
               animation: 'pulseGlow 2s infinite',
             }} />
           </div>
           <button onClick={() => fetchMain()} style={{
             padding: '8px 16px', background: 'rgba(41,182,246,0.1)',
-            border: \`1px solid rgba(41,182,246,0.3)\`, borderRadius: 8,
+            border: `1px solid rgba(41,182,246,0.3)`, borderRadius: 8,
             color: C.blue, cursor: 'pointer', fontSize: 12, fontWeight: 700,
             transition: 'all 0.2s',
           }}
@@ -273,16 +273,16 @@ export default function CryptoRadarPage() {
         {/* ── KPI ROW ─────────────────────────────────── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
           {[
-            { label: 'TOTAL EQUITY', value: \`\$\${formatNum(botStats.equity || 0)}\`, color: '#fff', glow: 'none' },
+            { label: 'TOTAL EQUITY', value: `\$\${formatNum(botStats.equity || 0)}`, color: '#fff', glow: 'none' },
             {
               label: 'DAILY ALPHA (PnL)', color: (botStats.todayPnlPercent || 0) >= 0 ? C.green : C.red,
-              glow: (botStats.todayPnlPercent || 0) >= 0 ? \`0 0 20px \${C.green}40\` : \`0 0 20px \${C.red}40\`,
-              value: \`\${(botStats.todayPnlPercent || 0) >= 0 ? '+' : ''}\${(botStats.todayPnlPercent || 0).toFixed(2)}%\`,
+              glow: (botStats.todayPnlPercent || 0) >= 0 ? `0 0 20px \${C.green}40` : `0 0 20px \${C.red}40`,
+              value: `\${(botStats.todayPnlPercent || 0) >= 0 ? '+' : ''}\${(botStats.todayPnlPercent || 0).toFixed(2)}%`,
             },
-            { label: 'GLOBAL WIN RATE', value: \`\${(botStats.overallWinRate || 0).toFixed(1)}%\`, color: C.blue, glow: \`0 0 15px \${C.blue}30\` },
-            { label: 'MAX STRESS (DD)', value: \`\${(botStats.maxDrawdown || 0).toFixed(2)}%\`, color: C.red, glow: 'none' },
+            { label: 'GLOBAL WIN RATE', value: `\${(botStats.overallWinRate || 0).toFixed(1)}%`, color: C.blue, glow: `0 0 15px \${C.blue}30` },
+            { label: 'MAX STRESS (DD)', value: `\${(botStats.maxDrawdown || 0).toFixed(2)}%`, color: C.red, glow: 'none' },
           ].map((kpi, idx) => (
-            <div key={kpi.label} className="glass-card" style={{ padding: '20px 24px', animation: \`slideUpFade 0.4s ease \${idx * 100}ms both\` }}>
+            <div key={kpi.label} className="glass-card" style={{ padding: '20px 24px', animation: `slideUpFade 0.4s ease \${idx * 100}ms both` }}>
               <div style={{ fontSize: 11, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.15em', marginBottom: 8 }}>
                 {kpi.label}
               </div>
@@ -298,7 +298,7 @@ export default function CryptoRadarPage() {
           
           {/* SYNDICATE CONSENSUS */}
           <div className="glass-card" style={{ padding: '24px', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: -50, right: -50, width: 200, height: 200, background: \`radial-gradient(circle, \${C.blue}20, transparent 70%)\`, filter: 'blur(30px)', zIndex: 0 }} />
+            <div style={{ position: 'absolute', top: -50, right: -50, width: 200, height: 200, background: `radial-gradient(circle, \${C.blue}20, transparent 70%)`, filter: 'blur(30px)', zIndex: 0 }} />
             
             <div style={{ position: 'relative', zIndex: 1 }}>
               <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -310,12 +310,12 @@ export default function CryptoRadarPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
                   <div style={{ position: 'relative', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {/* Radar swept background */}
-                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: \`1px solid \${C.borderLight}\` }} />
-                    <div style={{ position: 'absolute', inset: 10, borderRadius: '50%', border: \`1px dashed \${C.border}\` }} />
-                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: \`conic-gradient(from 0deg, transparent 70%, \${directionColor(latestAudit.finalDirection || '')}60 100%)\`, animation: 'radarScan 4s linear infinite' }} />
+                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: `1px solid \${C.borderLight}` }} />
+                    <div style={{ position: 'absolute', inset: 10, borderRadius: '50%', border: `1px dashed \${C.border}` }} />
+                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `conic-gradient(from 0deg, transparent 70%, \${directionColor(latestAudit.finalDirection || '')}60 100%)`, animation: 'radarScan 4s linear infinite' }} />
                     
                     {/* Center Core */}
-                    <div style={{ zIndex: 2, background: 'rgba(12, 15, 26, 0.8)', backdropFilter: 'blur(10px)', borderRadius: '50%', width: 100, height: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: \`2px solid \${directionColor(latestAudit.finalDirection || '')}\`, boxShadow: \`0 0 20px \${directionColor(latestAudit.finalDirection || '')}50\` }}>
+                    <div style={{ zIndex: 2, background: 'rgba(12, 15, 26, 0.8)', backdropFilter: 'blur(10px)', borderRadius: '50%', width: 100, height: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: `2px solid \${directionColor(latestAudit.finalDirection || '')}`, boxShadow: `0 0 20px \${directionColor(latestAudit.finalDirection || '')}50` }}>
                         <div style={{ fontSize: 18, fontWeight: 800, color: directionColor(latestAudit.finalDirection || ''), letterSpacing: '0.05em' }}>
                           {latestAudit.finalDirection || 'IDLE'}
                         </div>
@@ -368,7 +368,7 @@ export default function CryptoRadarPage() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
                 {signals.map((sig, i) => (
-                  <div key={i} className="token-card" style={{ animation: \`slideUpFade 0.3s ease \${i * 40}ms both\` }}>
+                  <div key={i} className="token-card" style={{ animation: `slideUpFade 0.3s ease \${i * 40}ms both` }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '0.02em' }}>{sig.symbol}</span>
                       <span style={{ fontSize: 10, fontWeight: 800, color: directionColor(sig.direction), background: directionBg(sig.direction), padding: '3px 8px', borderRadius: 6, letterSpacing: '0.05em' }}>
@@ -383,7 +383,7 @@ export default function CryptoRadarPage() {
                     </div>
                     {/* Mini progress bar inside card */}
                     <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
-                       <div style={{ height: '100%', width: \`\${sig.confidence}%\`, background: directionColor(sig.direction), borderRadius: 2 }} />
+                       <div style={{ height: '100%', width: `\${sig.confidence}%`, background: directionColor(sig.direction), borderRadius: 2 }} />
                     </div>
                   </div>
                 ))}
@@ -422,7 +422,7 @@ export default function CryptoRadarPage() {
                 filteredTokens.slice(0, 50).map((t, i) => {
                   const isUp = t.change24h !== null && t.change24h >= 0;
                   return (
-                    <div key={i} className="token-card" style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: \`slideUpFade 0.3s ease \${i * 15}ms both\` }}>
+                    <div key={i} className="token-card" style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: `slideUpFade 0.3s ease \${i * 15}ms both` }}>
                       {/* Token Header */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
@@ -438,17 +438,17 @@ export default function CryptoRadarPage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>PRICE</span>
-                          <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700 }}>{t.price !== null ? \`$\${formatNum(t.price)}\` : '—'}</span>
+                          <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700 }}>{t.price !== null ? `$\${formatNum(t.price)}` : '—'}</span>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
                            <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>1H MOVE</span>
                            <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 800, color: isUp ? C.green : C.red }}>
-                             {t.change24h !== null ? \`\${isUp ? '+' : ''}\${t.change24h.toFixed(2)}%\` : '—'}
+                             {t.change24h !== null ? `\${isUp ? '+' : ''}\${t.change24h.toFixed(2)}%` : '—'}
                            </span>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
                           <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>VOL 24H</span>
-                          <span style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 600, color: C.text }}>{t.volume24h !== null ? \`$\${formatCompact(t.volume24h)}\` : '—'}</span>
+                          <span style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 600, color: C.text }}>{t.volume24h !== null ? `$\${formatCompact(t.volume24h)}` : '—'}</span>
                         </div>
                       </div>
                     </div>

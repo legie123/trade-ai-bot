@@ -7,7 +7,7 @@ import { getOrFetchPrice } from '@/lib/cache/priceCache';
 
 const log = createLogger('ArenaSimulator');
 
-// Delegate to global price cache (MEXC → Binance → OKX → DexScreener → CoinGecko)
+// Delegate to global price cache (MEXC → DexScreener → CoinGecko)
 async function getCachedPrice(symbol: string): Promise<number> {
   const normalizedSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
   return getOrFetchPrice(normalizedSymbol);
