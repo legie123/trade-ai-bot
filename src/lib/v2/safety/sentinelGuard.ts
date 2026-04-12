@@ -335,6 +335,6 @@ export class SentinelGuard {
       log.error(`[Sentinel] DB-tracked position cleanup failed`, { error: (dbErr as Error).message });
     }
 
-    log.info('🛡️ [Sentinel] emergencyExitAllPositions: COMPLETE (Binance Purged, MEXC 100% Consolidated).');
+    log.info('🛡️ [Sentinel] emergencyExitAllPositions: COMPLETE — All MEXC positions liquidated.');
   }
 }

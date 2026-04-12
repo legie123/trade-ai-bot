@@ -119,14 +119,21 @@ export async function getMexcServerTime(): Promise<number> {
 export async function getMexcPrice(symbol: string): Promise<number> {
   if (!isSymbolValid(symbol)) return 0;
   
+  // ═══ FORMAT GUARD: Reject non-MEXC symbol formats before hitting API ═══
+  // MEXC spot symbols are short uppercase like BTCUSDT, ETHUSDT (max ~15 chars)
+  // Solana pump addresses (32+ chars), symbols with underscores/dots = invalid
+  if (symbol.length > 20 || /[^A-Z0-9]/.test(symbol) || symbol.length < 3) {
+    addInvalidSymbol(symbol);
+    return 0;
+  }
+  
   try {
     const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol }, false);
     return parseFloat(data.price as string) || 0;
-  } catch (err) {
-    const msg = (err as Error).message;
-    if (msg.includes('Invalid symbol') || msg.includes('400') || msg.includes('404')) {
-      addInvalidSymbol(symbol);
-    }
+  } catch {
+    // Blacklist any symbol that consistently fails (timeout, invalid, network error)
+    // This prevents retry flooding on garbage symbols
+    addInvalidSymbol(symbol);
     return 0;
   }
 }

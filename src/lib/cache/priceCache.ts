@@ -66,6 +66,14 @@ export async function getOrFetchPrice(symbol: string): Promise<number> {
 }
 
 async function fetchPriceChain(symbol: string): Promise<number> {
+  // ═══ FORMAT GUARD: Block garbage symbols before they flood APIs ═══
+  // Solana pump token addresses, contract addresses, and malformed symbols
+  // must be caught here to prevent 5-source cascade failure
+  if (symbol.length > 25 || /[^A-Za-z0-9_]/.test(symbol)) {
+    log.warn(`[PriceCache] Rejected malformed symbol: ${symbol.slice(0, 30)}...`);
+    return 0;
+  }
+
   const mexcSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
 
   // 1. MEXC (primary live exchange)
