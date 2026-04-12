@@ -11,8 +11,6 @@ import { Signal } from '@/lib/types/radar';
 import { fetchWithRetry } from '@/lib/providers/base';
 import { createLogger } from '@/lib/core/logger';
 import { getResilientPrice } from '@/lib/core/apiFallback';
-import { isSymbolValid } from '@/lib/store/db';
-import { evaluateStrategy, MarketContext } from '@/lib/v2/scouts/ta/dynamicInterpreter';
 import { checkVWAP } from '@/lib/v2/scouts/ta/vwapFilter';
 import { analyzeRSI } from '@/lib/v2/scouts/ta/rsiIndicator';
 import { calcBollingerBands } from '@/lib/v2/scouts/ta/bollingerBands';
@@ -68,12 +66,12 @@ async function fetchBTCCandles(interval: '15m' | '1h' | '4h'): Promise<Candle[]>
   try {
     const candles = await Promise.any([
       fetchFromMEXC(interval).then(c => c.length >= 20 ? c : Promise.reject('MEXC invalid')),
-      fetchFromOKX(interval).then(c => c.length >= 20 ? c : Promise.reject('OKX invalid')),
       fetchFromCryptoCompare(interval).then(c => c.length >= 20 ? c : Promise.reject('CryptoCompare invalid'))
     ]);
     return candles;
-  } catch (err) {
-    log.error(`All 3 providers failed for ${interval}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error(`All reliable providers failed for ${interval}: ${msg}`);
     return [];
   }
 }
@@ -93,26 +91,6 @@ async function fetchFromMEXC(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
     }));
   } catch (err) {
     log.warn(`MEXC OHLC ${interval} failed`, { error: (err as Error).message });
-    return [];
-  }
-}
-
-async function fetchFromOKX(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
-  try {
-    const barMap: Record<string, string> = { '15m': '15m', '1h': '1H', '4h': '4H' };
-    const bar = barMap[interval] || '1H';
-    const res = await fetchWithRetry(
-      `https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=${bar}&limit=250`,
-      { retries: 1, timeoutMs: 8000 }
-    );
-    const json = await res.json();
-    const data = json?.data;
-    if (!Array.isArray(data)) return [];
-    return data.reverse().map((k: string[]) => ({
-      t: parseInt(k[0]), o: parseFloat(k[1]), h: parseFloat(k[2]), l: parseFloat(k[3]), c: parseFloat(k[4])
-    }));
-  } catch (err) {
-    log.warn(`OKX OHLC ${interval} failed`, { error: (err as Error).message });
     return [];
   }
 }

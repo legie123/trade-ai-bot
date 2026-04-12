@@ -3,7 +3,6 @@
 // Negative funding = shorts paying longs = squeeze setup (BUY)
 // Extreme positive = longs over-leveraged = dump risk (SELL)
 // ============================================================
-import { fetchWithRetry } from '@/lib/providers/base';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('FundingRate');
@@ -24,12 +23,6 @@ const gfr = globalThis as unknown as {
 };
 if (!gfr.__fundingCache) gfr.__fundingCache = {};
 const CACHE_TTL = 30 * 60_000;
-
-// Funding rate thresholds (based on historical BTC data)
-const EXTREME_NEGATIVE = -0.01;   // -0.01% → short squeeze risk
-const NEGATIVE = -0.005;          // -0.005% → mild squeeze bias
-const EXTREME_POSITIVE = 0.05;    // +0.05% → longs over-leveraged
-const HIGH_POSITIVE = 0.03;       // +0.03% → caution zone
 
 /**
  * Fetch funding rate from Binance Futures

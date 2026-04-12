@@ -44,7 +44,7 @@ export class PositionManager {
   }
 
   private async evaluateSinglePosition(pos: LivePosition) {
-    // INSTITUTIONAL FIX: Use global PriceCache (MEXC → Binance → OKX → DexScreener → CoinGecko)
+    // INSTITUTIONAL FIX: Use global PriceCache (MEXC → DexScreener → CoinGecko)
     // instead of hitting MEXC directly per position. Prevents IP bans at scale.
     const currentPrice = await getOrFetchPrice(pos.symbol);
     if (!currentPrice || currentPrice <= 0) return;

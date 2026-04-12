@@ -40,22 +40,15 @@ interface CombatAudit {
 }
 
 const C = {
-  bg: '#07080d',
-  surface: '#0c0f1a',
-  surfaceAlt: '#0f1220',
-  border: '#1a2035',
-  borderLight: '#242d44',
-  green: '#00e676',
-  greenDim: 'rgba(0,230,118,0.12)',
-  red: '#ff3d57',
-  redDim: 'rgba(255,61,87,0.12)',
-  blue: '#29b6f6',
-  blueDim: 'rgba(41,182,246,0.12)',
-  yellow: '#ffd740',
-  yellowDim: 'rgba(255,215,64,0.12)',
   text: '#e8ecf4',
   muted: '#6b7891',
   mutedLight: '#9aa5be',
+  green: '#00e676',
+  red: '#ff3d57',
+  blue: '#29b6f6',
+  yellow: '#ffd740',
+  borderLight: '#242d44',
+  border: '#1a2035',
 };
 
 function directionColor(d: string) {
@@ -68,12 +61,12 @@ function directionColor(d: string) {
 }
 
 function directionBg(d: string) {
-  if (!d) return C.blueDim;
+  if (!d) return 'rgba(41,182,246,0.15)';
   const up = ['BUY', 'LONG'];
   const down = ['SELL', 'SHORT'];
-  if (up.includes(d.toUpperCase())) return C.greenDim;
-  if (down.includes(d.toUpperCase())) return C.redDim;
-  return C.blueDim;
+  if (up.includes(d.toUpperCase())) return 'rgba(0,230,118,0.15)';
+  if (down.includes(d.toUpperCase())) return 'rgba(255,61,87,0.15)';
+  return 'rgba(41,182,246,0.15)';
 }
 
 function formatNum(n: number): string {
@@ -89,14 +82,6 @@ function formatCompact(n: number): string {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
   return n.toFixed(0);
-}
-
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch {
-    return iso;
-  }
 }
 
 export default function CryptoRadarPage() {
@@ -186,210 +171,220 @@ export default function CryptoRadarPage() {
       return sortDir === 'desc' ? (bVal as number) - (aVal as number) : (aVal as number) - (bVal as number);
     });
 
-  const toggleSort = (col: typeof sortCol) => {
-    if (col === sortCol) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
-    else { setSortCol(col); setSortDir('desc'); }
-  };
-
-  const sortArrow = (col: typeof sortCol) =>
-    sortCol === col ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '';
-
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, paddingBottom: 80,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif' }}>
-
+    <div style={{ minHeight: '100vh', background: 'radial-gradient(circle at 50% 0%, #151a2d, #050609)', color: C.text, paddingBottom: 80,
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Outfit", "Inter", sans-serif' }}>
+      
       <style>{`
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
-        @keyframes slideUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-        input::placeholder { color: ${C.muted}; }
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap');
+        
+        @keyframes pulseGlow { 0%,100%{opacity:1; transform: scale(1)} 50%{opacity:.6; transform: scale(1.02)} }
+        @keyframes slideUpFade { from{opacity:0; transform:translateY(15px)} to{opacity:1; transform:translateY(0)} }
+        @keyframes radarScan { 0% { transform: rotate(0deg); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: rotate(360deg); opacity: 0; } }
+        
+        .glass-card {
+          background: rgba(18, 22, 38, 0.55);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(255,255,255,0.04);
+          border-radius: 16px;
+          box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+          transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
+        }
+        .glass-card:hover {
+          border-color: rgba(255,255,255,0.1);
+          box-shadow: 0 12px 48px 0 rgba(0, 0, 0, 0.35);
+        }
+        
+        .token-card {
+          background: rgba(12, 15, 26, 0.45);
+          backdrop-filter: blur(8px);
+          border: 1px solid rgba(255,255,255,0.03);
+          border-radius: 12px;
+          padding: 14px;
+          transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .token-card:hover {
+          transform: translateY(-3px);
+          border-color: rgba(41,182,246,0.3);
+          background: rgba(15, 18, 32, 0.7);
+        }
+        
+        input::placeholder { color: ${C.muted}; font-family: 'Outfit', sans-serif; }
         input:focus, select:focus { outline: none; border-color: ${C.blue} !important; }
       `}</style>
 
-      {/* ── TOP BAR ─────────────────────────────────── */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: C.bg,
-        borderBottom: `1px solid ${C.border}`, padding: '12px 20px',
-        display: 'flex', alignItems: 'center', gap: 16 }}>
+      {/* ── TOP HEADER ──────────────────────────────── */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(5, 6, 9, 0.8)',
+        backdropFilter: 'blur(20px)', borderBottom: \`1px solid rgba(255,255,255,0.05)\`, padding: '14px 24px',
+        display: 'flex', alignItems: 'center', gap: 20 }}>
 
-        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.15em', color: C.mutedLight }}>
-          RADAR
+        <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.15em', color: C.text, textShadow: '0 0 10px rgba(255,255,255,0.2)' }}>
+          RADAR<span style={{ color: C.blue }}>.AI</span>
         </span>
 
         {btcData && (
-          <>
-            <div style={{ width: 1, height: 16, background: C.border }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(255,255,255,0.03)', padding: '6px 16px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.05)' }}>
             <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700 }}>
-              BTC&nbsp;
-              <span style={{ color: btcData.price >= btcData.dailyOpen ? C.green : C.red }}>
-                ${formatNum(btcData.price)}
-              </span>
+              BTC <span style={{ color: btcData.price >= btcData.dailyOpen ? C.green : C.red, textShadow: \`0 0 10px \${btcData.price >= btcData.dailyOpen ? C.green : C.red}80\` }}>${formatNum(btcData.price)}</span>
             </span>
             <div style={{ display: 'flex', gap: 6 }}>
               {btcData.signals.slice(0, 2).map((sig, i) => (
                 <span key={i} style={{
-                  fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+                  fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 6,
                   background: directionBg(sig.signal), color: directionColor(sig.signal),
-                  border: `1px solid ${directionColor(sig.signal)}40`,
+                  border: \`1px solid \${directionColor(sig.signal)}40\`,
                 }}>{sig.signal}</span>
               ))}
             </div>
-          </>
+            <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.1)' }} />
+            <span style={{ fontSize: 11, color: btcData.price >= btcData.ema200 ? C.green : C.red, fontWeight: 600 }}>
+               {btcData.price >= btcData.ema200 ? '▲ > EMA200' : '▼ < EMA200'}
+            </span>
+          </div>
         )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 11, color: C.muted }}>
-            {syncing ? 'Syncing...' : `${lastSync}`}
-          </span>
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%',
-            background: syncing ? C.yellow : C.green,
-            animation: syncing ? 'blink 1s infinite' : 'none',
-            display: 'inline-block',
-          }} />
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: 8 }}>
+            <span style={{ fontSize: 11, color: C.mutedLight, fontWeight: 600, letterSpacing: '0.05em' }}>
+              {syncing ? 'UPDATING...' : \`\${lastSync}\`}
+            </span>
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: syncing ? C.yellow : C.blue,
+              boxShadow: \`0 0 10px \${syncing ? C.yellow : C.blue}\`,
+              animation: 'pulseGlow 2s infinite',
+            }} />
+          </div>
           <button onClick={() => fetchMain()} style={{
-            padding: '5px 10px', background: 'transparent',
-            border: `1px solid ${C.border}`, borderRadius: 6,
-            color: C.mutedLight, cursor: 'pointer', fontSize: 12,
-            transition: 'border-color 0.2s',
-          }}>↻ Refresh</button>
+            padding: '8px 16px', background: 'rgba(41,182,246,0.1)',
+            border: \`1px solid rgba(41,182,246,0.3)\`, borderRadius: 8,
+            color: C.blue, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(41,182,246,0.2)'; e.currentTarget.style.boxShadow = '0 0 15px rgba(41,182,246,0.4)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(41,182,246,0.1)'; e.currentTarget.style.boxShadow = 'none'; }}
+          >↻ SYNC</button>
         </div>
       </div>
 
-      <div style={{ padding: '20px 20px 0', maxWidth: 1400, margin: '0 auto' }}>
+      <div style={{ padding: '24px', maxWidth: 1600, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
         {/* ── KPI ROW ─────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
           {[
-            { label: 'EQUITY', value: `$${formatNum(botStats.equity || 0)}`, color: C.text },
+            { label: 'TOTAL EQUITY', value: \`\$\${formatNum(botStats.equity || 0)}\`, color: '#fff', glow: 'none' },
             {
-              label: 'DAILY PnL', color: (botStats.todayPnlPercent || 0) >= 0 ? C.green : C.red,
-              value: `${(botStats.todayPnlPercent || 0) >= 0 ? '+' : ''}${(botStats.todayPnlPercent || 0).toFixed(2)}%`,
+              label: 'DAILY ALPHA (PnL)', color: (botStats.todayPnlPercent || 0) >= 0 ? C.green : C.red,
+              glow: (botStats.todayPnlPercent || 0) >= 0 ? \`0 0 20px \${C.green}40\` : \`0 0 20px \${C.red}40\`,
+              value: \`\${(botStats.todayPnlPercent || 0) >= 0 ? '+' : ''}\${(botStats.todayPnlPercent || 0).toFixed(2)}%\`,
             },
-            { label: 'WIN RATE', value: `${(botStats.overallWinRate || 0).toFixed(1)}%`, color: C.green },
-            { label: 'MAX DD', value: `${(botStats.maxDrawdown || 0).toFixed(2)}%`, color: C.red },
-          ].map(kpi => (
-            <div key={kpi.label} style={{ background: C.surface, border: `1px solid ${C.border}`,
-              borderRadius: 10, padding: '14px 16px' }}>
-              <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.1em', marginBottom: 6 }}>
+            { label: 'GLOBAL WIN RATE', value: \`\${(botStats.overallWinRate || 0).toFixed(1)}%\`, color: C.blue, glow: \`0 0 15px \${C.blue}30\` },
+            { label: 'MAX STRESS (DD)', value: \`\${(botStats.maxDrawdown || 0).toFixed(2)}%\`, color: C.red, glow: 'none' },
+          ].map((kpi, idx) => (
+            <div key={kpi.label} className="glass-card" style={{ padding: '20px 24px', animation: \`slideUpFade 0.4s ease \${idx * 100}ms both\` }}>
+              <div style={{ fontSize: 11, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.15em', marginBottom: 8 }}>
                 {kpi.label}
               </div>
-              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', color: kpi.color }}>
+              <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'monospace', color: kpi.color, textShadow: kpi.glow }}>
                 {kpi.value}
               </div>
             </div>
           ))}
         </div>
 
-        {/* ── MAIN GRID: consensus + signals ─────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 16, marginBottom: 20 }}>
-
-          {/* Syndicate Consensus */}
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`,
-            borderRadius: 12, padding: '18px 20px' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em',
-              color: C.muted, marginBottom: 14 }}>SYNDICATE CONSENSUS</div>
-
-            {latestAudit ? (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-                  <div>
-                    <div style={{ fontSize: 28, fontWeight: 800,
-                      color: directionColor(latestAudit.finalDirection || '') }}>
-                      {latestAudit.finalDirection || 'NEUTRAL'}
-                    </div>
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                      {formatTime(latestAudit.timestamp)}
-                    </div>
-                  </div>
-                  {/* Confidence ring */}
-                  <div style={{ marginLeft: 'auto', position: 'relative', width: 72, height: 72,
-                    flexShrink: 0 }}>
-                    <svg width="72" height="72" style={{ transform: 'rotate(-90deg)' }}>
-                      <circle cx="36" cy="36" r="28" fill="none" stroke={C.border} strokeWidth="6" />
-                      <circle cx="36" cy="36" r="28" fill="none"
-                        stroke={conf > 70 ? C.green : conf > 50 ? C.blue : C.yellow}
-                        strokeWidth="6"
-                        strokeDasharray={`${(conf / 100) * 175.9} 175.9`}
-                        strokeLinecap="round" />
-                    </svg>
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      fontSize: 14, fontWeight: 800, fontFamily: 'monospace' }}>
-                      {conf.toFixed(0)}%
+        {/* ── MAINFRAME GRID ─────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(380px, 1fr) 1fr', gap: 24 }}>
+          
+          {/* SYNDICATE CONSENSUS */}
+          <div className="glass-card" style={{ padding: '24px', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: -50, right: -50, width: 200, height: 200, background: \`radial-gradient(circle, \${C.blue}20, transparent 70%)\`, filter: 'blur(30px)', zIndex: 0 }} />
+            
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 4, height: 14, background: C.blue, borderRadius: 2 }} />
+                SYNDICATE RADAR
+              </div>
+              
+              {latestAudit ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
+                  <div style={{ position: 'relative', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {/* Radar swept background */}
+                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: \`1px solid \${C.borderLight}\` }} />
+                    <div style={{ position: 'absolute', inset: 10, borderRadius: '50%', border: \`1px dashed \${C.border}\` }} />
+                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: \`conic-gradient(from 0deg, transparent 70%, \${directionColor(latestAudit.finalDirection || '')}60 100%)\`, animation: 'radarScan 4s linear infinite' }} />
+                    
+                    {/* Center Core */}
+                    <div style={{ zIndex: 2, background: 'rgba(12, 15, 26, 0.8)', backdropFilter: 'blur(10px)', borderRadius: '50%', width: 100, height: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: \`2px solid \${directionColor(latestAudit.finalDirection || '')}\`, boxShadow: \`0 0 20px \${directionColor(latestAudit.finalDirection || '')}50\` }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: directionColor(latestAudit.finalDirection || ''), letterSpacing: '0.05em' }}>
+                          {latestAudit.finalDirection || 'IDLE'}
+                        </div>
+                        <div style={{ fontSize: 14, fontFamily: 'monospace', fontWeight: 800, color: C.text }}>
+                          {conf.toFixed(0)}%
+                        </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Seat opinions */}
-                {latestAudit.opinions && latestAudit.opinions.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {latestAudit.opinions.slice(0, 4).map(op => (
-                      <div key={op.seat} style={{ display: 'flex', alignItems: 'center',
-                        gap: 8, padding: '7px 10px', borderRadius: 7,
-                        background: C.surfaceAlt, border: `1px solid ${C.border}` }}>
-                        <span style={{ fontSize: 11, color: C.muted, minWidth: 70,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {op.seat}
-                        </span>
-                        <span style={{ fontSize: 11, fontWeight: 700,
-                          color: directionColor(op.direction),
-                          background: directionBg(op.direction),
-                          padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
-                          {op.direction}
-                        </span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, fontFamily: 'monospace',
-                          color: C.mutedLight, flexShrink: 0 }}>
-                          {op.confidence.toFixed(0)}%
-                        </span>
+                  <div style={{ width: '100%', background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ fontSize: 10, color: C.mutedLight, letterSpacing: '0.1em', fontWeight: 700, marginBottom: 4 }}>NODE OPINIONS (T-0)</div>
+                    {latestAudit.opinions && latestAudit.opinions.slice(0, 4).map(op => (
+                      <div key={op.seat} style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{op.seat}</div>
+                          <div style={{ fontSize: 10, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{op.reasoning || "Technical consensus aligned."}</div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                          <span style={{ fontSize: 10, fontWeight: 800, color: directionColor(op.direction), background: directionBg(op.direction), padding: '2px 8px', borderRadius: 4, letterSpacing: '0.05em' }}>
+                            {op.direction}
+                          </span>
+                          <span style={{ fontSize: 11, fontFamily: 'monospace', color: C.mutedLight, fontWeight: 600 }}>{op.confidence.toFixed(0)}%</span>
+                        </div>
                       </div>
                     ))}
                   </div>
-                )}
-              </>
-            ) : (
-              <div style={{ color: C.muted, fontSize: 13, padding: '20px 0' }}>
-                Awaiting signal...
-              </div>
-            )}
+                </div>
+              ) : (
+                <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontWeight: 600, letterSpacing: '0.1em' }}>
+                  AWAITING VECTORS...
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Active Signals */}
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`,
-            borderRadius: 12, padding: '18px 20px' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em',
-              color: C.muted, marginBottom: 14 }}>
-              ACTIVE SIGNALS
-              {signals.length > 0 && (
-                <span style={{ marginLeft: 8, padding: '2px 7px', borderRadius: 10,
-                  background: C.blueDim, color: C.blue, fontSize: 10 }}>
-                  {signals.length}
-                </span>
-              )}
+          {/* ACTIVE TARGETS FEED */}
+          <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 4, height: 14, background: C.green, borderRadius: 2 }} />
+                ACTIVE TARGETS
+              </div>
+              <span style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: 12, fontSize: 11, color: C.mutedLight }}>
+                {signals.length} SPOTTED
+              </span>
             </div>
 
             {signals.length === 0 ? (
-              <div style={{ color: C.muted, fontSize: 13, padding: '20px 0' }}>No signals yet</div>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontSize: 12, fontWeight: 600 }}>NO HIGH-CONVICTION SIGNALS DETECTED</div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                gap: 8, maxHeight: 280, overflowY: 'auto' }}>
-                {signals.slice(0, 15).map((sig, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '8px 10px', borderRadius: 8,
-                    background: C.surfaceAlt, border: `1px solid ${C.border}`,
-                    animation: `slideUp 0.2s ease ${i * 30}ms both` }}>
-                    <span style={{ fontWeight: 700, fontSize: 13, flex: 1,
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {sig.symbol}
-                    </span>
-                    <span style={{ fontSize: 10, fontWeight: 700,
-                      color: directionColor(sig.direction),
-                      background: directionBg(sig.direction),
-                      padding: '2px 7px', borderRadius: 4, flexShrink: 0 }}>
-                      {sig.direction}
-                    </span>
-                    <span style={{ fontSize: 10, color: C.muted,
-                      fontFamily: 'monospace', flexShrink: 0 }}>
-                      {sig.confidence.toFixed(0)}%
-                    </span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+                {signals.map((sig, i) => (
+                  <div key={i} className="token-card" style={{ animation: \`slideUpFade 0.3s ease \${i * 40}ms both\` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '0.02em' }}>{sig.symbol}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: directionColor(sig.direction), background: directionBg(sig.direction), padding: '3px 8px', borderRadius: 6, letterSpacing: '0.05em' }}>
+                        {sig.direction}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                      <div style={{ fontSize: 10, color: C.mutedLight, fontWeight: 600, letterSpacing: '0.05em' }}>CONFIDENCE</div>
+                      <div style={{ fontSize: 16, fontFamily: 'monospace', fontWeight: 800, color: sig.confidence > 75 ? C.green : C.yellow }}>
+                        {sig.confidence.toFixed(1)}%
+                      </div>
+                    </div>
+                    {/* Mini progress bar inside card */}
+                    <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
+                       <div style={{ height: '100%', width: \`\${sig.confidence}%\`, background: directionColor(sig.direction), borderRadius: 2 }} />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -397,129 +392,69 @@ export default function CryptoRadarPage() {
           </div>
         </div>
 
-        {/* ── BTC EMAs (compact strip) ─────────────── */}
-        {btcData && (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`,
-            borderRadius: 10, padding: '12px 20px', marginBottom: 20,
-            display: 'flex', gap: 32, alignItems: 'center', overflowX: 'auto' }}>
-            <div>
-              <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, marginBottom: 2 }}>DAILY OPEN</div>
-              <div style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 600 }}>
-                ${formatNum(btcData.dailyOpen)}
+        {/* ── TOKEN HEATGRID (Replaces generic table) ──────── */}
+        <div className="glass-card" style={{ padding: '24px' }}>
+           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 4, height: 14, background: C.yellow, borderRadius: 2 }} />
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text }}>
+                MARKET HEATGRID
               </div>
             </div>
-            {[['EMA 50', btcData.ema50], ['EMA 200', btcData.ema200], ['EMA 800', btcData.ema800]].map(([label, val]) => {
-              const above = btcData.price >= (val as number);
-              return (
-                <div key={label as string}>
-                  <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, marginBottom: 2 }}>{label as string}</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 600,
-                    color: above ? C.green : C.red }}>
-                    ${formatNum(val as number)}
-                  </div>
-                </div>
-              );
-            })}
-            <div style={{ marginLeft: 'auto', fontSize: 11, color: C.muted, whiteSpace: 'nowrap' }}>
-              Price {btcData.price >= btcData.ema200 ? '▲ above' : '▼ below'} EMA 200
-            </div>
-          </div>
-        )}
 
-        {/* ── TOKEN SCANNER ────────────────────────── */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`,
-          borderRadius: 12, padding: '18px 20px', marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: C.muted }}>
-              TOKEN SCANNER
-            </span>
-            <span style={{ fontSize: 10, color: C.muted }}>
-              {filteredTokens.length} tokens
-            </span>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={tokenSearch}
-                onChange={e => setTokenSearch(e.target.value)}
-                style={{ width: 120, padding: '6px 10px', background: C.surfaceAlt,
-                  border: `1px solid ${C.border}`, borderRadius: 6,
-                  color: C.text, fontSize: 12 }}
+            <div style={{ display: 'flex', gap: 12 }}>
+              <input type="text" placeholder="Filter symbol..." value={tokenSearch} onChange={e => setTokenSearch(e.target.value)}
+                style={{ width: 160, padding: '8px 14px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: C.text, fontSize: 12, fontWeight: 600 }}
               />
-              <select
-                value={tokenChainFilter}
-                onChange={e => setTokenChainFilter(e.target.value)}
-                style={{ padding: '6px 10px', background: C.surfaceAlt,
-                  border: `1px solid ${C.border}`, borderRadius: 6,
-                  color: C.text, fontSize: 12 }}
-              >
-                <option value="">All Chains</option>
-                <option value="solana">Solana</option>
-                <option value="ethereum">Ethereum</option>
+              <select value={tokenChainFilter} onChange={e => setTokenChainFilter(e.target.value)}
+                style={{ padding: '8px 14px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: C.text, fontSize: 12, fontWeight: 600 }}>
+                <option value="">ALL CHAINS</option>
+                <option value="solana">SOLANA</option>
+                <option value="ethereum">ETHEREUM</option>
               </select>
             </div>
           </div>
-
-          <div style={{ overflowX: 'auto', maxHeight: 340, overflowY: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead style={{ position: 'sticky', top: 0, background: C.surface }}>
-                <tr>
-                  {[
-                    { label: 'Symbol', col: null },
-                    { label: 'Price', col: 'price' as const },
-                    { label: '1h Change', col: 'change24h' as const },
-                    { label: 'Volume', col: 'volume24h' as const },
-                    { label: 'Chain', col: null },
-                    { label: 'Exchange', col: null },
-                  ].map(th => (
-                    <th key={th.label}
-                      onClick={th.col ? () => toggleSort(th.col!) : undefined}
-                      style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600,
-                        color: th.col && sortCol === th.col ? C.blue : C.muted,
-                        borderBottom: `1px solid ${C.border}`,
-                        cursor: th.col ? 'pointer' : 'default', whiteSpace: 'nowrap',
-                        userSelect: 'none', fontSize: 10, letterSpacing: '0.06em' }}>
-                      {th.label}{th.col ? sortArrow(th.col) : ''}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTokens.length === 0 ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: C.muted }}>
-                    No tokens match
-                  </td></tr>
-                ) : filteredTokens.slice(0, 40).map((t, i) => (
-                  <tr key={i} style={{ borderBottom: `1px solid ${C.border}22` }}
-                    onMouseEnter={e => (e.currentTarget.style.background = C.surfaceAlt)}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td style={{ padding: '9px 8px', fontWeight: 600 }}>
-                      <div>{t.symbol}</div>
-                      {t.name && <div style={{ fontSize: 10, color: C.muted }}>{t.name.slice(0, 14)}</div>}
-                    </td>
-                    <td style={{ padding: '9px 8px', fontFamily: 'monospace' }}>
-                      {t.price !== null ? `$${formatNum(t.price)}` : '—'}
-                    </td>
-                    <td style={{ padding: '9px 8px', fontFamily: 'monospace',
-                      color: t.change24h !== null ? (t.change24h >= 0 ? C.green : C.red) : C.muted,
-                      fontWeight: 600 }}>
-                      {t.change24h !== null
-                        ? `${t.change24h >= 0 ? '+' : ''}${t.change24h.toFixed(2)}%`
-                        : '—'}
-                    </td>
-                    <td style={{ padding: '9px 8px', fontFamily: 'monospace', color: C.mutedLight }}>
-                      {t.volume24h !== null ? `$${formatCompact(t.volume24h)}` : '—'}
-                    </td>
-                    <td style={{ padding: '9px 8px', fontSize: 11, textTransform: 'capitalize', color: C.mutedLight }}>
-                      {t.chain}
-                    </td>
-                    <td style={{ padding: '9px 8px', fontSize: 11, color: C.muted }}>
-                      {t.exchange}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, maxHeight: 500, overflowY: 'auto' }}>
+             {filteredTokens.length === 0 ? (
+                <div style={{ gridColumn: '1 / -1', padding: 40, textAlign: 'center', color: C.muted, fontWeight: 600, letterSpacing: '0.1em' }}>NO TARGETS FOUND</div>
+             ) : (
+                filteredTokens.slice(0, 50).map((t, i) => {
+                  const isUp = t.change24h !== null && t.change24h >= 0;
+                  return (
+                    <div key={i} className="token-card" style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: \`slideUpFade 0.3s ease \${i * 15}ms both\` }}>
+                      {/* Token Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                           <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.02em', color: C.text }}>{t.symbol}</div>
+                           <div style={{ fontSize: 10, color: C.mutedLight, fontWeight: 600 }}>{t.name?.slice(0, 20)}</div>
+                        </div>
+                        <div style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase' }}>
+                          {t.chain}
+                        </div>
+                      </div>
+                      
+                      {/* Price & Metrics */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>PRICE</span>
+                          <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700 }}>{t.price !== null ? \`$\${formatNum(t.price)}\` : '—'}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+                           <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>1H MOVE</span>
+                           <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 800, color: isUp ? C.green : C.red }}>
+                             {t.change24h !== null ? \`\${isUp ? '+' : ''}\${t.change24h.toFixed(2)}%\` : '—'}
+                           </span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                          <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>VOL 24H</span>
+                          <span style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 600, color: C.text }}>{t.volume24h !== null ? \`$\${formatCompact(t.volume24h)}\` : '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+             )}
           </div>
         </div>
 

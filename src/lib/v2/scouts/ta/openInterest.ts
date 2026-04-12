@@ -4,7 +4,6 @@
 // OI rising + price rising = confirmation (strong trend)
 // OI falling + price rising = weak rally (SELL signal)
 // ============================================================
-import { fetchWithRetry } from '@/lib/providers/base';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('OpenInterest');
