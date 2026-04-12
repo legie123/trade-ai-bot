@@ -36,12 +36,12 @@ export async function GET() {
       }
     } catch { /* internal fetch may fail, use fallback */ }
 
-    // If internal fetch fails, try Binance directly  
+    // If internal fetch fails, try MEXC directly  
     if (!btcPrice) {
       try {
-        const binRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', { signal: AbortSignal.timeout(3000) });
-        if (binRes.ok) {
-          const d = await binRes.json();
+        const mexcRes = await fetch('https://api.mexc.com/api/v3/ticker/price?symbol=BTCUSDT', { signal: AbortSignal.timeout(3000) });
+        if (mexcRes.ok) {
+          const d = await mexcRes.json();
           btcPrice = parseFloat(d.price);
         }
       } catch { /* */ }

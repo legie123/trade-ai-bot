@@ -67,7 +67,7 @@ function calcEMA(values: number[], period: number): number {
 async function fetchBTCCandles(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
   try {
     const candles = await Promise.any([
-      fetchFromBinance(interval).then(c => c.length >= 20 ? c : Promise.reject('Binance invalid')),
+      fetchFromMEXC(interval).then(c => c.length >= 20 ? c : Promise.reject('MEXC invalid')),
       fetchFromOKX(interval).then(c => c.length >= 20 ? c : Promise.reject('OKX invalid')),
       fetchFromCryptoCompare(interval).then(c => c.length >= 20 ? c : Promise.reject('CryptoCompare invalid'))
     ]);
@@ -78,10 +78,12 @@ async function fetchBTCCandles(interval: '15m' | '1h' | '4h'): Promise<Candle[]>
   }
 }
 
-async function fetchFromBinance(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
+async function fetchFromMEXC(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
   try {
+    // MEXC intervals: '15m', '60m' (for 1h), '4h'
+    const mexcInterval = interval === '1h' ? '60m' : interval;
     const res = await fetchWithRetry(
-      `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=250`,
+      `https://api.mexc.com/api/v3/klines?symbol=BTCUSDT&interval=${mexcInterval}&limit=250`,
       { retries: 1, timeoutMs: 8000 }
     );
     const klines = await res.json();
@@ -90,7 +92,7 @@ async function fetchFromBinance(interval: '15m' | '1h' | '4h'): Promise<Candle[]
       t: k[0], o: parseFloat(k[1]), h: parseFloat(k[2]), l: parseFloat(k[3]), c: parseFloat(k[4])
     }));
   } catch (err) {
-    log.warn(`Binance OHLC ${interval} failed`, { error: (err as Error).message });
+    log.warn(`MEXC OHLC ${interval} failed`, { error: (err as Error).message });
     return [];
   }
 }

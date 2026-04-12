@@ -42,41 +42,14 @@ export async function getFundingRate(symbol: string = 'BTCUSDT'): Promise<Fundin
   }
 
   try {
-    const res = await fetchWithRetry(
-      `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`,
-      { retries: 2, timeoutMs: 5000 }
-    );
-    const data = await res.json();
-
-    const rate = parseFloat(data?.lastFundingRate || '0');
-    const nextFundingTime = data?.nextFundingTime
-      ? new Date(data.nextFundingTime).toISOString()
-      : '';
-
-    let signal: 'BUY' | 'SELL' | 'NEUTRAL' = 'NEUTRAL';
-    let strength = 0;
-    let reason = `Funding: ${(rate * 100).toFixed(4)}%`;
-
-    if (rate <= EXTREME_NEGATIVE) {
-      signal = 'BUY';
-      strength = 0.9;
-      reason = `🔥 Extreme negative funding ${(rate * 100).toFixed(4)}% → Short squeeze setup`;
-    } else if (rate <= NEGATIVE) {
-      signal = 'BUY';
-      strength = 0.5;
-      reason = `📈 Negative funding ${(rate * 100).toFixed(4)}% → Mild squeeze bias`;
-    } else if (rate >= EXTREME_POSITIVE) {
-      signal = 'SELL';
-      strength = 0.9;
-      reason = `⚠️ Extreme positive funding ${(rate * 100).toFixed(4)}% → Longs over-leveraged`;
-    } else if (rate >= HIGH_POSITIVE) {
-      signal = 'SELL';
-      strength = 0.5;
-      reason = `📉 High positive funding ${(rate * 100).toFixed(4)}% → Caution zone`;
-    } else {
-      reason = `Neutral funding ${(rate * 100).toFixed(4)}%`;
-    }
-
+    // MEXC Contract Funding Rate API could be implemented here
+    // For now, return NEUTRAL to purge Binance dependency safely
+    const rate = 0;
+    const nextFundingTime = '';
+    const signal = 'NEUTRAL';
+    const strength = 0;
+    const reason = 'Funding rate unavailable (MEXC Migration)';
+    
     const result: FundingRateData = {
       symbol, rate, signal, strength, reason, nextFundingTime, cached: false,
     };

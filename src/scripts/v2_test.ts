@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
+config({ path: '.env.local' });
 import { ManagerVizionar } from '../lib/v2/manager/managerVizionar';
 import { gladiatorStore } from '../lib/store/gladiatorStore';
 import { Signal } from '../lib/types/radar';
@@ -8,9 +9,12 @@ async function runV2Test() {
   console.log("🔥 INITIATING PHOENIX V2 MASTER TEST 🔥");
   console.log("=========================================\n");
 
+  const { initDB } = await import('../lib/store/db');
+  await initDB();
+
   const manager = ManagerVizionar.getInstance();
   const symbol = 'BTCUSDT'; // Use standard format
-  const gladiator = gladiatorStore.findBestGladiator(symbol);
+  const gladiator = gladiatorStore.getGladiators().sort((a,b) => a.rank - b.rank)[0];
 
   if (!gladiator) {
      console.error('❌ Failed: No Gladiator found to accept the signal.');

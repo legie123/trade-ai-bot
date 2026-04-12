@@ -132,12 +132,12 @@ async function fetchOHLC(coinId: string): Promise<Candle[]> {
   const coin = SOLANA_COINS.find((c) => c.id === coinId);
   if (!coin) return [];
 
-  // Try Binance Real OHLC first
+  // Try MEXC Real OHLC first
   try {
-    let binanceSymbol = `${coin.symbol.toUpperCase()}USDT`;
-    if (coin.symbol.toUpperCase() === 'RNDR') binanceSymbol = 'RENDERUSDT';
+    let mexcSymbol = `${coin.symbol.toUpperCase()}USDT`;
+    if (coin.symbol.toUpperCase() === 'RNDR') mexcSymbol = 'RENDERUSDT';
 
-    const res = await fetchWithRetry(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=4h&limit=250`, { retries: 1, timeoutMs: 3000 });
+    const res = await fetchWithRetry(`https://api.mexc.com/api/v3/klines?symbol=${mexcSymbol}&interval=4h&limit=250`, { retries: 1, timeoutMs: 3000 });
     const klines = await res.json();
     
     if (Array.isArray(klines) && klines.length > 0) {
@@ -148,7 +148,7 @@ async function fetchOHLC(coinId: string): Promise<Candle[]> {
       return candles;
     }
   } catch (err) {
-    log.warn(`Binance OHLC failed for ${coinId}, falling back to synthetic`, { err: (err as Error).message });
+    log.warn(`MEXC OHLC failed for ${coinId}, falling back to synthetic`, { err: (err as Error).message });
   }
 
   // Synthetic Fallback Native

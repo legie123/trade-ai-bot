@@ -87,16 +87,8 @@ async function fetchPriceChain(symbol: string): Promise<number> {
   } catch { /* next */ }
 
   // 2. Binance (Removed due to Geo-block)
-
-  // 3. OKX
-  try {
-    const { getOkxPrice } = await import('@/lib/exchange/okxClient');
-    const price = await getOkxPrice(mexcSymbol);
-    if (price > 0) {
-      setCachedPrice(symbol, price, 'OKX', DEFAULT_TTL);
-      return price;
-    }
-  } catch { /* next */ }
+  
+  // 3. OKX (Removed per user directive - Hardening on MEXC exclusively)
 
   // 4. DexScreener (Solana tokens)
   try {

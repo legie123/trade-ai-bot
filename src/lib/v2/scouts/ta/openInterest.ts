@@ -37,63 +37,15 @@ export async function getOpenInterest(symbol: string = 'BTCUSDT'): Promise<OIDat
   }
 
   try {
-    // Fetch current OI
-    const [oiRes, priceRes] = await Promise.allSettled([
-      fetchWithRetry(
-        `https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`,
-        { retries: 2, timeoutMs: 5000 }
-      ),
-      fetchWithRetry(
-        `https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${symbol}`,
-        { retries: 2, timeoutMs: 5000 }
-      ),
-    ]);
-
-    let openInterest = 0;
-    let priceChange24h = 0;
-
-    if (oiRes.status === 'fulfilled') {
-      const oiData = await oiRes.value.json();
-      openInterest = parseFloat(oiData?.openInterest || '0');
-    }
-
-    if (priceRes.status === 'fulfilled') {
-      const priceData = await priceRes.value.json();
-      priceChange24h = parseFloat(priceData?.priceChangePercent || '0');
-    }
-
-    // For OI change, we compare with cached value
-    let oiChange24h = 0;
-    const prevOI = cached?.data?.openInterest;
-    if (prevOI && prevOI > 0) {
-      oiChange24h = ((openInterest - prevOI) / prevOI) * 100;
-    }
-
-    // ─── Divergence Detection ──────────────────────
-    let signal: 'BUY' | 'SELL' | 'NEUTRAL' = 'NEUTRAL';
-    let divergence: OIData['divergence'] = 'NONE';
-    let strength = 0;
-    let reason = `OI: ${openInterest.toFixed(0)} BTC`;
-
-    // BULLISH DIVERGENCE: OI rising (new positions) + price falling (accumulation)
-    if (oiChange24h > 2 && priceChange24h < -1) {
-      signal = 'BUY';
-      divergence = 'BULLISH_DIV';
-      strength = Math.min(1, Math.abs(oiChange24h) * 0.1);
-      reason = `📊 OI Bullish Divergence: OI +${oiChange24h.toFixed(1)}% while price ${priceChange24h.toFixed(1)}% — smart money accumulating`;
-    }
-    // BEARISH DIVERGENCE: OI falling + price rising (weak rally, no new buyers)
-    else if (oiChange24h < -2 && priceChange24h > 1) {
-      signal = 'SELL';
-      divergence = 'BEARISH_DIV';
-      strength = Math.min(1, Math.abs(oiChange24h) * 0.1);
-      reason = `📊 OI Bearish Divergence: OI ${oiChange24h.toFixed(1)}% while price +${priceChange24h.toFixed(1)}% — rally losing conviction`;
-    }
-    // CONFIRMING: Both rising = strong trend
-    else if (oiChange24h > 3 && priceChange24h > 2) {
-      divergence = 'CONFIRMING';
-      reason = `📊 OI Confirms trend: OI +${oiChange24h.toFixed(1)}% + price +${priceChange24h.toFixed(1)}%`;
-    }
+    // MEXC Contract Open Interest API could be implemented here
+    // For now, return NEUTRAL to purge Binance dependency safely
+    const openInterest = 0;
+    const oiChange24h = 0;
+    const priceChange24h = 0;
+    const signal = 'NEUTRAL';
+    const divergence = 'NONE';
+    const strength = 0;
+    const reason = 'OI data unavailable (MEXC Migration)';
 
     const result: OIData = {
       openInterest, oiChange24h, priceChange24h,
