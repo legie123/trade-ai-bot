@@ -382,19 +382,35 @@ Există endpoint `/api/diagnostics/signal-quality` (creat în Faza 4), dar datel
 
 ---
 
-### FAZA 8 — Arhitectura Multi-Agent (Target: Luna 3)
+### FAZA 8 — Arhitectura Multi-Agent ✅ COMPLETAT (2026-04-12)
 **Obiectiv**: Extindere la sistem distribuit cu 4 arene și comunicare A2A.
 
-1. Implementează `/.well-known/agent-card.json` pentru fiecare arenă
-2. Configurare MCP server pentru acces uniform la DB + unelte
-3. Director `.swarm/` cu `task_plan.md`, `progress.md`, `findings.md` per agent
-4. Arena 1 (Alpha Quant): Sharpe ratio live, Monte Carlo simulare, backtesting on-demand
-5. Arena 2 (Sentiment): NLP pe Moltbook feed, heartbeat 30 min
-6. Arena 3 (Risk): Kill switch evoluат cu Velocity Kill Switch formula:
-   ```
-   IF ΔT < Threshold_Minutes AND Spend%Delta >= Threshold_Increase → TRIGGER KILL SWITCH
-   ```
-7. Arena 4 (Execution + Verification): Browser-Use pentru verificare cross-platform, BigQuery analytics
+**Implementat:**
+- `public/.well-known/agent-card.json` — static Google A2A agent card
+- `src/app/api/agent-card/route.ts` — dynamic card cu live SERVICE_URL
+- `src/app/api/a2a/alpha-quant/route.ts` — Arena 1: TA signals (RSI, MACD, EMA)
+- `src/app/api/a2a/sentiment/route.ts` — Arena 2: Moltbook swarm + Omega bias
+- `src/app/api/a2a/risk/route.ts` — Arena 3: SentinelGuard + position sizing
+- `src/app/api/a2a/execution/route.ts` — Arena 4: MEXC live + phantom orders
+- `src/app/api/a2a/orchestrate/route.ts` — Orchestrator: fan-out + consensus
+- `src/lib/v2/swarm/swarmOrchestrator.ts` — SwarmOrchestrator singleton
+- `mcp.json` — MCP server config cu 6 tools expuse
+- `.swarm/task_plan.md`, `.swarm/progress.md`, `.swarm/findings.md`
+
+**Arhitectură:**
+```
+POST /api/a2a/orchestrate
+  ├─▶ AlphaQuant + Sentiment (parallel)
+  ├─▶ Risk (evaluare candidat direction)
+  ├─▶ OmegaExtractor (modifier 0.7–1.3)
+  └─▶ Execution (phantom/live)
+```
+
+**Rămas pentru Faza 9:**
+- Monte Carlo backtesting on-demand
+- NLP profund pe Moltbook feed (heartbeat 30 min)
+- Velocity Kill Switch formula implementată
+- BigQuery analytics + Browser-Use verificare cross-platform
 
 ---
 
