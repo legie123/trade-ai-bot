@@ -126,21 +126,56 @@ async function callGemini(prompt: string, timeout: number, signal?: AbortSignal)
 }
 
 async function executeDualEngineFallback(prompt: string, timeout: number): Promise<string> {
+  const STAGGER_MS = 6000; // Reduced stagger
+  
+  const controller = new AbortController();
+  
   try {
-    return await callOpenAI(prompt, timeout);
-  } catch (err) {
-    log.warn(`OpenAI failed, bridging to DeepSeek Fallback in <5ms`, { error: (err as Error).message });
-    try {
-      return await callDeepSeek(prompt, timeout);
-    } catch (dsErr) {
-      log.warn(`DeepSeek Fallback failed, bridging to Gemini Fallback in <5ms`, { error: (dsErr as Error).message });
+    // 1. Start Primary (OpenAI)
+    const primaryPromise = (async () => {
       try {
-        return await callGemini(prompt, timeout);
-      } catch (gemErr) {
-        log.error(`All 3 LLMs (OpenAI, DeepSeek, Gemini) completely failed.`, { error: (gemErr as Error).message });
-        throw new Error(`LLM Engine Total Failure: ${(gemErr as Error).message}`);
+        return await callOpenAI(prompt, timeout, controller.signal);
+      } catch (err) {
+        // If it's a credit or rate limit error, trigger Gemini IMMEDIATELY
+        const msg = (err as Error).message;
+        if (msg.includes('429') || msg.includes('402')) {
+          log.warn(`[DualMaster] Primary engine (OpenAI) reported ${msg}. Fast-tracking Gemini...`);
+          return await callGemini(prompt, timeout, controller.signal);
+        }
+        throw err;
       }
-    }
+    })();
+    
+    // 2. Create Fallback Promise (staggered)
+    const fallbackPromise = (async () => {
+      await new Promise(res => setTimeout(res, STAGGER_MS));
+      if (controller.signal.aborted) return '';
+      
+      log.info(`[DualMaster] Primary lagging > 6s. Spawning Parallel Fallback...`);
+      try {
+        // Try DeepSeek first, but if it's 402 (from diagnostic results), it will fail fast to Gemini
+        return await callDeepSeek(prompt, timeout, controller.signal);
+      } catch (dsErr) {
+        log.warn(`[DualMaster] DeepSeek failed, switching to Gemini...`);
+        return await callGemini(prompt, timeout, controller.signal);
+      }
+    })();
+
+    // 3. Race them
+    const result = await Promise.race([
+      primaryPromise,
+      fallbackPromise.then(res => {
+        if (!res) return new Promise(() => {}); // If empty/aborted, don't win the race
+        return res;
+      })
+    ]);
+
+    controller.abort(); // Cancel the other one
+    return result as string;
+  } catch (err) {
+    controller.abort();
+    log.error(`[DualMaster] Composite Engine Failure`, { error: (err as Error).message });
+    throw err;
   }
 }
 

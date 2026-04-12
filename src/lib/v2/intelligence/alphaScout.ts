@@ -150,21 +150,25 @@ export class AlphaScout {
       const zScore = this.getVolumeZScore(sym);
       const oib = this.getOrderBookImbalance(sym);
       const shift = this.getVwapShift(sym);
+      const uppercaseSym = sym.toUpperCase();
 
       let sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
       let confidence = 0.5;
 
-      // Antigravity Quant Protocol: Z-Score > 2.5 + Strong OIB
+      // Antigravity Quant Protocol: Z-Score > 2.5 + Strong OIB + Anti-FOMO Guard
       if (zScore > 2.5 && oib > 0.65) {
-        sentiment = 'BULLISH';
-        confidence = 0.85;
+        if (shift < 3.0) {
+          sentiment = 'BULLISH';
+          confidence = 0.85;
+        } else {
+          log.warn(`🎯 [AlphaScout] FOMO BLOCKED: ${uppercaseSym} | Shift: ${shift.toFixed(2)}% | Z:${zScore.toFixed(2)}`);
+        }
       } else if (zScore > 2.5 && oib < 0.35) {
         sentiment = 'BEARISH';
         confidence = 0.85;
       }
 
       if (sentiment !== 'NEUTRAL') {
-        const uppercaseSym = sym.toUpperCase();
         signals.push({
           source: 'LIVE_QUANT_WS',
           symbol: uppercaseSym,

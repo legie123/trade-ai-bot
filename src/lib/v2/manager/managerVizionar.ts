@@ -224,8 +224,8 @@ export class ManagerVizionar {
     // Execution on MEXC (Currently DRY RUN / Paper Trading per user request)
     try {
       const side = consensus.finalDirection === 'LONG' ? 'BUY' : 'SELL';
-      // Mapped to MEXC but strictly locked to TEST MONEY (dryRun = true)
-      const result = await executeMexcTrade(payload.symbol, side, undefined, true);
+      // Mapped to MEXC - ACTIVATED FOR LIVE CAPITAL
+      const result = await executeMexcTrade(payload.symbol, side, undefined, false);
       if (result.executed) {
         console.log(`[EXECUTION SUCCESS] Trade placed on MEXC for ${payload.symbol} @ ${result.price}`);
         
@@ -241,7 +241,7 @@ export class ManagerVizionar {
           lowestPriceObserved: result.price,
           status: 'OPEN',
           openedAt: new Date().toISOString(),
-          isPaperTrade: true,
+          isPaperTrade: false,
         });
 
         // 🔗 [MOLTBOOK BROADCAST] Phoenix V2 Live Positioning

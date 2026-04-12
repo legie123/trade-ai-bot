@@ -142,6 +142,32 @@ export async function getMexcTicker24h(symbol: string): Promise<Record<string, u
   return mexcRequest('GET', '/api/v3/ticker/24hr', { symbol }, false);
 }
 
+/**
+ * Batch Price Fetch: Drastically reduces latency by fetching all prices in ONE request.
+ * Bypasses the 60ms individual rate-limiter.
+ */
+export async function getMexcPrices(symbols?: string[]): Promise<Record<string, number>> {
+  try {
+    // If we call without symbols, MEXC returns ALL. 
+    // If we have a few symbols, it's often faster to just get all and filter locally 
+    // than to make individual calls with rate-limiting.
+    const data = await mexcRequest('GET', '/api/v3/ticker/price', {}, false) as unknown as { symbol: string; price: string }[];
+    
+    const results: Record<string, number> = {};
+    if (Array.isArray(data)) {
+      data.forEach(item => {
+        if (!symbols || symbols.includes(item.symbol)) {
+          results[item.symbol] = parseFloat(item.price);
+        }
+      });
+    }
+    return results;
+  } catch (err) {
+    log.error('[MEXC] Batch price fetch failed', { error: (err as Error).message });
+    return {};
+  }
+}
+
 export async function getMexcOrderbook(symbol: string, limit = 10): Promise<Record<string, unknown>> {
   return mexcRequest('GET', '/api/v3/depth', { symbol, limit }, false);
 }

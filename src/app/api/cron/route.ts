@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     // Evaluate Real/Shadow Main System Decisions
     const { getPendingDecisions, updateDecision, recalculatePerformance, appendToEquityCurve, getLivePositions, updateLivePosition } = await import('@/lib/store/db');
-    const { getMexcPrice } = await import('@/lib/exchange/mexcClient');
+    const { getMexcPrices } = await import('@/lib/exchange/mexcClient');
     
     const pending = getPendingDecisions();
     let mainDecisionsEvaluated = 0;
@@ -93,28 +93,9 @@ export async function GET(request: NextRequest) {
     const livePos = getLivePositions().filter(p => p.status === 'OPEN');
     const liveSymbols = livePos.map(p => p.symbol);
     const allSymbols = [...new Set([...uniqueSymbols, ...liveSymbols])];
-    const priceCache: Record<string, number> = {};
 
-    // Fetch prices in chunks to prevent MEXC 429 Rate Limit
-    const CHUNK_SIZE = 15;
-    for (let i = 0; i < allSymbols.length; i += CHUNK_SIZE) {
-      const chunk = allSymbols.slice(i, i + CHUNK_SIZE);
-      await Promise.all(
-        chunk.map(async (sym) => {
-          try {
-            const price = await getMexcPrice(sym);
-            if (price > 0) priceCache[sym] = price;
-          } catch {
-            log.warn(`Could not fetch price for ${sym}`);
-          }
-        })
-      );
-      
-      // Add a tiny delay between chunks if we have multiple chunks
-      if (i + CHUNK_SIZE < allSymbols.length) {
-        await new Promise(res => setTimeout(res, 500));
-      }
-    }
+    // OMEGA OPTIMIZATION: Use Batch Price fetcher. One request, no rate-limit delay.
+    const priceCache = await getMexcPrices(allSymbols);
 
     for (const dec of eligibleDecisions) {
       const currentPrice = priceCache[dec.symbol];
