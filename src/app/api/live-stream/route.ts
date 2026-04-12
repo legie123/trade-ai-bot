@@ -92,12 +92,6 @@ function buildPayload() {
   }
 
   const baseEquityCurve = getEquityCurve();
-  const finalEquityCurve = [...baseEquityCurve];
-  if (floatingPnlValue !== 0) {
-    const latestBalance = baseEquityCurve.length > 0 ? baseEquityCurve[baseEquityCurve.length - 1].balance : config.paperBalance || 1000;
-    const latestPnl = baseEquityCurve.length > 0 ? baseEquityCurve[baseEquityCurve.length - 1].pnl : 0;
-    finalEquityCurve.push({ timestamp: new Date().toISOString(), balance: Math.round((latestBalance + floatingPnlValue) * 100) / 100, pnl: latestPnl, outcome: 'FLOATING', signal: 'LIVE', symbol: 'MULTIPLE' });
-  }
 
   return {
     dashboard: {
@@ -165,8 +159,9 @@ function buildPayload() {
       activePositions: activePositions.map(p => ({ symbol: p.symbol, side: p.side, entryPrice: p.entryPrice, size: 0.20 })),
       optimizer,
       config,
-      equityCurve: finalEquityCurve,
-      balance: (finalEquityCurve.length > 0 ? finalEquityCurve[finalEquityCurve.length - 1].balance : config.paperBalance || 1000),
+      equityCurve: baseEquityCurve,
+      floatingPnl: floatingPnlValue,
+      balance: (baseEquityCurve.length > 0 ? baseEquityCurve[baseEquityCurve.length - 1].balance : config.paperBalance || 1000),
     },
     signals: [],
     _meta: {

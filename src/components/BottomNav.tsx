@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
   { href: '/crypto-radar', icon: '🛰️', label: 'Radar' },
-  { href: '/bot-center',   icon: '🏆', label: 'Arena' },
+  { href: '/arena',        icon: '🏆', label: 'Arena' },
   { href: '/dashboard',    icon: '📊', label: 'Status' },
 ];
 

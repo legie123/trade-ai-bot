@@ -26,14 +26,20 @@ export async function GET(request: Request) {
   log.info('Triggering Moltbook Cron: Data Extraction & Network Sweep...');
 
   try {
-    const forgeStats = extractWinningBehaviors();
-    log.info(`Super-AI Forge Progress: ${forgeStats.progressPercent}% (${forgeStats.totalWinsAssimilated} wins assimilated)`);
+    let forgeStats;
+    try {
+      forgeStats = extractWinningBehaviors();
+      log.info(`Forge Progress: ${forgeStats.progressPercent}% (${forgeStats.totalWinsAssimilated} wins assimilated)`);
+    } catch (err) {
+      log.warn('Unable to extract forge stats, continuing without them', { error: String(err) });
+      forgeStats = undefined;
+    }
 
     const sweepResult = await runMoltbookDailySweep(forgeStats);
     
     return NextResponse.json({
         success: true,
-        forge: forgeStats,
+        forge: forgeStats || { message: 'Forge stats unavailable' },
         data: sweepResult
     });
   } catch (err: unknown) {

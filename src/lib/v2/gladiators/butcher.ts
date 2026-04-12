@@ -44,8 +44,13 @@ export class TheButcher {
         continue;
       }
 
-      // Judgment Criteria
-      const isWeak = g.stats.winRate < 40 || g.stats.profitFactor < 0.9;
+      // Judgment Criteria (AND logic — must fail ALL conditions to be eliminated)
+      const failsWinRate = g.stats.winRate < 40;
+      const failsProfitFactor = g.stats.profitFactor < 1.0;
+      const failsPnL = (g.stats as any).totalPnlPercent !== undefined && (g.stats as any).totalPnlPercent < -5;
+
+      // Eliminate ONLY if ALL applicable conditions fail
+      const isWeak = failsWinRate && failsProfitFactor && (!((g.stats as any).totalPnlPercent !== undefined) || failsPnL);
 
       if (isWeak) {
         log.warn(`[The Butcher] Executing Gladiator: ${g.name} (ID: ${g.id}) | Trades: ${g.stats.totalTrades} | WR: ${g.stats.winRate}% | PF: ${g.stats.profitFactor}`);

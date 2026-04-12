@@ -99,21 +99,6 @@ export async function GET() {
     }
 
     const baseEquityCurve = getEquityCurve();
-    const finalEquityCurve = [...baseEquityCurve];
-    
-    // Inject floating PNL so dashboard naturally fluctuates live
-    if (floatingPnlValue !== 0) {
-       const latestBalance = baseEquityCurve.length > 0 ? baseEquityCurve[baseEquityCurve.length - 1].balance : config.paperBalance || 1000;
-       const latestPnl = baseEquityCurve.length > 0 ? baseEquityCurve[baseEquityCurve.length - 1].pnl : 0;
-       finalEquityCurve.push({
-         timestamp: new Date().toISOString(),
-         balance: Math.round((latestBalance + floatingPnlValue) * 100) / 100,
-         pnl: latestPnl,
-         outcome: 'FLOATING',
-         signal: 'LIVE',
-         symbol: 'MULTIPLE'
-       });
-    }
 
     const stats: BotStats = {
       mode: config.mode,
@@ -179,7 +164,8 @@ export async function GET() {
       },
       optimizer,
       config,
-      equityCurve: finalEquityCurve,
+      equityCurve: baseEquityCurve,
+      floatingPnl: floatingPnlValue,
       // ═══ AUDIT COHERENCE: Unified execution state machine ═══
       riskGuards: SentinelGuard.getInstance().getRiskMetrics(),
       executionPermitted: {

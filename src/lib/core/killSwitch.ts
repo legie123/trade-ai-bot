@@ -61,7 +61,7 @@ function saveToDisk(): void {
 }
 
 // ─── Engage kill switch ─────────────────────────────
-export function engageKillSwitch(reason: string, auto = false): void {
+export async function engageKillSwitch(reason: string, auto = false): Promise<void> {
   state.engaged = true;
   state.engagedAt = new Date().toISOString();
   state.reason = reason;
@@ -71,17 +71,51 @@ export function engageKillSwitch(reason: string, auto = false): void {
 
   log.fatal(`KILL SWITCH ENGAGED: ${reason}`, { auto, reason });
 
-  // CRITICAL: Actually close all positions on MEXC (not advisory-only)
-  import('@/lib/exchange/mexcClient').then(({ sellAllAssetsToUsdt }) => {
-    sellAllAssetsToUsdt().catch(err => {
-      log.error('KILL SWITCH: Failed to liquidate positions', { error: (err as Error).message });
-    });
-  }).catch(() => {});
+  // CRITICAL: Actually close all positions on MEXC with retries and exponential backoff
+  const { sellAllAssetsToUsdt } = await import('@/lib/exchange/mexcClient');
+  const maxRetries = 3;
+  const backoffMs = [1000, 2000, 4000];
 
-  // Send Telegram alert
-  import('@/lib/alerts/telegram').then(({ sendMessage }) => {
-    sendMessage(`🚨 *KILL SWITCH ENGAGED*\nReason: ${reason}\nAuto: ${auto}\nAll positions being liquidated.`).catch(() => {});
-  }).catch(() => {});
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await sellAllAssetsToUsdt();
+      log.info('KILL SWITCH: Liquidation successful');
+      break;
+    } catch (err) {
+      lastError = err as Error;
+      log.warn(`KILL SWITCH: Liquidation attempt ${attempt + 1}/${maxRetries} failed`, {
+        error: lastError.message,
+        nextRetryMs: backoffMs[attempt]
+      });
+
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, backoffMs[attempt]));
+      }
+    }
+  }
+
+  if (lastError) {
+    log.fatal('KILL SWITCH: All liquidation retries exhausted — positions may still be open', {
+      error: lastError.message
+    });
+
+    // Send Telegram alert about failed liquidation
+    try {
+      const { sendMessage } = await import('@/lib/alerts/telegram');
+      await sendMessage(`🚨 *KILL SWITCH CRITICAL FAILURE*\nReason: ${reason}\nLiquidation FAILED after 3 retries.\nError: ${lastError.message}\nIMEDIATE MANUAL INTERVENTION REQUIRED`);
+    } catch (err) {
+      log.fatal('KILL SWITCH: Failed to send Telegram alert', { error: (err as Error).message });
+    }
+  }
+
+  // Send Telegram alert for engagement
+  try {
+    const { sendMessage } = await import('@/lib/alerts/telegram');
+    await sendMessage(`🚨 *KILL SWITCH ENGAGED*\nReason: ${reason}\nAuto: ${auto}\nAll positions being liquidated.`);
+  } catch (err) {
+    log.error('KILL SWITCH: Failed to send Telegram alert', { error: (err as Error).message });
+  }
 }
 
 // ─── Disengage kill switch ──────────────────────────

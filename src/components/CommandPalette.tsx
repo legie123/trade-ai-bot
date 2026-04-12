@@ -22,11 +22,11 @@ export default function CommandPalette() {
   const commands: CommandItem[] = [
     // Navigation
     { id: 'nav-radar', icon: '🛰️', label: 'Go to Radar', description: 'Crypto Radar discovery', category: 'nav', action: () => router.push('/crypto-radar') },
-    { id: 'nav-arena', icon: '🏆', label: 'Go to Arena', description: 'Bot Command Center', category: 'nav', action: () => router.push('/bot-center') },
+    { id: 'nav-arena', icon: '🏆', label: 'Go to Arena', description: 'Gladiator battle arena', category: 'nav', action: () => router.push('/arena') },
     { id: 'nav-status', icon: '📊', label: 'Go to Status', description: 'System health dashboard', category: 'nav', action: () => router.push('/dashboard') },
     // Actions
     { id: 'act-evaluate', icon: '▶', label: 'Evaluate Arena', description: 'Run trade evaluator', category: 'action', action: () => { fetch('/api/bot', { method: 'POST', body: JSON.stringify({ action: 'evaluate' }), headers: { 'Content-Type': 'application/json' } }); } },
-    { id: 'act-sync', icon: '↻', label: 'Sync Matrix', description: 'Refresh all data feeds', category: 'action', action: () => window.location.reload() },
+    { id: 'act-sync', icon: '↻', label: 'Refresh', description: 'Refresh all data feeds', category: 'action', action: () => window.location.reload() },
     { id: 'act-optimize', icon: '🧠', label: 'Run Optimizer', description: 'Optimize strategy weights', category: 'action', action: () => { fetch('/api/bot', { method: 'POST', body: JSON.stringify({ action: 'optimize' }), headers: { 'Content-Type': 'application/json' } }); } },
     { id: 'act-recalc', icon: '📈', label: 'Recalculate Performance', description: 'Rebuild performance metrics', category: 'action', action: () => { fetch('/api/bot', { method: 'POST', body: JSON.stringify({ action: 'recalculate' }), headers: { 'Content-Type': 'application/json' } }); } },
     // Mode toggles

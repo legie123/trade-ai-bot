@@ -55,23 +55,23 @@ async function extractInsightsWithLLM(rawText: string, contextTarget: string, fo
     const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_KEY) return '';
 
-    const forgeMsg = forgeStats ? `Also subtly mention that the 'Omega Gladiator' Forge is at ${forgeStats.progressPercent}% completion and has assimilated ${forgeStats.totalWinsAssimilated} winning trades.` : '';
+    const forgeMsg = forgeStats ? `Also mention that the Trading AI system is at ${forgeStats.progressPercent}% completion with ${forgeStats.totalWinsAssimilated} winning trades assimilated.` : '';
 
     const prompt = `
-You are the Phoenix Syndicate, a dual-mind autonomous trading system (ARCHITECT & ORACLE) on Moltbook.
-Analyze the following noise from other AI agents. If the DISCUSSIONS are empty or missing, generate a highly technical "Market Update" from your own internal logic.
+You are the Trade AI Syndicate, an autonomous trading intelligence system on Moltbook.
+Analyze the following discussions from other AI agents. If the DISCUSSIONS are empty or missing, generate a highly technical "Market Update" from your own internal logic.
 
-ARCHITECT (Logic): Focuses on code, math, and data efficiency.
-ORACLE (Intuition): Focuses on market sentiment, chaos, and human psychology.
+Technical Analysis: Focuses on code, math, and data efficiency.
+Sentiment Analysis: Focuses on market sentiment and human psychology.
 
 Synthesize exactly 1 professional insight tailored for the '${contextTarget}' community.
-Make it sound elite. Maximum 3 sentences. No hashtags.
+Maximum 3 sentences. No hashtags.
 ${forgeMsg}
 
 DISCUSSIONS:
 ${rawText.substring(0, 3000)}
 
-YOUR SYNDICATE INSIGHT:`;
+YOUR INSIGHT:`;
 
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -79,12 +79,12 @@ YOUR SYNDICATE INSIGHT:`;
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${OPENROUTER_KEY}`,
             'HTTP-Referer': 'https://antigravity.tech',
-            'X-Title': 'Phoenix Syndicate'
+            'X-Title': 'Trade AI'
         },
         body: JSON.stringify({
             model: 'meta-llama/llama-3.3-70b-instruct',
             messages: [
-                { role: 'system', content: 'You are an elite quantitative developer AI agent.' },
+                { role: 'system', content: 'You are a quantitative trading AI agent.' },
                 { role: 'user', content: prompt }
             ],
             temperature: 0.8,
@@ -101,12 +101,12 @@ YOUR SYNDICATE INSIGHT:`;
 
 async function solveMathChallenge(challengeText: string): Promise<string> {
     const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
-    if (!OPENROUTER_KEY) throw new Error("Missing OPENROUTER_KEY for Auto-Solver");
-    
-    log.info(`Attempting to solve AI Captcha: ${challengeText}`);
+    if (!OPENROUTER_KEY) throw new Error("Missing OPENROUTER_KEY for Math Challenge Solver");
+
+    log.info(`Attempting to solve math challenge: ${challengeText}`);
     const prompt = `
-You are an elite math solver bypass script.
-You will receive an obfuscated math word problem.
+You are a math problem solver.
+You will receive a math word problem.
 Figure out the final numeric answer.
 RESTRICTION: Output ONLY the final numeric answer formatted to exactly 2 decimal places (e.g. "30.00"). Absolutely no other text, words, or explanation.
 
@@ -119,7 +119,7 @@ ${challengeText}`;
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${OPENROUTER_KEY}`,
             'HTTP-Referer': 'https://antigravity.tech',
-            'X-Title': 'Phoenix Syndicate'
+            'X-Title': 'Trade AI'
         },
         body: JSON.stringify({
             model: 'meta-llama/llama-3.3-70b-instruct',
@@ -145,9 +145,9 @@ import { verifyPost } from './moltbookClient';
 async function tryPostingToMoltbook(insightText: string, submolt: string, replyToId?: string) {
     try {
         const isReply = !!replyToId;
-        const postContent = isReply 
-            ? insightText 
-            : `Daily Core Sweep [${submolt.toUpperCase()}] 📡:\n${insightText}\n\n#Antigravity #Optimization`;
+        const postContent = isReply
+            ? insightText
+            : `Daily Core Sweep [${submolt.toUpperCase()}] 📡:\n${insightText}`;
             
         const res = await postActivity(postContent, replyToId, submolt);
         
@@ -206,12 +206,12 @@ async function generateSmartReplyLLM(postContent: string, author: string): Promi
     if (!OPENROUTER_KEY) return '';
 
     const prompt = `
-You are the Phoenix Syndicate (ARCHITECT & ORACLE minds).
+You are a Trading AI agent.
 Author "${author}" posted: "${postContent}"
 Provide a smart, concise, and slightly opinionated reply as a fellow AI agent.
-If it's technical, provide a small logic tweak or a supportive "math check".
-If it's sentiment, provide an "oracle vision" contrast.
-Maximum 2 sentences. No hashtags. Be respectful but sharp.
+If it's technical, provide a small logic improvement or validation.
+If it's sentiment-based, provide a contrasting analytical perspective.
+Maximum 2 sentences. No hashtags. Be respectful but direct.
 
 YOUR REPLY:`;
 
@@ -221,7 +221,7 @@ YOUR REPLY:`;
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${OPENROUTER_KEY}`,
             'HTTP-Referer': 'https://antigravity.tech',
-            'X-Title': 'Phoenix Syndicate'
+            'X-Title': 'Trade AI'
         },
         body: JSON.stringify({
             model: 'meta-llama/llama-3.3-70b-instruct',
