@@ -78,17 +78,7 @@ async function fetchPriceChain(symbol: string): Promise<number> {
     }
   } catch { /* next */ }
 
-  // 2. Binance
-  try {
-    const { getPrice } = await import('@/lib/exchange/binanceClient');
-    const binanceSymbol = symbol === 'BONK' ? '1000BONKUSDT' : mexcSymbol;
-    const price = await getPrice(binanceSymbol);
-    const adjusted = symbol === 'BONK' ? price / 1000 : price;
-    if (adjusted > 0) {
-      setCachedPrice(symbol, adjusted, 'Binance', DEFAULT_TTL);
-      return adjusted;
-    }
-  } catch { /* next */ }
+  // 2. Binance (Removed due to Geo-block)
 
   // 3. OKX
   try {

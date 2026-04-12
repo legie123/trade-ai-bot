@@ -335,25 +335,6 @@ export class SentinelGuard {
       log.error(`[Sentinel] DB-tracked position cleanup failed`, { error: (dbErr as Error).message });
     }
 
-    // ═══ PRIORITY 2: Binance — Fallback for stray assets ═══
-    try {
-      const { getBalances, placeMarketOrder } = await import('@/lib/exchange/binanceClient');
-      const balances = await getBalances();
-      const nonUsdt = balances.filter(b => b.asset !== 'USDT' && b.asset !== 'USDC' && b.asset !== 'BNB' && b.free > 0);
-
-      if (nonUsdt.length > 0) {
-        log.warn(`[Sentinel] Found ${nonUsdt.length} stray Binance assets. Liquidating...`);
-        for (const b of nonUsdt) {
-          try {
-            await placeMarketOrder(`${b.asset}USDT`, 'SELL', b.free);
-            log.info(`[Sentinel Binance] Sold ${b.free} ${b.asset}`);
-          } catch { /* best effort */ }
-        }
-      }
-    } catch {
-      // Binance is secondary — failure is acceptable
-    }
-
-    log.info('🛡️ [Sentinel] emergencyExitAllPositions: COMPLETE.');
+    log.info('🛡️ [Sentinel] emergencyExitAllPositions: COMPLETE (Binance Purged, MEXC 100% Consolidated).');
   }
 }

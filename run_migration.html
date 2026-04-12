@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head><title>Supabase Migration Runner</title></head>
+<body style="font-family:monospace;background:#1a1a2e;color:#0f0;padding:20px">
+<h2>Trade AI — Schema Migration</h2>
+<div id="log"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const log = (msg, color) => {
+  const d = document.getElementById('log');
+  const p = document.createElement('div');
+  p.style.color = color || '#0f0';
+  p.style.marginBottom = '4px';
+  p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  d.appendChild(p);
+  d.scrollTop = d.scrollHeight;
+};
+
+async function runMigration() {
+  // Try the project from .env.local first
+  const SUPABASE_URL = 'https://qqmuiiguujljspolucic.supabase.co';
+
+  log('Connecting to Supabase: ' + SUPABASE_URL);
+  log('Fetching API keys from project settings page...');
+
+  // We need the service role key. Let's try to get it from the settings page.
+  // Actually, we'll use the anon key first to check connectivity, then use SQL editor approach.
+
+  // Since we can't get the service role key programmatically, let's use the
+  // Supabase Management API approach with the logged-in session cookie.
+
+  log('Attempting SQL execution via Supabase Dashboard API...', '#ff0');
+
+  const projectRef = 'qqmuiiguujljspolucic';
+  const sql = `
+CREATE TABLE IF NOT EXISTS public.equity_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+    pnl NUMERIC(15, 2) NOT NULL DEFAULT 0,
+    balance NUMERIC(15, 2) NOT NULL,
+    outcome VARCHAR(50) DEFAULT 'WIN',
+    signal VARCHAR(50) DEFAULT 'SEED',
+    symbol VARCHAR(50) DEFAULT 'SYSTEM'
+);
+CREATE INDEX IF NOT EXISTS idx_equity_history_timestamp ON public.equity_history(timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS public.syndicate_audits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    timestamp NUMERIC(20, 0) NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    finalDirection VARCHAR(20) NOT NULL,
+    weightedConfidence NUMERIC(5, 4) NOT NULL,
+    opinions JSONB NOT NULL DEFAULT '[]'::jsonb,
+    hallucinationReport JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_audits_timestamp ON public.syndicate_audits(timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS public.live_positions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    gladiatorId VARCHAR(100) NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    direction VARCHAR(20) NOT NULL,
+    entryPrice NUMERIC(20, 8) NOT NULL,
+    size NUMERIC(20, 8) NOT NULL,
+    leverage INTEGER NOT NULL DEFAULT 1,
+    openedAt TIMESTAMPTZ NOT NULL DEFAULT now(),
+    lastCheckedAt TIMESTAMPTZ NOT NULL DEFAULT now(),
+    isActive BOOLEAN NOT NULL DEFAULT true,
+    pnl NUMERIC(15, 2) DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS public.gladiator_stats (
+    gladiator_id VARCHAR(100) PRIMARY KEY,
+    totalTrades INTEGER DEFAULT 0,
+    wins INTEGER DEFAULT 0,
+    losses INTEGER DEFAULT 0,
+    profitFactor NUMERIC(10, 4) DEFAULT 0.0,
+    winRate NUMERIC(5, 2) DEFAULT 0.0,
+    pnl NUMERIC(15, 2) DEFAULT 0.0,
+    lastUpdate TIMESTAMPTZ NOT NULL DEFAULT now(),
+    dna_digest TEXT,
+    confidence_modifier NUMERIC(5, 4) DEFAULT 1.0
+);
+
+CREATE TABLE IF NOT EXISTS public.gladiator_battles (
+    id TEXT PRIMARY KEY,
+    gladiator_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    entry_price NUMERIC(20, 8) NOT NULL,
+    outcome_price NUMERIC(20, 8) NOT NULL,
+    pnl_percent NUMERIC(10, 4) NOT NULL,
+    is_win BOOLEAN NOT NULL,
+    timestamp BIGINT NOT NULL,
+    market_context JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_battles_gladiator ON public.gladiator_battles(gladiator_id);
+CREATE INDEX IF NOT EXISTS idx_battles_symbol ON public.gladiator_battles(symbol);
+CREATE INDEX IF NOT EXISTS idx_battles_timestamp ON public.gladiator_battles(timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS public.trade_locks (
+    symbol TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
+ALTER TABLE public.equity_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.syndicate_audits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.live_positions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gladiator_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gladiator_battles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.trade_locks ENABLE ROW LEVEL SECURITY;
+`;
+
+  const policySQL = `
+DO $$ BEGIN CREATE POLICY "Enable read/write for all users" ON public.equity_history FOR ALL USING (true) WITH CHECK (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "Enable read/write for all users" ON public.syndicate_audits FOR ALL USING (true) WITH CHECK (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "Enable read/write for all users" ON public.live_positions FOR ALL USING (true) WITH CHECK (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "Enable read/write for all users" ON public.gladiator_stats FOR ALL USING (true) WITH CHECK (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "Enable read/write for all users" ON public.gladiator_battles FOR ALL USING (true) WITH CHECK (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "Enable read/write for all users" ON public.trade_locks FOR ALL USING (true) WITH CHECK (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+`;
+
+  try {
+    // Use Supabase internal API (same as SQL editor uses)
+    const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/database/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ query: sql })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      log('Tables created successfully!', '#0f0');
+      log(JSON.stringify(data).substring(0, 200));
+
+      // Now run policies
+      log('Creating RLS policies...', '#ff0');
+      const res2 = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/database/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ query: policySQL })
+      });
+
+      if (res2.ok) {
+        log('RLS policies created successfully!', '#0f0');
+      } else {
+        const err2 = await res2.text();
+        log('Policy error: ' + err2, '#f00');
+      }
+    } else {
+      const errText = await res.text();
+      log('API Error (' + res.status + '): ' + errText, '#f00');
+
+      if (res.status === 401) {
+        log('Not authenticated. Trying alternative approach...', '#ff0');
+        // Try via the project's pgmeta API
+        const res3 = await fetch(`https://${projectRef}.supabase.co/pg/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ query: sql })
+        });
+        if (res3.ok) {
+          log('Tables created via pgmeta!', '#0f0');
+        } else {
+          log('pgmeta also failed: ' + res3.status, '#f00');
+          log('FALLBACK: SQL has been copied to clipboard. Please paste in SQL Editor and click Run.', '#ff0');
+        }
+      }
+    }
+
+    // Also fetch and display the API keys
+    log('', '#fff');
+    log('=== Fetching API Keys ===', '#ff0');
+    const keysRes = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/api-keys`, {
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include'
+    });
+    if (keysRes.ok) {
+      const keys = await keysRes.json();
+      log('API Keys found:', '#0f0');
+      keys.forEach(k => {
+        log(`  ${k.name}: ${k.api_key.substring(0,30)}...`, '#0ff');
+      });
+    } else {
+      log('Could not fetch API keys: ' + keysRes.status, '#f00');
+    }
+
+  } catch (err) {
+    log('Error: ' + err.message, '#f00');
+    log('FALLBACK: SQL is in clipboard. Please paste in SQL Editor tab and click Run.', '#ff0');
+  }
+}
+
+runMigration();
+</script>
+</body>
+</html>

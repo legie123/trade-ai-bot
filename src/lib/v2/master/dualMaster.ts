@@ -5,6 +5,7 @@ import {
 } from '../../types/gladiator';
 import { addSyndicateAudit } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
+import { omegaExtractor } from '../superai/omegaExtractor';
 
 const log = createLogger('DualMaster');
 
@@ -291,16 +292,29 @@ export class DualMasterConsciousness {
   public async getConsensus(marketData: Record<string, unknown>, gladiatorDnaContext: Record<string, unknown>): Promise<DualConsensus> {
     // Build a context-rich prompt that the LLM can actually reason about
     const dnaDigest = gladiatorDnaContext.digest || 'No historical data available';
-    const confMod = Number(gladiatorDnaContext.confidenceModifier) || 1.0;
+    // Base RL modifier from gladiator's own DNA
+    const baseConfMod = Number(gladiatorDnaContext.confidenceModifier) || 1.0;
+    // FAZA 7: Omega meta-modifier — blended with base at 30% weight
+    // Omega provides collective wisdom; gladiator-specific DNA is primary (70%)
+    const symbol = String(gladiatorDnaContext.symbol || marketData.symbol || '');
+    const omegaMod = omegaExtractor.getModifierForSymbol(symbol);
+    const confMod = parseFloat(((baseConfMod * 0.7) + (omegaMod * 0.3)).toFixed(3));
     
     const prompt = [
       `Market State: ${JSON.stringify(marketData)}.`,
       ``,
       `GLADIATOR INTELLIGENCE (Historical Performance):`,
       `${dnaDigest}`,
-      `Confidence Modifier from RL: ${confMod}x`,
-      confMod < 0.9 ? `⚠️ WARNING: This gladiator is underperforming. Be MORE conservative.` : '',
-      confMod > 1.1 ? `✅ This gladiator is on a hot streak. Confidence is justified.` : '',
+      `Confidence Modifier (Gladiator RL 70% + Omega Meta 30%): ${confMod}x`,
+      confMod < 0.85 ? `⚠️ WARNING: Combined signal is weak. Be MORE conservative.` : '',
+      confMod > 1.1 ? `✅ Combined signal is strong. Confidence is justified.` : '',
+      omegaMod !== 1.0 ? `⚡ Omega Meta-Modifier: ${omegaMod}x (collective top-3 wisdom)` : '',
+      ...(omegaExtractor.getCurrentSynthesis()?.weakSymbols?.includes(symbol)
+        ? [`🚫 OMEGA WARNING: ${symbol} is a historically WEAK symbol across all gladiators. Prefer FLAT.`]
+        : []),
+      ...(omegaExtractor.getCurrentSynthesis()?.strongSymbols?.includes(symbol)
+        ? [`💎 OMEGA EDGE: ${symbol} is a historically STRONG symbol across all gladiators.`]
+        : []),
       ``,
       `IMPORTANT: Factor the gladiator's historical performance into your confidence score.`,
       `If the gladiator historically loses on this asset, lower your confidence.`,

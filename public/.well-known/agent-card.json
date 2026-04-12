@@ -1,0 +1,80 @@
+{
+  "name": "Trade AI Phoenix V2",
+  "description": "Autonomous crypto trading agent powered by Darwinian Gladiator evolution, DualMasterConsciousness (GPT-4o + DeepSeek), and Omega meta-learning. Runs 4 specialized trading arenas with real-time execution on MEXC.",
+  "url": "https://antigravity-trade-<hash>-ew.a.run.app",
+  "provider": {
+    "organization": "Trade AI",
+    "url": "https://antigravity-trade-<hash>-ew.a.run.app"
+  },
+  "version": "2.0.0",
+  "documentationUrl": "https://antigravity-trade-<hash>-ew.a.run.app/arena",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": true
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "alpha-quant",
+      "name": "Alpha Quant Arena",
+      "description": "Technical analysis and quantitative signals. Processes OHLCV data, indicators, and pattern recognition for LONG/SHORT/FLAT decisions.",
+      "tags": ["trading", "technical-analysis", "quantitative", "crypto"],
+      "examples": [
+        "Analyze BTC/USDT for a 4h momentum trade",
+        "Generate quantitative signal for ETH with RSI + MACD"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "sentiment",
+      "name": "Sentiment Arena",
+      "description": "Social sentiment analysis from Moltbook swarm. Aggregates bullish/bearish signals from community posts and on-chain flows.",
+      "tags": ["sentiment", "social", "moltbook", "swarm-intelligence"],
+      "examples": [
+        "What is the current market sentiment for SOL?",
+        "Aggregate Moltbook signals for top 5 cryptos"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "risk",
+      "name": "Risk Arena",
+      "description": "Position sizing, drawdown management, and SentinelGuard kill-switch evaluation. Enforces daily loss limits and win-rate thresholds.",
+      "tags": ["risk-management", "position-sizing", "sentinel", "drawdown"],
+      "examples": [
+        "Calculate position size for a 1.5% risk trade on BTC",
+        "Evaluate current risk exposure across open positions"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "execution",
+      "name": "Execution Arena",
+      "description": "Order placement and management on MEXC. Handles entry, exit, stop-loss, and phantom trade simulation.",
+      "tags": ["execution", "mexc", "orders", "phantom-trading"],
+      "examples": [
+        "Execute LONG BTC/USDT with confidence 0.78",
+        "Close all open positions for ETH/USDT"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "omega-synthesis",
+      "name": "Omega Meta-Learning",
+      "description": "Synthesizes collective intelligence from top-3 gladiators into a global confidence modifier (0.7–1.3). Updates daily via Darwinian cycle.",
+      "tags": ["meta-learning", "omega", "confidence", "evolution"],
+      "examples": [
+        "Get current Omega synthesis and global modifier",
+        "Which symbols have strongest collective win rate?"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

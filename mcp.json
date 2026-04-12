@@ -1,0 +1,117 @@
+{
+  "mcpServers": {
+    "trade-ai": {
+      "name": "Trade AI Phoenix V2",
+      "description": "Autonomous crypto trading agent with 4 specialized arenas and Omega meta-learning",
+      "version": "2.0.0",
+      "transport": "http",
+      "baseUrl": "${SERVICE_URL:-http://localhost:3000}",
+      "agentCard": "/.well-known/agent-card.json",
+      "tools": [
+        {
+          "name": "orchestrate_trade",
+          "description": "Fan-out to all 4 arenas (AlphaQuant, Sentiment, Risk, Execution) and return a consensus trading decision with Omega modifier applied.",
+          "endpoint": "/api/a2a/orchestrate",
+          "method": "POST",
+          "inputSchema": {
+            "type": "object",
+            "required": ["symbol"],
+            "properties": {
+              "symbol": { "type": "string", "description": "Trading pair, e.g. BTC/USDT" },
+              "currentEquity": { "type": "number", "description": "Available equity in USD" },
+              "openPositions": { "type": "number", "description": "Current open position count" },
+              "dailyLossCount": { "type": "number", "description": "Number of losing trades today" },
+              "executeLive": { "type": "boolean", "description": "If true, attempt live MEXC execution" }
+            }
+          }
+        },
+        {
+          "name": "analyze_technicals",
+          "description": "Alpha Quant arena: technical analysis with RSI, MACD, EMA signals",
+          "endpoint": "/api/a2a/alpha-quant",
+          "method": "POST",
+          "inputSchema": {
+            "type": "object",
+            "required": ["symbol"],
+            "properties": {
+              "symbol": { "type": "string" },
+              "indicators": {
+                "type": "object",
+                "properties": {
+                  "rsi": { "type": "number" },
+                  "macd": {
+                    "type": "object",
+                    "properties": {
+                      "value": { "type": "number" },
+                      "signal": { "type": "number" },
+                      "histogram": { "type": "number" }
+                    }
+                  },
+                  "ema20": { "type": "number" },
+                  "ema50": { "type": "number" }
+                }
+              },
+              "timeframe": { "type": "string", "enum": ["15m", "1h", "4h", "1d"] }
+            }
+          }
+        },
+        {
+          "name": "analyze_sentiment",
+          "description": "Sentiment arena: Moltbook swarm intelligence + Omega directional bias",
+          "endpoint": "/api/a2a/sentiment",
+          "method": "POST",
+          "inputSchema": {
+            "type": "object",
+            "required": ["symbol"],
+            "properties": {
+              "symbol": { "type": "string" },
+              "posts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "content": { "type": "string" },
+                    "timestamp": { "type": "string" },
+                    "sentiment": { "type": "string", "enum": ["BULLISH", "BEARISH", "NEUTRAL"] }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "evaluate_risk",
+          "description": "Risk arena: position sizing, SentinelGuard thresholds, drawdown check",
+          "endpoint": "/api/a2a/risk",
+          "method": "POST",
+          "inputSchema": {
+            "type": "object",
+            "required": ["symbol", "proposedDirection", "confidence", "currentEquity"],
+            "properties": {
+              "symbol": { "type": "string" },
+              "proposedDirection": { "type": "string", "enum": ["LONG", "SHORT", "FLAT"] },
+              "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+              "currentEquity": { "type": "number" },
+              "openPositions": { "type": "number" },
+              "dailyLossCount": { "type": "number" },
+              "currentWinRate": { "type": "number" },
+              "currentLossStreak": { "type": "number" }
+            }
+          }
+        },
+        {
+          "name": "get_omega_synthesis",
+          "description": "Get current Omega meta-learning synthesis: global modifier, direction bias, strong/weak symbols",
+          "endpoint": "/api/a2a/orchestrate",
+          "method": "GET"
+        },
+        {
+          "name": "get_gladiator_leaderboard",
+          "description": "Get full gladiator arena with ranks, win rates, and live status",
+          "endpoint": "/api/v2/arena",
+          "method": "GET"
+        }
+      ]
+    }
+  }
+}

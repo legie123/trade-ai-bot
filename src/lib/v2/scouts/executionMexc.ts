@@ -91,12 +91,32 @@ export async function executeMexcTrade(
     
     if (!price) throw new Error(`No price for ${mexcSymbol}`);
 
-    const usdtBalance = balances.find(b => b.asset === 'USDT')?.free || 0;
+    let usdtBalance = balances.find(b => b.asset === 'USDT')?.free || 0;
+    
+    // OMEGA: For PAPER mode, mimic real API by injecting virtual balance
+    if (dryRun) {
+      try {
+        const { getBotConfig } = await import('@/lib/store/db');
+        usdtBalance = getBotConfig().paperBalance || 1000;
+      } catch {
+        usdtBalance = 1000;
+      }
+    }
+
     const riskPercent = parseFloat(process.env.RISK_PER_TRADE_PERCENT || '1.5');
     const tradeAmount = usdAmount || getPositionSize(usdtBalance, riskPercent);
 
+    // ZERO BALANCE LOCKOUT — CRITICAL PROTECTION (Only for LIVE trades)
+    if (!dryRun && usdtBalance < 10) {
+      const msg = `⚠️ [EXECUTION BLOCKED] Insufficient Funds. Account has $${usdtBalance.toFixed(2)} USDT. Minimum required is $10. Please fund API Wallet.`;
+      log.error(msg);
+      // Fire and forget telegram message
+      sendMessage(msg).catch(() => {});
+      return { symbol: mexcSymbol, side, price, quantity: 0, usdAmount: 0, executed: false, error: msg };
+    }
+
     if (tradeAmount <= 0) {
-      return { symbol: mexcSymbol, side, price, quantity: 0, usdAmount: 0, executed: false, error: `Balance too low: $${usdtBalance.toFixed(2)}` };
+      return { symbol: mexcSymbol, side, price, quantity: 0, usdAmount: 0, executed: false, error: `Calculated size 0. Balance: $${usdtBalance.toFixed(2)}` };
     }
 
     if (side === 'BUY' && tradeAmount > usdtBalance) {

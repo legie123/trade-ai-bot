@@ -1,3 +1,5 @@
+> ⚠️ **ARHIVAT** — Conținut integrat în `MASTER_BLUEPRINT_V2.md` Secțiunile 2.4 și 7 (12 Apr 2026).
+
 # Analiza Gemini 3.1 Reasoning — Arhitectura TRADE AI V2 (Gladiator)
 # Data: 2026-04-05
 # Sursă: Gemini 3.1 Reasoning Model

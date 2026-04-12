@@ -1,7 +1,7 @@
 // GET /api/auto-trade — return engine running status (Informational - Phoenix V2)
 // POST /api/auto-trade — test connections (auth required)
 import { NextResponse } from 'next/server';
-import { testConnection, getBalances, getPrice } from '@/lib/exchange/binanceClient';
+import { testMexcConnection, getMexcBalances, getMexcPrice } from '@/lib/exchange/mexcClient';
 import { isAuthenticated } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -28,17 +28,17 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    if (body.action === 'test-binance') {
-      const conn = await testConnection();
+    if (body.action === 'test-mexc') {
+      const conn = await testMexcConnection();
       let balances: { asset: string; free: number }[] = [];
       if (conn.ok) {
-        try { balances = await getBalances(); } catch { /* testnet may not have funds */ }
+        try { balances = await getMexcBalances(); } catch { /* ignore */ }
       }
       return NextResponse.json({ status: 'ok', connection: conn, balances });
     }
 
     if (body.action === 'get-price') {
-      const price = await getPrice(body.symbol || 'BTCUSDT');
+      const price = await getMexcPrice(body.symbol || 'BTCUSDT');
       return NextResponse.json({ status: 'ok', symbol: body.symbol, price });
     }
 

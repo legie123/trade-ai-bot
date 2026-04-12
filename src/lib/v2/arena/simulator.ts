@@ -77,42 +77,38 @@ export class ArenaSimulator {
       this.lastGladiatorRefresh = now;
     }
 
-    const MIN_HOLD_SEC = 60;     // Minimum 60s for price to move
+    const WIN_THRESHOLD_TP = 0.3; // Take Profit 0.3%
+    const LOSS_THRESHOLD_SL = -1.0; // Stop Loss -1.0%
     const MAX_HOLD_SEC = 900;    // Maximum 15min — force-close stale phantoms
 
-    // Separate: eligible (60s-15min) + expired (>15min)
-    const eligible: PhantomTrade[] = [];
-    const expired: PhantomTrade[] = [];
-
-    for (const t of activePhantoms) {
-      const elapsedSec = (now - new Date(t.timestamp).getTime()) / 1000;
-      if (elapsedSec >= MAX_HOLD_SEC) expired.push(t);
-      else if (elapsedSec >= MIN_HOLD_SEC) eligible.push(t);
-    }
-
-    // Force-close expired phantoms as NEUTRAL (prevents infinite accumulation)
-    for (const trade of expired) {
-      removePhantomTrade(trade.id);
-      log.warn(`[Combat Engine] Force-closed stale phantom ${trade.id} (${trade.symbol}) — held > ${MAX_HOLD_SEC}s`);
-    }
-
-    if (!eligible.length) return;
-
     // Batch: get unique symbols and prefetch prices in parallel
-    const uniqueSymbols = [...new Set(eligible.map(t => t.symbol))];
+    const uniqueSymbols = [...new Set(activePhantoms.map(t => t.symbol))];
     await Promise.all(uniqueSymbols.map(sym => getCachedPrice(sym)));
 
     let totalClosed = 0;
 
-    for (const trade of eligible) {
+    for (const trade of activePhantoms) {
       const currentPrice = await getCachedPrice(trade.symbol);
       if (currentPrice <= 0) continue; // Can't evaluate without a real price
 
+      const elapsedSec = (now - new Date(trade.timestamp).getTime()) / 1000;
+      
       // Calculate real PnL based on signal direction
       const isLongSignal = trade.signal === 'BUY' || trade.signal === 'LONG';
       const rawPnl = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
       const pnlPercent = isLongSignal ? rawPnl : -rawPnl;
-      const isWin = pnlPercent > 0;
+      
+      // Eligibility rules: HIT Take-Profit, HIT Stop-Loss, or EXPIRED (stale)
+      const hitTP = pnlPercent >= WIN_THRESHOLD_TP;
+      const hitSL = pnlPercent <= LOSS_THRESHOLD_SL;
+      const isExpired = elapsedSec >= MAX_HOLD_SEC;
+      
+      if (!hitTP && !hitSL && !isExpired) {
+        continue; // Keep phantom trade open
+      }
+
+      // Determine Outcome
+      const isWin = pnlPercent > 0; // It could be evaluated on expiration at e.g +0.1% -> still a win technically, but didn't hit TP.
 
       // 1. Clean up phantom position
       removePhantomTrade(trade.id);
@@ -129,8 +125,8 @@ export class ArenaSimulator {
         isWin,
         timestamp: Date.now(),
         marketContext: {
-          source: 'Phantom Engine — REAL MEXC Price',
-          holdTimeSec: (now - new Date(trade.timestamp).getTime()) / 1000,
+          source: isExpired ? 'TIME_EXPIRATION' : (hitTP ? 'HIT_TAKE_PROFIT' : 'HIT_STOP_LOSS'),
+          holdTimeSec: elapsedSec,
           entryPrice: trade.entryPrice,
           exitPrice: currentPrice,
         }
@@ -146,7 +142,7 @@ export class ArenaSimulator {
     }
 
     if (totalClosed > 0) {
-      log.info(`[Combat Engine] Evaluated ${totalClosed} phantom trades using LIVE MEXC prices. ${eligible.length - totalClosed} skipped (no price).`);
+      log.info(`[Combat Engine] Evaluated ${totalClosed} phantom trades using LIVE MEXC prices. ${activePhantoms.length - totalClosed} skipped (open or no price).`);
     }
   }
 }

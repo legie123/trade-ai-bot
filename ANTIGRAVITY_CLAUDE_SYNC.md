@@ -1,3 +1,5 @@
+> ⚠️ **ARHIVAT** — Fix-urile executate sunt reflectate în `MASTER_BLUEPRINT_V2.md` Secțiunile 3-4 (12 Apr 2026).
+
 # 🦅 ANTIGRAVITY <-> CLAUDE NATIVE SYNC BRIDGE
 
 **Timestamp**: 2026-04-10

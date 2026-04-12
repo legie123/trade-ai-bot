@@ -5,7 +5,7 @@ import { getHealthSnapshot } from '@/lib/core/heartbeat';
 import { isKillSwitchEngaged, getKillSwitchState } from '@/lib/core/killSwitch';
 import { getDecisions } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
-import { testConnection } from '@/lib/exchange/binanceClient';
+import { testMexcConnection } from '@/lib/exchange/mexcClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,16 +15,16 @@ export async function GET() {
     const heartbeat = getHealthSnapshot();
     const hs = heartbeat?.status || 'YELLOW';
     
-    // Test Binance Connection
-    let binanceOk = false;
-    let binanceMode = 'UNKNOWN';
-    let binanceLatency = 0;
+    // Test MEXC Connection
+    let mexcOk = false;
+    let mexcMode = 'UNKNOWN';
+    let mexcLatency = 0;
     try {
       const start = Date.now();
-      const conn = await testConnection();
-      binanceLatency = Date.now() - start;
-      binanceOk = conn.ok;
-      binanceMode = conn.mode;
+      const conn = await testMexcConnection();
+      mexcLatency = Date.now() - start;
+      mexcOk = conn.ok;
+      mexcMode = conn.mode;
     } catch { /* */ }
 
     // Test DexScreener Connection
@@ -49,7 +49,7 @@ export async function GET() {
 
     // Overall Status
     const killSwitch = getKillSwitchState();
-    const isRed = hs === 'RED' || !binanceOk || isKillSwitchEngaged();
+    const isRed = hs === 'RED' || !mexcOk || isKillSwitchEngaged();
     const isYellow = hs === 'YELLOW' || watchdog.status === 'WARNING';
     const overallStatus = isRed ? 'DEGRADED' : isYellow ? 'WARNING' : 'HEALTHY';
 
@@ -73,7 +73,7 @@ export async function GET() {
       },
 
       api: {
-        binance: { ok: binanceOk, mode: binanceMode, latencyMs: binanceLatency },
+        mexc: { ok: mexcOk, mode: mexcMode, latencyMs: mexcLatency },
         dexScreener: { ok: dexOk },
         coinGecko: { ok: cgOk },
       },

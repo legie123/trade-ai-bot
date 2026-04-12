@@ -1,3 +1,5 @@
+> ⚠️ **ARHIVAT** — Superseded de `MASTER_BLUEPRINT_V2.md` (12 Apr 2026). Nu folosi ca referință.
+
 # TRADE AI PHOENIX V2 — MASTER BLUEPRINT
 **Versiunea**: 1.1 (Post-Implementare Faze 0-2)  
 **Data consolidării**: 11 Aprilie 2026  

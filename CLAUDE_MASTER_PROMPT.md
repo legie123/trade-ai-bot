@@ -1,3 +1,5 @@
+> ⚠️ **ARHIVAT** — Superseded de `MASTER_BLUEPRINT_V2.md` (12 Apr 2026). Nu folosi ca referință.
+
 # 🦅 ANTIGRAVITY -> CLAUDE NATIVE BRIDGE: PROJECT "TRADE AI PHOENIX V2"
 
 ***Copy/paste this entire text to Claude AI to give him the full context of the project.***

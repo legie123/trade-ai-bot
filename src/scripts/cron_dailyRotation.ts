@@ -5,6 +5,7 @@ import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { saveGladiatorsToDb } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
+import { omegaExtractor } from '@/lib/v2/superai/omegaExtractor';
 
 const log = createLogger('DailyRotation');
 
@@ -52,13 +53,34 @@ export async function runDailyRotation() {
     saveGladiatorsToDb(gladiatorStore.getGladiators());
     log.info('🛡️ [Darwinian Cycle] Rotation Complete. Leaderboard persisted to DB.');
 
-    // 5. Broadcast to Moltbook
-    const message = `🏛️ [TRADE AI ARENA] Rulaj Zilnic Efectuat 🏛️\n\n` + 
+    // 5. Omega Meta-Learning Synthesis (FAZA 7)
+    // Runs AFTER Forge so newly spawned gladiators are included in scoring
+    log.info('⚡ [5/5] Omega Meta-Synthesis...');
+    try {
+      const omegaSynthesis = await omegaExtractor.synthesize();
+      if (omegaSynthesis) {
+        log.info(
+          `⚡ [Omega] Synthesis OK: WR=${omegaSynthesis.aggregatedWR}% ` +
+          `PF=${omegaSynthesis.aggregatedPF} modifier=${omegaSynthesis.globalModifier}x ` +
+          `bias=${omegaSynthesis.directionBias} from ${omegaSynthesis.gladiatorsUsed} gladiators`
+        );
+      } else {
+        log.info('⚡ [Omega] Insufficient data — Omega stays dormant, modifier=1.0x');
+      }
+    } catch (omegaErr) {
+      // Non-blocking — Omega failure must never stop the daily rotation
+      log.error('⚡ [Omega] Synthesis failed (non-critical)', { error: (omegaErr as Error).message });
+    }
+
+    // 6. Broadcast to Moltbook
+    const omegaSummary = omegaExtractor.getSummary();
+    const message = `🏛️ [TRADE AI ARENA] Rulaj Zilnic Efectuat 🏛️\n\n` +
                     `S-au eliberat ${executedIds.length} slot-uri din arena (Performanță slabă).\n` +
                     `Forja AI a regenerat parametri noi de strategie.\n` +
-                    `Gladiatorii de top continuă pe bani reali.\n\n` + 
+                    `Gladiatorii de top continuă pe bani reali.\n` +
+                    `⚡ ${omegaSummary}\n\n` +
                     `Evoluția nu iartă pe nimeni. #AlgorithmicTrading #AI`;
-    
+
     await postActivity(message, undefined, 'crypto').catch(() => {});
 
   } catch (error) {

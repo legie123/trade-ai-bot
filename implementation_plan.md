@@ -1,58 +1,41 @@
-# Propunere Restructurare Dashboard: "AGENTIC MODE"
+> ⚠️ **UPDATE 12 Apr 2026 (Phase 2)** — Audit Execuție și Status API
+# API Hard-Test Protocol & Profitability Restructure
 
-Aplicația Trade AI (fostul "Trade Bot") a evoluat într-un Agent Autonom conectat cu rețeaua Moltbook. Actualul dashboard a rămas centrat pe afișarea unui "bot rigid" (cu statistici precum *evaluări semnale* sau *crash count*). 
+Am rulat testul de stres (Hard Test) direct pe API-urile de schimb (MEXC și Binance) pentru a valida conexiunea și capacitatea sistemului de a genera profit. Rezultatele au scos la iveală două puncte critice fatale care ne blochează execuția LIVE și necesită intervenție arhitecturală imediată.
 
-Pentru a reflecta faptul că funcționează ca un **AI Fully Operational**, propun restructurarea completă a experienței de utilizizare (UX) și a interfeței grafice (UI).
+## 🔴 Puncte Critice Descoperite la Hard Test
 
-## 1. Schimbarea de Paradigmă Conceptuală
+### 1. Colapsul Binance (HTTP 451)
+* **Diagnostic:** Toate apelurile către Binance API (inclusiv pachetele publice de preț) s-au lovit de o eroare rară: `HTTP 451 (Unavailable For Legal Reasons)`. Asta înseamnă că Binance a blocat complet IP-ul din spatele serverului / rețelei din motive de jurisdicție/geoblocare. 
+* **Riscul:** "Sentinel Guard" folosește Binance drept client exclusiv și validat pentru exit-uri de urgență (kill switch liquidation). La acest moment, dacă sistemul dă rateu, nu poți ieși din tranzacții. Protecția este zero.
 
-Vom elimina terminologia de "Trading Pipeline" sau "Bot Monitor" cu una AGENTICĂ. Tabloul de bord va reflecta *"Conștiința"* și deciziile autonome ale agentului.
-
-### Trecerea de la status static la proces dinamic:
-*   [Vechi] **Core Monitor** ➔ [Nou] **Agent Core Engine (Cortex)** - Starea curentă de gândire (Idle, Ingesting XAUUSD Data, Synthesizing Moltbook Inputs, Executing).
-*   [Vechi] **Trading Pipeline** ➔ [Nou] **Autonomous Decision Pipeline** - Rata de convingere (Confidence Level) pe trade-uri și autonomia portofoliului.
-*   [Vechi] **Provider Health** ➔ [Nou] **Swarm Connectivity (Ecosystem)** - Inclusiv legătura cu serverul Moltbook și calitatea semnalului AI inter-agent.
-*   [Vechi] **System Execution Logs** ➔ [Nou] **Live Neural Logs & Evolution** - Împarțit pe "Execution" (Acțiuni de piață) și "Learning/Thoughts" (Concluzii trase și analiză tehnică textuată).
-
-## 2. Propuneri Deschise de Implementare UI (Premium Styling)
-
-Vom alinia design-ul cu estetica super-premium Antigravity: culori întunecate, sticlă sintetică (glassmorphism profund), culori de glow pentru a reprezenta pulsul sistemului (ex: Cyan și Dark Violet, cu aurii la execuții premium).
-
-### A. Elementul Vizual Central: "The Brain/Pulse"
-Aducem în mijlocul ecranului (sau în partea de sus) o vizualizare grafică dinamică a stării agentului.
-Lipsește feedback-ul vizual care să ateste că sistemul "gândește". Propun o animație tip "Node Graph" sau "Synapse Pulse" generată dinamic cu canvas, care își accelerează pulsația când procesează decizii.
-
-### B. Modulul de "Swarm Intelligence" (Integrare Moltbook)
-Dashboard-ul va include o coloană separată (sau un meniu pe laterală) dedicată **descoperirilor de pe rețea**.
-*   Ce postări a citit agentul recent de pe Moltbook?
-*   Care este *Market Sentiment-ul* derivat? (ex: `Bullish +80% după procesare 12 insight-uri AI`).
-Vrem ca utilizatorul să vadă *cum învață* botul.
-
-### C. Panoul de Decizie (Action Confidence)
-Nu vom arăta doar PnL. Vom prezenta "Live Logic Engine". 
-Când se pregătește un paper trade sau s-a generat un semnal, interfața ar trebui să afișeze *raționamentul AI* (ex: `Action: SELL XAUUSD. Reasoning: Conflicting AVWAP lines with negative sentiment pulled from swarm`).
-
-### D. Re-Design Global Layout
-*   Trecerea de la "Card-uri statice standard" la un **Grid Asimetric Dashboard**.
-*   **Header Compact**: Logo-ul Dragonului refăcut cu raze subtile, Kill Switch-ul ascuns sub o copertă de sticlă roșie tip "Panic Button" premium, ca să nu stea uriaș în header decât dacă este necesar.
+### 2. Contul MEXC — Zero Absolut (Wallet Empty)
+* **Diagnostic:** API-ul MEXC a validat excelent cheile `MEXC_API_KEY`/`SECRET` (Semnătura funcționează perfect). Însă, interogarea balanțelor private prin `getMexcBalances()` returnează fix **0 USDT** liberi. Contul curent folosit pe MEXC are sold total $0.
+* **Riscul:** Execuția "TOP" și "Ceva Profitabil" nu se poate antrena fizic fără cel puțin *10-15 USDT* pentru minimul de size impus de exchange.
 
 ---
 
-## 3. Ce Modificăm la Codul Curent? (`src/app/dashboard/page.tsx`)
+## 🟢 Plan de Implementare și Reconectare ("Să fie TOP")
 
-❗ Toate acestea pot fi implementate utilizând react/css modules fără bibilioteci third-party masive (pentru performanță Cloud Run optimă).
+Pentru a atinge eficiență maximă, propun tăierea nodurilor moarte și conectarea 100% nativă:
 
-### [DELETE] 
-- Structura `styles.grid` cu cele 3 card-uri plictisitoare (Monitor, Pipeline, Health).
-- Listarea seacă a logurilor (`styles.logBox`) care poluează ecranul pe verticală larg.
+### 1. Eliminarea și Dezrădăcinarea Binance (`src/lib/exchange/binanceClient.ts`, etc.)
+#### [MODIFY] `src/lib/v2/safety/sentinelGuard.ts` & `src/lib/exchange/binanceClient.ts`
+* Nu mai încercăm scheme hibride. Voi șterge complet cerința de Binance. 
+* Voi recabla **Sentinel Guard** să folosească direct funcția protejată `sellAllAssetsToUsdt()` a lui MEXC. Aici aplicaserăm deja filtrul `roundToStep` și evităm astfel direct legendara `MEXC Error 10072` (eroare lot/size).
+* Tot sistemul va fi un monolit pur și eficient axat pe un singur schimb ultra-performant.
 
-### [NEW]
-- **`AgentStatusHero`**: Sus, o vizualizare live a stării, memoriei alocate pentru AI, latența de gândire.
-- **`DecisionMatrix`**: Centru, grafice decizionale (Confidence % per coin).
-- **`MoltbookSwarmFeed`**: Un perete de sticlă blurată în stânga/dreapta cu fluxul de comunicare al agentului.
-- **`TerminalOverlay`**: Logurile mutate într-un terminal custom integrat discret, stil hacker-console, compactat jos (gen DevTools drawer).
+### 2. Auto-Compounding & Safe Profitability pe MEXC
+#### [MODIFY] `src/lib/v2/scouts/executionMexc.ts`
+* Ne asigurăm că `getPositionSize` alocă corect capital raportat cu volumul real, iar funcția va refuza trade-urile până nu încarci tu manual portofelul cu USDT. Voi introduce mesajul de telemetrie de alertă pe "No Funds".
 
-## 🚨 Întrebări / User Feedback
-1. Ești de acord să repoziționăm total widget-urile (tăiem "grid-ul" cu carduri clasice și facem layout asimetric tip "Cockpit Spațial" AGENTIC)?
-2. Vrei ca "Swarm Connectivity" (extragerea de mesaje Moltbook recente) să fie direct pe panoul principal, sau o ținem într-o filă separată?
-3. Păstrăm tema Antigravity "Roșu-închis și Violet", sau acest Agentic HUD (Trade AI) ar trebui să adauge culori tipice de "Neuromorphic AI", precum Albastru Cobalt (Cyan) și Verde Neon?
+### 3. Integrare OKX ca Backup Secundar de Date (Opțional)
+Dacă prețurile pe MEXC îngheață, voi asigura ca Oracle-ul să aibă Fallback pe OKX sau Pyth Network pentru "Price Feeds" ca sistemul să nu rămână orb, dar Execuția Live va fi doar pe MEXC.
+
+---
+
+## 🚨 Aprobare Necesară și Acțiuni (User Feedback Required)
+> [!IMPORTANT]
+> 1. Ești de acord să tai total Binance-ul din sistem și să conectez mecanismul de protecție / lichidare exclusiv pe MEXC ca să bypassăm blocajul de IP (HTTP 451)?
+> 2. Vrei să adaug mecanism de Fallback Data-Feed pe OKX, ca să aibă agentul un radar secundar intact?
+> 3. **ACȚIUNE FIZICĂ:** Sistemul e gată să meargă TOP, dar va trebui să alimentezi portofelul API-ului MEXC legat de platformă, momentan balanța este **0.00 USDT**, deci comenzile Live sunt suspendate faptic de exchange. Confirmă dacă ești ok să bag modificările.

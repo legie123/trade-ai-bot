@@ -19,14 +19,8 @@ interface ExchangeStatus {
 export async function GET() {
   const exchanges: ExchangeStatus[] = [];
 
-  // Binance
-  try {
-    const { testConnection } = await import('@/lib/exchange/binanceClient');
-    const conn = await testConnection();
-    exchanges.push({ name: 'binance', enabled: !!process.env.BINANCE_API_KEY, mode: conn.mode, connected: conn.ok, error: conn.error });
-  } catch (err) {
-    exchanges.push({ name: 'binance', enabled: !!process.env.BINANCE_API_KEY, mode: 'UNKNOWN', connected: false, error: (err as Error).message });
-  }
+  // Binance (Removed due to Geo-block HTTP 451)
+  exchanges.push({ name: 'binance', enabled: false, mode: 'OFFLINE', connected: false, error: 'HTTP 451: Unavailable For Legal Reasons' });
 
   // Bybit
   try {
@@ -55,7 +49,7 @@ export async function GET() {
     exchanges.push({ name: 'okx', enabled: !!process.env.OKX_API_KEY, mode: 'UNKNOWN', connected: false, error: (err as Error).message });
   }
 
-  const activeExchange = process.env.ACTIVE_EXCHANGE || 'binance';
+  const activeExchange = process.env.ACTIVE_EXCHANGE || 'mexc';
 
   return NextResponse.json({
     activeExchange,
@@ -68,7 +62,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const exchange = body.exchange || process.env.ACTIVE_EXCHANGE || 'binance';
+    const exchange = body.exchange || process.env.ACTIVE_EXCHANGE || 'mexc';
     const action = body.action;
     const symbol = body.symbol;
 
@@ -123,19 +117,9 @@ export async function POST(request: Request) {
       }
     }
 
-    // ─── Binance (default) ───
-    const binance = await import('@/lib/exchange/binanceClient');
-    if (action === 'price') {
-      const price = await binance.getPrice(symbol);
-      return NextResponse.json({ exchange: 'binance', symbol, price });
-    }
-    if (action === 'balance') {
-      const balances = await binance.getBalances();
-      return NextResponse.json({ exchange: 'binance', balances });
-    }
-    if (action === 'order') {
-      const result = await binance.placeMarketOrder(symbol, body.side, body.qty);
-      return NextResponse.json({ exchange: 'binance', order: result });
+    // ─── Binance (Removed) ───
+    if (exchange === 'binance') {
+      return NextResponse.json({ error: 'Binance blocked by HTTP 451. Use MEXC.' }, { status: 400 });
     }
 
     return NextResponse.json({ error: 'Invalid action. Use: price, balance, order' }, { status: 400 });

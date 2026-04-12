@@ -38,12 +38,11 @@ export async function getResilientPrice(symbol: string): Promise<FallbackPrice> 
   // BONK special handling (Binance uses 1000BONK)
   if (symbol === 'BONK' || symbol === 'BONKUSDT') {
     try {
-      const { getPrice } = await import('@/lib/exchange/binanceClient');
-      const bnPrice = await getPrice('1000BONKUSDT');
-      if (bnPrice > 0) {
-        const adjusted = bnPrice / 1000;
-        setCachedPrice(normalizedSymbol, adjusted, 'Binance-1000x');
-        return { symbol, price: adjusted, source: 'Binance-1000x', latencyMs: Date.now() - start };
+      const { getMexcPrice } = await import('@/lib/exchange/mexcClient');
+      const mxPrice = await getMexcPrice('BONKUSDT');
+      if (mxPrice > 0) {
+        setCachedPrice(normalizedSymbol, mxPrice, 'MEXC-Direct');
+        return { symbol, price: mxPrice, source: 'MEXC-Direct', latencyMs: Date.now() - start };
       }
     } catch { /* already tried in chain */ }
   }
