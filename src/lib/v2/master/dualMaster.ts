@@ -32,7 +32,8 @@ async function fetchWithBackoff(
 
       if (res.status === 429) {
         if (attempt === MAX_RETRIES) throw new Error(`${provider} HTTP 429 Too Many Requests`);
-        const waitMs = 1000 * Math.pow(2, attempt);
+        // ULTRA STEEPER BACKOFF: 5s, 10s, 20s
+        const waitMs = 5000 * Math.pow(2, attempt);
         log.warn(`[DualMaster] ${provider} 429 Rate limited, backing off ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
         await new Promise(r => setTimeout(r, waitMs));
         attempt++;
@@ -110,7 +111,9 @@ async function callOpenAI(prompt: string, timeout: number, signal?: AbortSignal)
 async function callGemini(prompt: string, timeout: number, signal?: AbortSignal): Promise<string> {
   if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing for fallback');
   
-  const response = await fetchWithBackoff('Gemini', `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+  // FIX: Shift from experimental 2.5 to stable 2.0-flash
+  const modelId = 'gemini-2.0-flash';
+  const response = await fetchWithBackoff('Gemini', `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -155,7 +158,7 @@ async function executeDualEngineFallback(prompt: string, timeout: number): Promi
       try {
         // Try DeepSeek first, but if it's 402 (from diagnostic results), it will fail fast to Gemini
         return await callDeepSeek(prompt, timeout, controller.signal);
-      } catch (dsErr) {
+      } catch {
         log.warn(`[DualMaster] DeepSeek failed, switching to Gemini...`);
         return await callGemini(prompt, timeout, controller.signal);
       }

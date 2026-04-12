@@ -282,9 +282,8 @@ export class SentinelGuard {
 
   /**
    * EMERGENCY EXIT — INSTITUTIONAL GRADE
-   * Priority 1: MEXC (primary broker where live positions exist)
-   * Priority 2: Binance (fallback for assets that ended up there)
-   * Both execute best-effort: failure on one does not block the other.
+   * Primary: MEXC (broker where all live positions are managed).
+   * Executes best-effort liquidation to USDT.
    */
   private async emergencyExitAllPositions(): Promise<void> {
     // ═══ PRIORITY 1: MEXC — Primary Broker ═══
