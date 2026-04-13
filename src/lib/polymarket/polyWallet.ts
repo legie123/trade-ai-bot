@@ -86,23 +86,18 @@ export function calculateKellyBetSize(
   oddsImplied: number, // Probability implied by current market price
   confidence: number, // 0-100
 ): number {
-  // Kelly formula: f* = (bp - q) / b
-  // Where: b = odds (win/loss ratio), p = win probability, q = loss probability
-  // Adjusted: using fractional Kelly and confidence weighting
+  // Standard Kelly: f* = (p*b - q) / b
+  // Where: b = payout odds, p = win probability, q = 1-p
+  // For binary: b = (1/oddsImplied) - 1
 
   if (winProbability <= oddsImplied || winProbability < 0.51) {
     return 0; // No positive edge
   }
 
-  // Edge: how much better our estimate is
-  const edge = winProbability - oddsImplied;
-
-  // Expected value
-  const ev = edge * (1 - oddsImplied) - (1 - edge) * oddsImplied;
-  if (ev <= 0) return 0;
-
-  // Full Kelly
-  const fullKelly = Math.min(0.5, Math.abs(ev) / (1 - oddsImplied));
+  // Payout odds for binary outcome
+  const b = (1 / oddsImplied) - 1;
+  const q = 1 - winProbability;
+  const fullKelly = Math.max(0, (winProbability * b - q) / b);
 
   // Apply fractional Kelly and confidence scaling
   const confidenceScalar = confidence / 100;
@@ -121,6 +116,7 @@ export function openPosition(
   direction: 'BUY_YES' | 'BUY_NO',
   entryPrice: number,
   confidence: number,
+  edgeScore: number, // NEW: from scanner, 0-100
 ): PolyPosition | null {
   const divBalance = wallet.divisionBalances.get(division);
   if (!divBalance) {
@@ -140,7 +136,9 @@ export function openPosition(
   // Calculate bet size using Kelly
   const maxBet = divBalance.balance * MAX_BET_PCT_OF_DIVISION_BALANCE;
   const impliedProb = direction === 'BUY_YES' ? entryPrice : 1 - entryPrice;
-  const myProb = direction === 'BUY_YES' ? 1 - entryPrice * 0.15 : entryPrice * 0.15; // Assume 15% edge
+  // Edge score 0-100 maps to 0-15% edge above market price
+  const edgeFraction = (edgeScore / 100) * 0.15; // max 15% edge at perfect score
+  const myProb = Math.min(0.95, impliedProb + edgeFraction);
   const kellyBet = calculateKellyBetSize(divBalance.balance, myProb, impliedProb, confidence);
   const betSize = Math.min(maxBet, kellyBet);
 

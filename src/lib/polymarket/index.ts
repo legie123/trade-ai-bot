@@ -9,4 +9,10 @@ export * from './polyGladiators';
 export * from './polySyndicate';
 export { createPolyWallet, calculateKellyBetSize, openPosition, closePosition, updatePositionPrice, emergencyLiquidate, rebalancePortfolio, getDivisionStats, getWalletSummary, calculateUnrealizedPnL } from './polyWallet';
 export type { DivisionBalance, PolyWallet } from './polyWallet';
-// Note: PolyPosition re-exported from polyTypes, polyWallet has its own local PolyPosition
+
+// ── New modules ──
+export * from './riskManager';
+export * from './strategies';
+export * from './telemetry';
+export * from './alerts';
+export * from './polyState';

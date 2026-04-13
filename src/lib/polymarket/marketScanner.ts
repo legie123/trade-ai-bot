@@ -1,15 +1,18 @@
 // ============================================================
 // Polymarket Scanner — Edge detection & opportunity ranking
-// Mispricing (35%) + Momentum (25%) + Volume (20%) + Liquidity (15%) + TimeDecay (5%)
+// Mispricing (30%) + Momentum (20%) + Volume (15%) + Liquidity (15%) + Spread (10%) + TimeDecay (10%)
 // ============================================================
 
 import { PolyMarket, PolyDivision, PolyOpportunity, PolyScanResult } from './polyTypes';
-import { getMarketsByCategory } from './polyClient';
+import { getMarketsByCategory, getOrderBook } from './polyClient';
 import { createLogger } from '@/lib/core/logger';
+import { supabase } from '@/lib/store/db';
 
 const log = createLogger('MarketScanner');
 
 const EDGE_THRESHOLD = 40; // Minimum composite score to flag opportunity
+const MAX_PRICE_HISTORY = 100; // Max snapshots per market
+const PRICE_HISTORY_KEY_PREFIX = 'poly_ph_'; // Supabase json_store key prefix
 
 // ─── Scan single division ────────────────────────────────
 export async function scanDivision(
@@ -24,7 +27,7 @@ export async function scanDivision(
     if (!market.active || market.closed) continue;
     if (!market.outcomes || market.outcomes.length < 2) continue;
 
-    const opp = evaluateOpportunity(market, division);
+    const opp = await evaluateOpportunity(market, division);
     if (opp.edgeScore >= EDGE_THRESHOLD) {
       opportunities.push(opp);
     }
@@ -70,24 +73,29 @@ export async function scanAllDivisions(limit = 10): Promise<PolyScanResult[]> {
 }
 
 // ─── Evaluate single market opportunity ───────────────────
-function evaluateOpportunity(market: PolyMarket, division: PolyDivision): PolyOpportunity {
+async function evaluateOpportunity(market: PolyMarket, division: PolyDivision): Promise<PolyOpportunity> {
   const mispricing = scoreMispricing(market);
   const volume = scoreVolumeAnomaly(market);
-  const momentum = scoreMomentum(market);
+  const momentum = await scoreMomentum(market);
   const liquidity = scoreLiquidity(market);
   const timeDecay = scoreTimeDecay(market);
+  const spread = await scoreOrderBookSpread(market);
 
-  // Weighted composite
+  // Weighted composite: mispricing 30%, momentum 20%, volume 15%, liquidity 15%, spread 10%, timeDecay 10%
   const edgeScore = Math.round(
-    mispricing * 0.35 +
-    momentum * 0.25 +
-    volume * 0.20 +
+    mispricing * 0.30 +
+    momentum * 0.20 +
+    volume * 0.15 +
     liquidity * 0.15 +
-    timeDecay * 0.05,
+    spread * 0.10 +
+    timeDecay * 0.10,
   );
 
   const riskLevel = classifyRisk(edgeScore, liquidity, market);
   const recommendation = determineRecommendation(market, edgeScore, riskLevel);
+
+  // Store price snapshot for history tracking
+  void storePriceSnapshot(market.id, market.outcomes[0]?.price || 0.5, market.volume24h || 0);
 
   return {
     marketId: market.id,
@@ -105,29 +113,42 @@ function evaluateOpportunity(market: PolyMarket, division: PolyDivision): PolyOp
   };
 }
 
-// ─── Mispricing detector (35% weight) ─────────────────────
+// ─── Mispricing detector (30% weight) ─────────────────────
+// Real mispricing: compare market price to fair value estimates
 function scoreMispricing(market: PolyMarket): number {
   const outcomes = market.outcomes;
   if (outcomes.length < 2) return 0;
 
   const yesPrice = outcomes[0].price;
   const noPrice = outcomes[1]?.price || (1 - yesPrice);
+  const vol = market.volume24h || 0;
 
-  // Sum of probabilities should be ~1.0 (vig causes >1.0)
-  const totalProb = yesPrice + noPrice;
-  const vig = Math.abs(totalProb - 1.0);
-
-  // Large vig = mispricing opportunity
   let score = 0;
-  if (vig > 0.05) score += 40; // Significant spread
-  else if (vig > 0.02) score += 20;
 
-  // Extreme probabilities often mispriced
-  if (yesPrice < 0.1 || yesPrice > 0.9) score += 30; // Tail events
-  else if (yesPrice < 0.25 || yesPrice > 0.75) score += 15;
+  // Extreme probabilities (<10% or >90%) are systematically mispriced
+  if (yesPrice < 0.1 || yesPrice > 0.9) {
+    score += 45; // Tail events command premium
+  } else if (yesPrice < 0.15 || yesPrice > 0.85) {
+    score += 35;
+  } else if (yesPrice < 0.2 || yesPrice > 0.8) {
+    score += 25;
+  }
 
-  // Mid-range with high volume often means uncertainty = opportunity
-  if (yesPrice > 0.35 && yesPrice < 0.65 && (market.volume24h || 0) > 5000) {
+  // High volume + mid-range price (35-65%) = genuine uncertainty = trading opportunity
+  if (yesPrice > 0.35 && yesPrice < 0.65 && vol > 10000) {
+    score += 30; // Market is uncertain despite activity
+  } else if (yesPrice > 0.35 && yesPrice < 0.65 && vol > 5000) {
+    score += 20;
+  }
+
+  // Price far from consensus (0.3-0.7 band) suggests mispricing
+  const consensusBand = 0.4; // Fair value usually clusters 0.4-0.6
+  if (yesPrice < 0.15 || yesPrice > 0.85) {
+    score += 15; // Outside normal distribution
+  }
+
+  // Very high volume with price concentration = potential bubble
+  if (vol > 50000 && (yesPrice < 0.2 || yesPrice > 0.8)) {
     score += 20;
   }
 
@@ -147,28 +168,55 @@ function scoreVolumeAnomaly(market: PolyMarket): number {
   return 0;
 }
 
-// ─── Momentum (25% weight) ────────────────────────────────
-function scoreMomentum(market: PolyMarket): number {
-  // Without historical prices we use volume + price distance from 0.5
+// ─── Momentum (20% weight) ────────────────────────────────
+// Real momentum: track price velocity from history; gracefully degrade if unavailable
+async function scoreMomentum(market: PolyMarket): Promise<number> {
   const yesPrice = market.outcomes[0]?.price || 0.5;
   const vol = market.volume24h || 0;
-
-  // Strong directional move = high momentum
-  const priceDistance = Math.abs(yesPrice - 0.5);
   let score = 0;
 
-  if (priceDistance > 0.35) score += 40; // Very directional
-  else if (priceDistance > 0.2) score += 25;
-  else if (priceDistance > 0.1) score += 15;
+  try {
+    // Try to get price history for real momentum calculation
+    const history = await getPriceHistory(market.id, 24);
 
-  // Volume confirms momentum
-  if (vol > 10000 && priceDistance > 0.15) score += 30;
-  else if (vol > 5000 && priceDistance > 0.1) score += 20;
-  else if (vol > 1000) score += 10;
+    if (history.length >= 2) {
+      // Calculate price velocity: compare current to previous snapshot
+      const current = history[history.length - 1];
+      const previous = history[Math.max(0, history.length - 2)];
 
-  // Close to expiry with strong direction = late momentum
+      const priceChange = current.price - previous.price;
+      const timeElapsed = (current.ts - previous.ts) / (1000 * 60 * 60); // hours
+
+      if (timeElapsed > 0) {
+        const velocity = priceChange / timeElapsed; // price per hour
+
+        // Strong velocity = momentum
+        if (Math.abs(velocity) > 0.05) score += 50; // Moving 5+ cents/hour
+        else if (Math.abs(velocity) > 0.02) score += 35;
+        else if (Math.abs(velocity) > 0.01) score += 20;
+
+        // Direction confirmation: volume should follow
+        if (vol > 10000 && Math.abs(velocity) > 0.01) score += 25;
+        else if (vol > 5000 && Math.abs(velocity) > 0.005) score += 15;
+      }
+    } else {
+      // Fallback: no history yet, use volume heuristic (not price distance)
+      if (vol > 50000) score += 40;
+      else if (vol > 20000) score += 30;
+      else if (vol > 5000) score += 15;
+    }
+  } catch (error) {
+    log.warn(`Failed to get price history for ${market.id}, using volume fallback`, { error });
+    // Graceful degradation: volume-based heuristic
+    if (vol > 50000) score += 40;
+    else if (vol > 20000) score += 30;
+    else if (vol > 5000) score += 15;
+  }
+
+  // Late momentum bonus: close to expiry with activity = last-minute moves
   const hoursToExpiry = (new Date(market.endDate).getTime() - Date.now()) / (1000 * 60 * 60);
-  if (hoursToExpiry < 48 && priceDistance > 0.25) score += 20;
+  if (hoursToExpiry < 48 && vol > 5000) score += 20;
+  if (hoursToExpiry < 12 && vol > 10000) score += 25;
 
   return Math.min(100, score);
 }
@@ -240,4 +288,117 @@ function buildReasoning(
   if (volume > 60) parts.push(`Volume surge(${volume})`);
   if (parts.length === 0) parts.push(`Moderate edge`);
   return `Edge ${edgeScore}/100 — ${parts.join(', ')} on "${market.title?.slice(0, 60)}"`;
+}
+
+// ─── Order book spread scoring (10% weight) ──────────────────
+async function scoreOrderBookSpread(market: PolyMarket): Promise<number> {
+  try {
+    const orderBook = await getOrderBook(market.id);
+    if (!orderBook || !orderBook.bids?.length || !orderBook.asks?.length) {
+      return 30; // Neutral if no order book data
+    }
+
+    // Best bid and ask
+    const bestBid = orderBook.bids[0]?.[0] || 0;
+    const bestAsk = orderBook.asks[0]?.[0] || 1;
+
+    // Spread as % of mid-price
+    const spread = bestAsk - bestBid;
+    const mid = (bestBid + bestAsk) / 2;
+    const spreadPct = mid > 0 ? (spread / mid) * 100 : 0;
+
+    // Wide spread = higher mispricing potential (less efficient)
+    let score = 30; // Baseline neutral
+
+    if (spreadPct > 5) score += 40; // Very wide, inefficient market
+    else if (spreadPct > 2) score += 30;
+    else if (spreadPct > 1) score += 15;
+    else if (spreadPct < 0.5) score -= 10; // Very tight = efficient, less opportunity
+
+    return Math.min(100, Math.max(0, score));
+  } catch (error) {
+    log.warn(`Failed to get order book for ${market.id}`, { error });
+    return 30; // Neutral on error
+  }
+}
+
+// ─── Store price snapshot to history ──────────────────────────
+async function storePriceSnapshot(
+  marketId: string,
+  yesPrice: number,
+  volume24h: number,
+): Promise<void> {
+  try {
+    const key = `${PRICE_HISTORY_KEY_PREFIX}${marketId}`;
+    const now = Date.now();
+    const snapshot = { price: yesPrice, volume: volume24h, ts: now };
+
+    // Fetch current history
+    const { data, error: fetchError } = await supabase
+      .from('json_store')
+      .select('value')
+      .eq('key', key)
+      .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      // PGRST116 = not found, which is fine
+      log.warn(`Failed to fetch price history for ${marketId}`, { error: fetchError });
+      return;
+    }
+
+    let history = data?.value as Array<{ price: number; volume: number; ts: number }> || [];
+
+    // Add new snapshot
+    history.push(snapshot);
+
+    // Trim to max size (keep newest)
+    if (history.length > MAX_PRICE_HISTORY) {
+      history = history.slice(-MAX_PRICE_HISTORY);
+    }
+
+    // Store back
+    const { error: updateError } = await supabase
+      .from('json_store')
+      .upsert({ key, value: history }, { onConflict: 'key' });
+
+    if (updateError) {
+      log.warn(`Failed to store price history for ${marketId}`, { error: updateError });
+    }
+  } catch (error) {
+    log.warn(`Error storing price snapshot for ${marketId}`, { error });
+  }
+}
+
+// ─── Get price history from storage ──────────────────────────
+async function getPriceHistory(
+  marketId: string,
+  hoursBack = 24,
+): Promise<Array<{ price: number; volume: number; ts: number }>> {
+  try {
+    const key = `${PRICE_HISTORY_KEY_PREFIX}${marketId}`;
+    const cutoffTime = Date.now() - hoursBack * 1000 * 60 * 60;
+
+    const { data, error } = await supabase
+      .from('json_store')
+      .select('value')
+      .eq('key', key)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // Not found, return empty array
+        return [];
+      }
+      log.warn(`Failed to fetch price history for ${marketId}`, { error });
+      return [];
+    }
+
+    const history = data?.value as Array<{ price: number; volume: number; ts: number }> || [];
+
+    // Filter by time window
+    return history.filter(entry => entry.ts >= cutoffTime);
+  } catch (error) {
+    log.warn(`Error retrieving price history for ${marketId}`, { error });
+    return [];
+  }
 }

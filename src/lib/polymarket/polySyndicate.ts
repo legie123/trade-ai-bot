@@ -67,7 +67,7 @@ export async function analyzeMarket(
     oracleOpinion.direction,
   );
   const consensusConfidence = Math.round(
-    (architectOpinion.confidence * 0.6 + oracleOpinion.confidence * 0.4) / 100,
+    architectOpinion.confidence * 0.6 + oracleOpinion.confidence * 0.4,
   );
   const agreementScore = computeAgreement(
     architectOpinion.confidence,
@@ -77,7 +77,7 @@ export async function analyzeMarket(
 
   return {
     direction: consensusDirection,
-    confidence: Math.round(consensusConfidence * 100),
+    confidence: consensusConfidence,
     reasoning: `Architect (${architectOpinion.confidence}%) + Oracle (${oracleOpinion.confidence}%) consensus`,
     architectView: architectOpinion.reasoning,
     oracleView: oracleOpinion.reasoning,
@@ -444,5 +444,5 @@ function computeAgreement(
 ): number {
   // High confidence from both + direction agreement = high consensus
   const avgConf = (confA + confO) / 2;
-  return Math.round((avgConf * 0.7 + directionMatch * 0.3) / 100);
+  return Math.round(avgConf * 0.7 + directionMatch * 0.3);
 }
