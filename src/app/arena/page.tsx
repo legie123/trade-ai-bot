@@ -165,27 +165,29 @@ export default function ArenaPage() {
       `}</style>
 
       {/* ── TOP NAV ───────────────────────────────── */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(5, 6, 9, 0.8)',
-        backdropFilter: 'blur(20px)', borderBottom: `1px solid rgba(255,255,255,0.05)`, padding: '14px 24px',
-        display: 'flex', alignItems: 'center', gap: 20 }}>
+      <div style={{ 
+        position: 'sticky', top: 0, zIndex: 50, background: 'rgba(5, 6, 9, 0.8)',
+        backdropFilter: 'blur(20px)', borderBottom: `1px solid rgba(255,255,255,0.05)`, padding: '12px 16px',
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap'
+      }}>
         
-        <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.15em', color: C.text, textShadow: '0 0 10px rgba(255,255,255,0.2)' }}>
+        <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: '0.15em', color: C.text, textShadow: '0 0 10px rgba(255,255,255,0.2)' }}>
           ARENA<span style={{ color: C.red }}>.AI</span>
         </span>
         
-        <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)' }} />
+        <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} className="hide-mobile" />
         
-        <div style={{ display: 'flex', gap: 16, fontSize: 12, fontWeight: 800, fontFamily: 'monospace' }}>
+        <div style={{ display: 'flex', gap: 12, fontSize: 10, fontWeight: 800, fontFamily: 'monospace' }}>
            <div><span style={{ color: C.green, textShadow: `0 0 10px ${C.green}80` }}>{data.activeFighters}</span> LIVE</div>
-           <div style={{ color: C.mutedLight }}><span>{data.leaderboard.length}</span> TOTAL</div>
+           <div style={{ color: C.mutedLight }} className="hide-mobile"><span>{data.leaderboard.length}</span> TOTAL</div>
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: 8 }}>
-            <span style={{ fontSize: 11, color: C.mutedLight, fontWeight: 600, letterSpacing: '0.05em' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.02)', padding: '4px 10px', borderRadius: 8 }}>
+            <span style={{ fontSize: 10, color: C.mutedLight, fontWeight: 600, letterSpacing: '0.05em' }}>
                ${lastSync}
             </span>
             <span style={{
-              width: 8, height: 8, borderRadius: '50%',
+              width: 6, height: 6, borderRadius: '50%',
               background: C.green, boxShadow: `0 0 10px ${C.green}`,
               animation: 'pulseGlow 2s infinite',
             }} />
@@ -202,7 +204,7 @@ export default function ArenaPage() {
               ELITE STRIKE TEAM (TOP 3)
             </div>
             
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${top3.length}, 1fr)`, gap: 20 }}>
+            <div className="grid-3" style={{ gap: 16 }}>
               {top3.map((g, i) => {
                 const ss = statusStyle(g.status);
                 const isFirst = i === 0;

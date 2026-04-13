@@ -15,16 +15,19 @@ export async function GET() {
     const heartbeat = getHealthSnapshot();
     const hs = heartbeat?.status || 'YELLOW';
     
-    // Test MEXC Connection
+    // AUDIT FIX API-6: Deep health check — test auth, not just connectivity
     let mexcOk = false;
     let mexcMode = 'UNKNOWN';
     let mexcLatency = 0;
+    let mexcAuthOk = false;
     try {
       const start = Date.now();
       const conn = await testMexcConnection();
       mexcLatency = Date.now() - start;
       mexcOk = conn.ok;
       mexcMode = conn.mode;
+      // Auth check: if mode is LIVE, the key is valid
+      mexcAuthOk = conn.mode === 'LIVE';
     } catch { /* */ }
 
     // Test DexScreener Connection
@@ -57,7 +60,8 @@ export async function GET() {
       status: overallStatus,
       version: '6.0.0 (Phoenix V2)',
       systemMode: process.env.AUTO_TRADE_ENABLED === 'true' ? 'AUTO_TRADE' : 'PAPER',
-      uptimeSecs: (Date.now() - 1775260800000) / 1000,
+      // AUDIT FIX BUG-4: Use real process start time
+      uptimeSecs: (Date.now() - ((globalThis as any).__processStartTime || Date.now())) / 1000,
       
       coreMonitor: {
         heartbeat: heartbeat?.status || 'UNKNOWN',
@@ -73,7 +77,7 @@ export async function GET() {
       },
 
       api: {
-        mexc: { ok: mexcOk, mode: mexcMode, latencyMs: mexcLatency },
+        mexc: { ok: mexcOk, mode: mexcMode, latencyMs: mexcLatency, authValid: mexcAuthOk },
         dexScreener: { ok: dexOk },
         coinGecko: { ok: cgOk },
       },

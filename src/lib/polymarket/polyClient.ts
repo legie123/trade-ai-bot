@@ -1,0 +1,210 @@
+// ============================================================
+// Polymarket API Client — CLOB + Gamma with rate limiting
+// ============================================================
+
+import { PolyMarket, PolyOutcome, PolyDivision, DIVISION_SLUGS } from './polyTypes';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('PolyClient');
+
+const CLOB_URL = () => process.env.POLYMARKET_CLOB_URL || 'https://clob.polymarket.com';
+const GAMMA_URL = () => process.env.POLYMARKET_GAMMA_URL || 'https://gamma-api.polymarket.com';
+const API_KEY = () => process.env.POLYMARKET_API_KEY || '';
+
+// Rate limiter: 100ms between requests
+let lastRequestTime = 0;
+const RATE_LIMIT_MS = 100;
+
+async function rateLimitedFetch(url: string, options?: RequestInit): Promise<Response> {
+  const now = Date.now();
+  const elapsed = now - lastRequestTime;
+  if (elapsed < RATE_LIMIT_MS) {
+    await new Promise(r => setTimeout(r, RATE_LIMIT_MS - elapsed));
+  }
+  lastRequestTime = Date.now();
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options?.headers || {}),
+      },
+    });
+    return res;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Retry with exponential backoff
+async function fetchWithRetry(url: string, options?: RequestInit, maxRetries = 2): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      const res = await rateLimitedFetch(url, options);
+      if (res.ok || res.status < 500) return res;
+      lastError = new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      lastError = err as Error;
+    }
+    if (i < maxRetries) {
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)));
+    }
+  }
+  throw lastError;
+}
+
+// ─── Get markets by category (Gamma API) ─────────────────
+export async function getMarketsByCategory(
+  division: PolyDivision,
+  limit = 20,
+): Promise<PolyMarket[]> {
+  const slug = DIVISION_SLUGS[division];
+  try {
+    const res = await fetchWithRetry(
+      `${GAMMA_URL()}/markets?tag=${slug}&limit=${limit}&active=true&closed=false&order=volume24hr&ascending=false`,
+    );
+    if (!res.ok) {
+      log.warn('Gamma API error', { status: res.status, division });
+      return [];
+    }
+    const data = await res.json();
+    return (data || []).map(mapGammaMarket);
+  } catch (err) {
+    log.warn('getMarketsByCategory failed', { division, error: String(err) });
+    return [];
+  }
+}
+
+// ─── Get single market ────────────────────────────────────
+export async function getMarket(conditionId: string): Promise<PolyMarket | null> {
+  try {
+    const res = await fetchWithRetry(`${GAMMA_URL()}/markets/${conditionId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return mapGammaMarket(data);
+  } catch {
+    return null;
+  }
+}
+
+// ─── Get market prices (CLOB) ──────────────────────────────
+export async function getMarketPrices(tokenId: string): Promise<{ yes: number; no: number } | null> {
+  try {
+    const res = await fetchWithRetry(`${CLOB_URL()}/price?token_id=${tokenId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      yes: parseFloat(data.price || '0.5'),
+      no: 1 - parseFloat(data.price || '0.5'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Get order book ───────────────────────────────────────
+export async function getOrderBook(tokenId: string): Promise<{ bids: any[]; asks: any[] } | null> {
+  try {
+    const res = await fetchWithRetry(`${CLOB_URL()}/book?token_id=${tokenId}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+// ─── Get recent trades ────────────────────────────────────
+export async function getRecentTrades(conditionId: string, limit = 20): Promise<any[]> {
+  try {
+    const res = await fetchWithRetry(
+      `${CLOB_URL()}/trades?condition_id=${conditionId}&limit=${limit}`,
+    );
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
+// ─── Get trending markets ─────────────────────────────────
+export async function getTrendingMarkets(limit = 20): Promise<PolyMarket[]> {
+  try {
+    const res = await fetchWithRetry(
+      `${GAMMA_URL()}/markets?limit=${limit}&active=true&closed=false&order=volume24hr&ascending=false`,
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data || []).map(mapGammaMarket);
+  } catch {
+    return [];
+  }
+}
+
+// ─── Search markets ───────────────────────────────────────
+export async function searchMarkets(query: string, limit = 10): Promise<PolyMarket[]> {
+  try {
+    const res = await fetchWithRetry(
+      `${GAMMA_URL()}/markets?limit=${limit}&active=true&closed=false&search=${encodeURIComponent(query)}`,
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data || []).map(mapGammaMarket);
+  } catch {
+    return [];
+  }
+}
+
+// ─── Health check ─────────────────────────────────────────
+export async function testPolymarketConnection(): Promise<{ clob: boolean; gamma: boolean }> {
+  let clob = false;
+  let gamma = false;
+
+  try {
+    const res = await rateLimitedFetch(`${CLOB_URL()}/time`);
+    clob = res.ok;
+  } catch { /* */ }
+
+  try {
+    const res = await rateLimitedFetch(`${GAMMA_URL()}/markets?limit=1`);
+    gamma = res.ok;
+  } catch { /* */ }
+
+  return { clob, gamma };
+}
+
+// ─── Map Gamma API response to PolyMarket ──────────────────
+function mapGammaMarket(raw: any): PolyMarket {
+  const outcomes: PolyOutcome[] = [];
+
+  if (raw.outcomes && Array.isArray(raw.outcomes)) {
+    const prices = raw.outcomePrices ? JSON.parse(raw.outcomePrices) : [];
+    raw.outcomes.forEach((name: string, i: number) => {
+      outcomes.push({
+        id: raw.clobTokenIds?.[i] || `outcome-${i}`,
+        name,
+        price: parseFloat(prices[i] || '0.5'),
+      });
+    });
+  }
+
+  return {
+    id: raw.id || raw.conditionId || '',
+    conditionId: raw.conditionId || raw.id || '',
+    title: raw.question || raw.title || '',
+    description: raw.description || '',
+    category: raw.groupSlug || raw.category || '',
+    outcomes,
+    active: raw.active !== false && !raw.closed,
+    closed: !!raw.closed,
+    endDate: raw.endDate || raw.endDateIso || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    volume24h: parseFloat(raw.volume24hr || raw.volume24h || '0'),
+    liquidityUSD: parseFloat(raw.liquidity || '0'),
+    createdAt: raw.createdAt || raw.startDate || '',
+  };
+}

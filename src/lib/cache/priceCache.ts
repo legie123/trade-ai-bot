@@ -86,9 +86,17 @@ async function fetchPriceChain(symbol: string): Promise<number> {
     }
   } catch { /* next */ }
 
-  // 2. Binance (Removed due to Geo-block)
-  
-  // 3. OKX (Removed per user directive - Hardening on MEXC exclusively)
+  // 2. Binance (AUDIT FIX: Re-enabled — client now exists)
+  try {
+    const { getBinancePrice } = await import('@/lib/exchange/binanceClient');
+    const price = await getBinancePrice(mexcSymbol);
+    if (price > 0) {
+      setCachedPrice(symbol, price, 'Binance', DEFAULT_TTL);
+      return price;
+    }
+  } catch { /* next */ }
+
+  // 3. OKX (fallback)
 
   // 4. DexScreener (Solana tokens)
   try {
@@ -173,6 +181,30 @@ export async function batchFetchPrices(symbols: string[]): Promise<Record<string
   }
 
   return results;
+}
+
+/**
+ * AUDIT FIX API-5: Get price with strict freshness enforcement
+ * Rejects prices older than maxAgeMs (default 60s for trade execution)
+ */
+export async function getVerifiedPrice(symbol: string, maxAgeMs: number = 60_000): Promise<{ price: number; age: number; fresh: boolean }> {
+  const entry = cache.get(symbol);
+  const age = entry ? Date.now() - entry.fetchedAt : Infinity;
+
+  if (entry && age < maxAgeMs && entry.price > 0) {
+    return { price: entry.price, age, fresh: true };
+  }
+
+  // Force fresh fetch
+  const price = await getOrFetchPrice(symbol);
+  const newEntry = cache.get(symbol);
+  const newAge = newEntry ? Date.now() - newEntry.fetchedAt : 0;
+
+  return {
+    price,
+    age: newAge,
+    fresh: price > 0 && newAge < maxAgeMs,
+  };
 }
 
 export function getPriceCacheStats(): { size: number; symbols: string[] } {

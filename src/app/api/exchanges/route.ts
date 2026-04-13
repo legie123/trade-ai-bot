@@ -19,8 +19,14 @@ interface ExchangeStatus {
 export async function GET() {
   const exchanges: ExchangeStatus[] = [];
 
-  // Binance (Removed due to Geo-block HTTP 451)
-  exchanges.push({ name: 'binance', enabled: false, mode: 'OFFLINE', connected: false, error: 'HTTP 451: Unavailable For Legal Reasons' });
+  // Binance
+  try {
+    const { testBinanceConnection } = await import('@/lib/exchange/binanceClient');
+    const conn = await testBinanceConnection();
+    exchanges.push({ name: 'binance', enabled: !!process.env.BINANCE_API_KEY, mode: conn.mode, connected: conn.ok, error: conn.error });
+  } catch (err) {
+    exchanges.push({ name: 'binance', enabled: !!process.env.BINANCE_API_KEY, mode: 'UNKNOWN', connected: false, error: (err as Error).message });
+  }
 
   // Bybit
   try {
@@ -65,6 +71,23 @@ export async function POST(request: Request) {
     const exchange = body.exchange || process.env.ACTIVE_EXCHANGE || 'mexc';
     const action = body.action;
     const symbol = body.symbol;
+
+    // ─── Binance ───
+    if (exchange === 'binance') {
+      const binance = await import('@/lib/exchange/binanceClient');
+      if (action === 'price') {
+        const price = await binance.getBinancePrice(symbol);
+        return NextResponse.json({ exchange: 'binance', symbol, price });
+      }
+      if (action === 'balance') {
+        const balances = await binance.getBinanceBalances();
+        return NextResponse.json({ exchange: 'binance', balances });
+      }
+      if (action === 'order') {
+        const result = await binance.placeBinanceMarketOrder(symbol, body.side, body.qty);
+        return NextResponse.json({ exchange: 'binance', order: result });
+      }
+    }
 
     // ─── OKX ───
     if (exchange === 'okx') {

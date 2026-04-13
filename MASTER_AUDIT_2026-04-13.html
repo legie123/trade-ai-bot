@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRADE AI Phoenix V2 — Master Audit</title>
+<style>
+:root { --bg: #0a0a0f; --card: #12121a; --border: #1e1e2e; --text: #e0e0e0; --muted: #888; --red: #ff4444; --orange: #ff8c00; --yellow: #ffd700; --green: #00cc66; --blue: #4488ff; --purple: #aa66ff; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:'SF Mono','Fira Code',monospace; font-size:13px; line-height:1.6; padding:20px; max-width:1200px; margin:0 auto; }
+h1 { color:var(--red); font-size:22px; border-bottom:2px solid var(--red); padding-bottom:10px; margin-bottom:20px; }
+h2 { color:var(--orange); font-size:16px; margin:30px 0 12px; border-left:3px solid var(--orange); padding-left:10px; }
+h3 { color:var(--yellow); font-size:14px; margin:20px 0 8px; }
+.verdict { background:linear-gradient(135deg,#1a0000,#0a0a0f); border:2px solid var(--red); border-radius:8px; padding:20px; margin:20px 0; }
+.verdict-label { color:var(--red); font-size:20px; font-weight:bold; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:6px; padding:16px; margin:10px 0; }
+.critical { border-left:4px solid var(--red); }
+.high { border-left:4px solid var(--orange); }
+.medium { border-left:4px solid var(--yellow); }
+.low { border-left:4px solid var(--blue); }
+.good { border-left:4px solid var(--green); }
+.tag { display:inline-block; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:bold; margin-right:6px; }
+.tag-critical { background:#ff444433; color:var(--red); }
+.tag-high { background:#ff8c0033; color:var(--orange); }
+.tag-medium { background:#ffd70033; color:var(--yellow); }
+.tag-keep { background:#00cc6633; color:var(--green); }
+.tag-rewrite { background:#ff444433; color:var(--red); }
+.tag-cut { background:#88888833; color:var(--muted); }
+.tag-build { background:#4488ff33; color:var(--blue); }
+table { width:100%; border-collapse:collapse; margin:10px 0; }
+th,td { padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); font-size:12px; }
+th { color:var(--yellow); background:var(--card); }
+.score { font-size:48px; font-weight:bold; }
+.score-red { color:var(--red); }
+.section-num { color:var(--purple); font-weight:bold; margin-right:6px; }
+ul { padding-left:20px; margin:8px 0; }
+li { margin:4px 0; }
+.ip-box { background:#001a00; border:2px solid var(--green); border-radius:8px; padding:16px; margin:15px 0; text-align:center; }
+.ip-addr { font-size:24px; color:var(--green); font-weight:bold; }
+.expiry { color:var(--yellow); font-size:14px; margin-top:8px; }
+.gladiator-card { display:inline-block; background:var(--card); border:1px solid var(--border); border-radius:6px; padding:12px; margin:6px; min-width:200px; vertical-align:top; }
+.rank-1 { border-color:var(--yellow); }
+.rank-2 { border-color:#c0c0c0; }
+.rank-3 { border-color:#cd7f32; }
+</style>
+</head>
+<body>
+
+<h1>⚔️ TRADE AI PHOENIX V2 — MASTER AUDIT</h1>
+<p style="color:var(--muted)">Data: 13 Aprilie 2026 | Fișiere auditate: 157 | Direcții: 80+ | Mod: BRUTAL</p>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">1.</span> VERDICT GENERAL</h2>
+<div class="verdict">
+<div class="score score-red">4.2 / 10</div>
+<p style="margin-top:10px;color:var(--orange);font-size:15px;">SISTEM FUNCȚIONAL DAR NU PRODUCTION-READY</p>
+<p style="margin-top:10px">Trade AI Phoenix V2 este un <strong>framework real cu date reale</strong> dar cu <strong>componente critice defecte</strong>. Sistemul gladiatorilor funcționează cu prețuri live MEXC, dar logica de eliminare este inversată (AND în loc de OR), paper wallet-ul nu există (fără tracking de capital), iar ML predictor-ul este circular (folosește PnL ca feature pentru a prezice PnL). Kill switch-ul poate eșua silențios la lichidare. Trade lock-ul permite tranzacții duplicate dacă Supabase este offline.</p>
+<p style="margin-top:10px;color:var(--muted)">Verdictul Sindicatului LLM: <strong>CONSENSUS PUTERNIC</strong> — Toate motoarele de analiză converg pe aceleași 6 probleme critice. Zero divergențe pe punctele critice.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">2.</span> TOP PUNCTE CRITICE</h2>
+
+<div class="card critical">
+<span class="tag tag-critical">CRITIC-1</span> <strong>Butcher: Logica de Eliminare INVERSATĂ</strong>
+<p><code>butcher.ts:53</code> — Folosește AND: <code>failsWR && failsPF && failsPnL</code>. Un gladiator cu 0% WR dar PnL pozitiv SUPRAVIEȚUIEȘTE. Trebuie schimbat în OR.</p>
+</div>
+
+<div class="card critical">
+<span class="tag tag-critical">CRITIC-2</span> <strong>Paper Wallet: NU EXISTĂ</strong>
+<p>Phantom trades nu consumă capital. Nicio simulare de balance, fees, slippage. Win rate-urile sunt gonflate — nu reflectă realitatea cu constrangeri de capital.</p>
+</div>
+
+<div class="card critical">
+<span class="tag tag-critical">CRITIC-3</span> <strong>Trade Lock: Permite Duplicate dacă Supabase e Offline</strong>
+<p><code>db.ts</code> — <code>acquireTradeLock()</code> returnează <code>true</code> dacă Supabase cade. Două instanțe Cloud Run pot executa aceeași tranzacție simultan.</p>
+</div>
+
+<div class="card critical">
+<span class="tag tag-critical">CRITIC-4</span> <strong>Kill Switch: Lichidarea Poate Eșua Silențios</strong>
+<p><code>killSwitch.ts</code> — După 3 retry-uri eșuate la <code>sellAllAssetsToUsdt()</code>, logează FATAL dar NU forțează închiderea. Poziții rămân deschise.</p>
+</div>
+
+<div class="card critical">
+<span class="tag tag-critical">CRITIC-5</span> <strong>Stop Loss: Eșec = Poziție Neprotejată</strong>
+<p><code>executionMexc.ts:161-174</code> — După 3 încercări SL eșuate, returnează <code>executed: true</code>. Caller-ul nu știe că SL a eșuat. Risc nelimitat pe shorts.</p>
+</div>
+
+<div class="card critical">
+<span class="tag tag-critical">CRITIC-6</span> <strong>ML Predictor: Feature Engineering Circular</strong>
+<p><code>predictor.ts:110-112</code> — Folosește <code>pnlPercent</code> (outcome) ca feature de input. Modelul învață: "când am câștigat, confidence era mare" = tautologie.</p>
+</div>
+
+<div class="card critical">
+<span class="tag tag-critical">CRITIC-7</span> <strong>Omega Progress: Fictiv</strong>
+<p><code>arena/route.ts:13-25</code> — Omega progress = dnaBank.length / 100. DNA bank include TOATE bătăliile, nu doar victoriile. Arată 100% progres fals.</p>
+</div>
+
+<div class="card critical">
+<span class="tag tag-critical">CRITIC-8</span> <strong>Paper/Live Contaminare</strong>
+<p>SentinelGuard partajează equity history între moduri. Un user poate testa în PAPER cu date aranjate, apoi trece pe LIVE cu statistici false.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">3.</span> TOP ERORI DE CONEXIUNE / API / INFRA</h2>
+
+<div class="card high">
+<span class="tag tag-high">API-1</span> <strong>Binance: NU EXISTĂ</strong>
+<p>Integarea Binance returnează HTTP 451 (geo-block). Zero funcționalitate. Dar UI folosește Binance WebSocket pentru prețuri live — inconsistență.</p>
+</div>
+
+<div class="card high">
+<span class="tag tag-high">API-2</span> <strong>Bybit: Fără Timeout, Fără Retry, Fără Rate Limit</strong>
+<p><code>bybitClient.ts</code> — Fetch-ul poate atârna la infinit. Nicio protecție 429. Default testnet=true (accidental).</p>
+</div>
+
+<div class="card high">
+<span class="tag tag-high">API-3</span> <strong>MEXC: API Keys Empty Silently</strong>
+<p><code>mexcClient.ts:30-32</code> — Returnează '' dacă env vars lipsesc. Cereri semnate cu key gol — eșuează la server, nu local.</p>
+</div>
+
+<div class="card high">
+<span class="tag tag-high">API-4</span> <strong>OKX: Query String Malformat</strong>
+<p><code>okxClient.ts:47-48</code> — Build dublu de query params. Poate cauza semnătură invalidă pe GET requests.</p>
+</div>
+
+<div class="card high">
+<span class="tag tag-high">API-5</span> <strong>Cache Staleness: Nicio Protecție</strong>
+<p>Price cache TTL=30s dar UI nu verifică freshness. Tranzacții executate pe prețuri vechi de 2+ minute.</p>
+</div>
+
+<div class="card high">
+<span class="tag tag-high">API-6</span> <strong>Health Check: Superficial</strong>
+<p><code>/api/health</code> testează conectivitate dar nu auth. MEXC key revocat trece testul. Nicio verificare de equity freshness.</p>
+</div>
+
+<div class="card high">
+<span class="tag tag-high">API-7</span> <strong>Velocity Kill Switch Reset la Miezul Nopții</strong>
+<p>Window-ul de velocity se resetează complet la 00:00. Atac de trading rapid la 23:59 = nedetectat.</p>
+</div>
+
+<div class="card high">
+<span class="tag tag-high">API-8</span> <strong>Supabase Placeholder Silențios</strong>
+<p><code>db.ts:18-26</code> — Dacă env vars lipsesc, conectare la <code>placeholder.supabase.co</code>. Toate datele pierdute fără warning.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">4.</span> TOP BUGURI FUNCȚIONALE</h2>
+
+<table>
+<tr><th>#</th><th>Bug</th><th>Locație</th><th>Impact</th></tr>
+<tr><td>1</td><td>Butcher AND→OR (gladiatori slabi supraviețuiesc)</td><td>butcher.ts:53</td><td>CRITIC</td></tr>
+<tr><td>2</td><td>SL failure returnează executed:true</td><td>executionMexc.ts:174</td><td>CRITIC</td></tr>
+<tr><td>3</td><td>Leaderboard sorting inconsistent (3 funcții diferite)</td><td>gladiatorStore/arena/cron</td><td>HIGH</td></tr>
+<tr><td>4</td><td>Uptime hardcodat (GENESIS_TIMESTAMP = Apr 4)</td><td>heartbeat.ts:68</td><td>MEDIUM</td></tr>
+<tr><td>5</td><td>DryRun fallback la 1000 USDT hardcodat</td><td>executionMexc.ts:100</td><td>MEDIUM</td></tr>
+<tr><td>6</td><td>Omega win threshold = 100 (arbitrar)</td><td>forge/dnaExtractor.ts</td><td>MEDIUM</td></tr>
+<tr><td>7</td><td>RSI divergence lookback = 15 bars (insuficient)</td><td>rsiIndicator.ts:60</td><td>MEDIUM</td></tr>
+<tr><td>8</td><td>OKX symbol replace lossy (USDTUSD fails)</td><td>okxClient.ts:112</td><td>LOW</td></tr>
+<tr><td>9</td><td>Floating point precision pe MEXC qty</td><td>executionMexc.ts:59</td><td>LOW</td></tr>
+<tr><td>10</td><td>Telegram alerts silent swallow</td><td>Multiple fișiere</td><td>LOW</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">5.</span> STARE PAPER WALLET</h2>
+
+<div class="card critical">
+<span class="tag tag-critical">INEXISTENT</span>
+<p><strong>Paper wallet-ul NU EXISTĂ ca entitate.</strong></p>
+<ul>
+<li>Phantom trades NU consumă capital din niciun balance</li>
+<li>Nicio simulare de fees (MEXC: 0.2% per side = 0.4% round-trip)</li>
+<li>Nicio simulare de slippage</li>
+<li>Nicio simulare de position sizing cu capital real</li>
+<li>Win rate gonflat cu ~5-10% față de execuție reală</li>
+<li>Fallback hardcodat: $1000 USDT dacă DB eșuează</li>
+<li>NU se compune capital (nicio reinvestire sau pierdere)</li>
+</ul>
+<p style="color:var(--yellow);margin-top:10px"><strong>Distanță față de real: ~70%.</strong> Funcționează ca jurnal de semnale, nu ca simulator de cont.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">6.</span> STARE GLADIATOR ROTATION</h2>
+
+<div class="card high">
+<p><strong>Engine-ul există și funcționează parțial.</strong></p>
+<table>
+<tr><th>Component</th><th>Stare</th><th>Problemă</th></tr>
+<tr><td>Spawn (LLM genetic)</td><td style="color:var(--green)">✓ FUNCȚIONAL</td><td>DeepSeek→OpenAI→Gemini fallback + sanity checks</td></tr>
+<tr><td>Phantom evaluation</td><td style="color:var(--green)">✓ FUNCȚIONAL</td><td>Prețuri live MEXC, TP/SL/timeout</td></tr>
+<tr><td>Ranking</td><td style="color:var(--orange)">⚠ PARȚIAL</td><td>3 funcții de sortare diferite, inconsistente</td></tr>
+<tr><td>Promotion</td><td style="color:var(--orange)">⚠ PARȚIAL</td><td>Gate hardcodat, Monte Carlo pe sample mic</td></tr>
+<tr><td>Eliminare (Butcher)</td><td style="color:var(--red)">✗ DEFECT</td><td>AND→OR inversare: nimeni nu e eliminat</td></tr>
+<tr><td>Top 3 enforcement</td><td style="color:var(--orange)">⚠ PARȚIAL</td><td>Doar via cron, nu real-time</td></tr>
+<tr><td>Kill switch sync</td><td style="color:var(--red)">✗ LIPSĂ</td><td>Phantom eval continuă în criză</td></tr>
+<tr><td>Paper wallet per gladiator</td><td style="color:var(--red)">✗ LIPSĂ</td><td>Nicio constrângere de capital</td></tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">7.</span> TOP 3 GLADIATORI ACTUALI ȘI DE CE</h2>
+
+<div class="card medium">
+<p><strong>Nu se poate determina Top 3 real</strong> deoarece:</p>
+<ul>
+<li>Butcher-ul NU elimină (AND logic) → pool inflat cu gladiatori slabi</li>
+<li>Ranking inconsistent (3 funcții de sortare diferite)</li>
+<li>Phantom trades fără capital constraint → WR gonflat</li>
+<li>Monte Carlo pe sample &lt;20 trades → zero putere predictivă</li>
+<li>Sharpe Ratio = always 0 (niciodată calculat)</li>
+</ul>
+<p style="color:var(--red);margin-top:10px"><strong>Concluzie: Top 3 actual este NEVALID.</strong> Orice gladiator în Top 3 acum este acolo pe baza unor metrici incomplete și o logică de eliminare defectă. Trebuie reset complet după fix.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">8.</span> CINE TREBUIE ELIMINAT IMEDIAT</h2>
+
+<div class="card critical">
+<ul>
+<li><strong>Toți gladiatorii cu WR &lt; 40% SAU PF &lt; 1.0</strong> — momentan supraviețuiesc din cauza bug-ului AND</li>
+<li><strong>Omega</strong> — progress fictiv (dnaBank ≠ victorii), nu tradeaza, nu produce edge</li>
+<li><strong>Orice gladiator cu &lt; 20 phantom trades</strong> — sample insuficient, zgomot statistic</li>
+<li><strong>Gladiatori fără Sharpe Ratio calculat</strong> — până la implementare, nu pot fi evaluați pe risc</li>
+</ul>
+<p style="color:var(--yellow);margin-top:10px">Acțiune: Fix Butcher AND→OR, apoi rulează o scanare completă. Eliminările vor fi automate.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">9.</span> RADAR RECOMANDAT PENTRU STRATEGII-GLADIATORI</h2>
+
+<div class="card good">
+<h3>Radar Operațional (nu conceptual)</h3>
+<table>
+<tr><th>Metric</th><th>Stare Actuală</th><th>Target</th><th>Prioritate</th></tr>
+<tr><td>Win Rate (WR)</td><td style="color:var(--green)">✓ Calculat</td><td>Rolling 50 trades</td><td>P0</td></tr>
+<tr><td>Profit Factor (PF)</td><td style="color:var(--green)">✓ Calculat</td><td>&gt; 1.3 pentru Top 3</td><td>P0</td></tr>
+<tr><td>Max Drawdown (MaxDD)</td><td style="color:var(--green)">✓ Calculat</td><td>&lt; 15% capital</td><td>P0</td></tr>
+<tr><td>Sharpe Ratio</td><td style="color:var(--red)">✗ Always 0</td><td>&gt; 1.0 anual</td><td>P1</td></tr>
+<tr><td>Expectancy (E[trade])</td><td style="color:var(--red)">✗ Lipsă</td><td>(WR×AvgWin) - ((1-WR)×AvgLoss)</td><td>P1</td></tr>
+<tr><td>Consistency</td><td style="color:var(--red)">✗ Lipsă</td><td>CoV monthly returns &lt; 0.5</td><td>P1</td></tr>
+<tr><td>Consecutive Losses</td><td style="color:var(--red)">✗ Lipsă</td><td>Max 5, alert la 3</td><td>P1</td></tr>
+<tr><td>Stability under Stress</td><td style="color:var(--red)">✗ Lipsă</td><td>Performance in high-vol regime</td><td>P2</td></tr>
+<tr><td>Execution Quality</td><td style="color:var(--red)">✗ Lipsă</td><td>Slippage tracking per trade</td><td>P2</td></tr>
+<tr><td>Number of Trades</td><td style="color:var(--green)">✓ Calculat</td><td>Min 30 pentru evaluare</td><td>P0</td></tr>
+<tr><td>Style / Edge Type</td><td style="color:var(--orange)">⚠ DNA partial</td><td>Clasificare: scalp/swing/mean-rev</td><td>P2</td></tr>
+<tr><td>Robustness (regimuri)</td><td style="color:var(--red)">✗ Lipsă</td><td>Bull/bear/range performance</td><td>P2</td></tr>
+<tr><td>Readiness Score</td><td style="color:var(--orange)">⚠ Hardcodat</td><td>Composite: WR+PF+Sharpe+DD+trades</td><td>P1</td></tr>
+</table>
+
+<h3 style="margin-top:15px">Formula Readiness Score Recomandată:</h3>
+<pre style="background:#0a0a0f;padding:10px;border-radius:4px;color:var(--green);font-size:11px">
+readiness = (
+  (wrScore * 0.30) +           // Win rate normalized 0-100
+  (pfScore * 0.25) +           // Profit factor normalized
+  (sharpeScore * 0.20) +       // Sharpe ratio normalized
+  (consistencyScore * 0.15) +  // Low variance = high score
+  (maxDD_adj * 0.10)           // max(0, 100 - maxDD * 3)
+)
+
+ELIGIBLE_FOR_TOP3 = readiness >= 70
+  && totalTrades >= 30
+  && maxDD < 15%
+  && consecutiveLosses < 5
+  && sharpeRatio > 0.5
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">10.</span> IDEI UTILE DIN GITHUB / RESEARCH</h2>
+
+<div class="card good">
+<table>
+<tr><th>Repo</th><th>Idee Utilă</th><th>Integrabil?</th></tr>
+<tr><td><a href="https://github.com/TauricResearch/TradingAgents" style="color:var(--blue)">TradingAgents</a></td><td>Multi-agent LLM: analiști fundamentali + tehnici + risk + trader ca echipe separate. v0.2.3 suportă multi-provider.</td><td style="color:var(--green)">DA — arhitectura noastră Architect/Oracle e similară, dar TradingAgents are separare mai clară a rolurilor</td></tr>
+<tr><td><a href="https://github.com/Open-Finance-Lab/AgenticTrading" style="color:var(--blue)">AgenticTrading</a></td><td>DAG Planner Agent: construiește graf direcționat al task-urilor. Strategie continuă prin memory-augmented learning.</td><td style="color:var(--yellow)">PARȚIAL — DAG planner ar îmbunătăți orchestrarea vs swarm liniar actual</td></tr>
+<tr><td><a href="https://github.com/atfleming/tradestream" style="color:var(--blue)">TradeStream</a></td><td>Paper trading cu slippage + commission realist. Dual-mode paper/live. Position sizing A/B/C cu Kelly criterion.</td><td style="color:var(--green)">DA — exact ce lipsește la paper wallet. Model de referință.</td></tr>
+<tr><td><a href="https://github.com/jesse-ai/jesse" style="color:var(--blue)">Jesse</a></td><td>Backtesting avansat cu fee modeling, position sizing, multi-timeframe. Python.</td><td style="color:var(--yellow)">PARȚIAL — concepte de backtest realist aplicabile</td></tr>
+<tr><td><a href="https://github.com/Drakkar-Software/OctoBot" style="color:var(--blue)">OctoBot</a></td><td>Multi-exchange, multi-strategy cu evaluare automată. Grid + DCA + AI.</td><td style="color:var(--yellow)">PARȚIAL — exchange abstraction layer e mai robust decât al nostru</td></tr>
+<tr><td><a href="https://github.com/hummingbot/hummingbot" style="color:var(--blue)">Hummingbot</a></td><td>HFT cu connection pooling, circuit breaker, rate limit parsing din headers.</td><td style="color:var(--green)">DA — circuit breaker + rate limit headers = exact ce lipsește</td></tr>
+<tr><td><a href="https://github.com/freqtrade/freqtrade" style="color:var(--blue)">Freqtrade</a></td><td>Strategy ranking cu Hyperopt, walk-forward optimization, realistic fee model.</td><td style="color:var(--green)">DA — Hyperopt-style threshold tuning ar înlocui magic numbers</td></tr>
+</table>
+
+<p style="color:var(--muted);margin-top:10px">Verdict Sindicat: TradingAgents + TradeStream + Hummingbot = cele 3 repo-uri cu impact maxim pentru Trade AI. Restul = inspirație parțială.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">11.</span> CE PĂSTREZI</h2>
+
+<div class="card good">
+<ul>
+<li><span class="tag tag-keep">KEEP</span> <strong>MEXC Auth & Retry</strong> — HMAC-SHA256 corect, exponential backoff, timeout 8s</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>Kill Switch Architecture</strong> — Triple trigger (daily loss, exposure, velocity), persist to disk</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>Sentinel Guard</strong> — Rolling WR guard, streak breaker, equity DD compounding</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>Dual Master Consensus</strong> — Architect/Oracle split, hallucination defense, fallback chain</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>Genetic Spawn via LLM</strong> — DNA generation + sanity checks + mini-backtest</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>VWAP Filter</strong> — Binance klines reale, volume confirmation</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>RSI/BB Indicators</strong> — Implementare matematică corectă (Wilder's)</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>Monte Carlo Engine</strong> — Bootstrap resampling matematic corect</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>AlphaScout WebSocket</strong> — Date live Binance, Z-Score volume</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>Position Sizing Logic</strong> — [10 USD, 5% balance], anti-leverage</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>Scoring Framework</strong> — Deal/Risk/Conviction structurat corect</li>
+<li><span class="tag tag-keep">KEEP</span> <strong>EventHub Architecture</strong> — Pub/sub intern + Telegram alerts</li>
+</ul>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">12.</span> CE RESCRII</h2>
+
+<div class="card high">
+<ul>
+<li><span class="tag tag-rewrite">REWRITE</span> <strong>Butcher</strong> — AND→OR, adaugă Sharpe ca criteriu, arena-specific thresholds</li>
+<li><span class="tag tag-rewrite">REWRITE</span> <strong>Paper Wallet</strong> — Balance tracking per gladiator, fees 0.2%, slippage model, capital compounding</li>
+<li><span class="tag tag-rewrite">REWRITE</span> <strong>ML Predictor</strong> — Eliminate PnL% din features, adaugă OHLCV snapshots, proper train/test split</li>
+<li><span class="tag tag-rewrite">REWRITE</span> <strong>Gladiator Ranking</strong> — O singură funcție canonică folosită peste tot: WR 0.30 + PF 0.25 + Sharpe 0.20 + Consistency 0.15 + DD 0.10</li>
+<li><span class="tag tag-rewrite">REWRITE</span> <strong>Trade Lock</strong> — Default FALSE dacă Supabase offline (nu TRUE)</li>
+<li><span class="tag tag-rewrite">REWRITE</span> <strong>Bybit Client</strong> — Adaugă timeout, retry, rate limit, testnet default=false</li>
+<li><span class="tag tag-rewrite">REWRITE</span> <strong>Omega Progress</strong> — Bazat pe victorii reale, nu dnaBank.length</li>
+<li><span class="tag tag-rewrite">REWRITE</span> <strong>Health Check</strong> — Adaugă auth test, equity freshness, sentinel halt, cron health</li>
+</ul>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">13.</span> CE ELIMINI</h2>
+
+<div class="card critical">
+<ul>
+<li><span class="tag tag-cut">CUT</span> <strong>ML Predictor (forma actuală)</strong> — Circular, fără valoare predictivă. Rebuild from scratch sau elimină</li>
+<li><span class="tag tag-cut">CUT</span> <strong>Omega "super-AI"</strong> — Nu tradează, progress fictiv, decorativ pur. Redesign sau cut</li>
+<li><span class="tag tag-cut">CUT</span> <strong>LLM Sentiment (forma actuală)</strong> — Posts trunchiate, fără bot filtering, garbage-in-garbage-out</li>
+<li><span class="tag tag-cut">CUT</span> <strong>Binance client placeholder</strong> — HTTP 451, nicio funcționalitate. Elimină sau implementează real</li>
+<li><span class="tag tag-cut">CUT</span> <strong>Conviction Grade Letters (A+/A/B)</strong> — Thresholds arbitrare, fără validare istorică. Replace cu readiness score numeric</li>
+<li><span class="tag tag-cut">CUT</span> <strong>GENESIS_TIMESTAMP uptime</strong> — Fake. Înlocuiește cu startedAt din persistent config</li>
+<li><span class="tag tag-cut">CUT</span> <strong>Supabase placeholder fallback</strong> — Elimină fallback silențios. Throw error dacă DB lipsește</li>
+</ul>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">14.</span> CE IMPLEMENTEZI ACUM</h2>
+
+<div class="card good">
+<h3>Sprint 0 — Fix critice (1-2 zile)</h3>
+<ul>
+<li>Fix Butcher AND→OR</li>
+<li>Fix trade lock default = false dacă Supabase offline</li>
+<li>Fix executionMexc SL failure → return executed:false</li>
+<li>Fix velocity kill switch: carry over la midnight</li>
+<li>Adaugă kill switch verification loop (5 min): confirma poziții closed pe MEXC</li>
+</ul>
+
+<h3>Sprint 1 — Paper Wallet Real (3-5 zile)</h3>
+<ul>
+<li>Balance per gladiator (start $10k)</li>
+<li>Fee deduction: 0.2% per side</li>
+<li>Slippage model: 0.05-0.15% random</li>
+<li>Position sizing: max 5% per trade din balance curent</li>
+<li>Capital compounding pe câștig/pierdere</li>
+<li>Drawdown tracking real pe balance, nu pe phantom PnL</li>
+</ul>
+
+<h3>Sprint 2 — Radar Operațional (3-5 zile)</h3>
+<ul>
+<li>Implementează Sharpe Ratio calculat real</li>
+<li>Implementează Expectancy per gladiator</li>
+<li>Implementează Consistency metric (CoV)</li>
+<li>Implementează Consecutive Losses tracker</li>
+<li>Unifică ranking function (o singură funcție canonică)</li>
+<li>Readiness Score composite cu threshold dinamic</li>
+</ul>
+
+<h3>Sprint 3 — IP Status & Infra (2-3 zile)</h3>
+<ul>
+<li>Component UI: Dedicated IP status cu expiry countdown</li>
+<li>Startup health check: ping MEXC, OpenAI, Gemini, Supabase</li>
+<li>Graceful shutdown handler (SIGTERM)</li>
+<li>Cache freshness enforcement: reject prețuri >60s</li>
+<li>Circuit breaker pe sync queue</li>
+</ul>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2><span class="section-num">15.</span> PLAN EXECUTABIL PE PRIORITĂȚI</h2>
+
+<table>
+<tr><th>Prioritate</th><th>Task</th><th>Timp</th><th>Impact</th></tr>
+<tr style="color:var(--red)"><td>P0</td><td>Fix Butcher AND→OR</td><td>30 min</td><td>Gladiatori slabi eliminați instant</td></tr>
+<tr style="color:var(--red)"><td>P0</td><td>Fix trade lock default=false</td><td>15 min</td><td>Previne duplicate trades</td></tr>
+<tr style="color:var(--red)"><td>P0</td><td>Fix SL failure → executed:false</td><td>20 min</td><td>Previne poziții neprotejate</td></tr>
+<tr style="color:var(--red)"><td>P0</td><td>Fix velocity midnight reset</td><td>30 min</td><td>Previne exploatare la reset</td></tr>
+<tr style="color:var(--red)"><td>P0</td><td>Kill switch verification loop</td><td>1h</td><td>Confirmă lichidare reală</td></tr>
+<tr style="color:var(--orange)"><td>P1</td><td>Paper wallet cu fees/slippage</td><td>3-5 zile</td><td>Metrici reale, nu gonflate</td></tr>
+<tr style="color:var(--orange)"><td>P1</td><td>Sharpe + Expectancy + Consistency</td><td>2-3 zile</td><td>Radar operațional</td></tr>
+<tr style="color:var(--orange)"><td>P1</td><td>Ranking unificat + readiness score</td><td>1 zi</td><td>Top 3 pe merit real</td></tr>
+<tr style="color:var(--orange)"><td>P1</td><td>Separate paper/live state</td><td>1 zi</td><td>Zero contaminare</td></tr>
+<tr style="color:var(--yellow)"><td>P2</td><td>IP status component + expiry</td><td>2h</td><td>Monitoring infrastructură</td></tr>
+<tr style="color:var(--yellow)"><td>P2</td><td>Startup health check (all APIs)</td><td>2h</td><td>Fail fast, nu fail silent</td></tr>
+<tr style="color:var(--yellow)"><td>P2</td><td>Graceful shutdown (SIGTERM)</td><td>1h</td><td>State persistence</td></tr>
+<tr style="color:var(--yellow)"><td>P2</td><td>Cache freshness enforcement</td><td>1h</td><td>No stale price trading</td></tr>
+<tr style="color:var(--yellow)"><td>P2</td><td>Circuit breaker (sync queue)</td><td>2h</td><td>Previne memory leak</td></tr>
+<tr style="color:var(--blue)"><td>P3</td><td>Rebuild ML Predictor</td><td>1 săpt</td><td>Real edge vs tautologie</td></tr>
+<tr style="color:var(--blue)"><td>P3</td><td>Redesign Omega</td><td>1 săpt</td><td>Meta-strategy reală</td></tr>
+<tr style="color:var(--blue)"><td>P3</td><td>LLM Sentiment cu filtering</td><td>3 zile</td><td>Sentiment real, nu noise</td></tr>
+<tr style="color:var(--blue)"><td>P3</td><td>Arena-specific thresholds</td><td>2 zile</td><td>Scalp ≠ Swing criteria</td></tr>
+</table>
+
+<!-- IP STATUS -->
+<h2 style="color:var(--green)"><span class="section-num">★</span> DEDICATED IP STATUS</h2>
+<div class="ip-box">
+<div class="ip-addr">149.174.89.163</div>
+<p style="color:var(--muted);margin-top:5px">Dedicated IP — MEXC & Binance Whitelisted</p>
+<div class="expiry">
+Achiziționat: 13 Aprilie 2026<br>
+Expiră: ~13 Mai 2026<br>
+<strong style="color:var(--yellow)">⚠ Warning la: 10 Mai 2026 (3 zile înainte)</strong>
+</div>
+<p style="color:var(--muted);font-size:11px;margin-top:10px">Reînnoire lunară necesară. Component UI: DE IMPLEMENTAT (Sprint 3, P2)</p>
+</div>
+
+<p style="color:var(--muted);text-align:center;margin-top:40px;border-top:1px solid var(--border);padding-top:20px">
+TRADE AI Phoenix V2 — Master Audit | 13.04.2026 | Sindicat LLM: Consensus Puternic | Audit Engine: Claude Opus
+</p>
+
+</body>
+</html>

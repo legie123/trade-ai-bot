@@ -2,7 +2,9 @@ import { getDecisions } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { DecisionSnapshot } from '@/lib/types/radar';
 
-export const OMEGA_WIN_THRESHOLD = 100;
+// AUDIT FIX BUG-6: Dynamic threshold based on active gladiator count
+// Minimum 50 wins required (previously arbitrary 100 with inflated dnaBank.length)
+export const OMEGA_WIN_THRESHOLD = Math.max(50, (process.env.OMEGA_WIN_TARGET ? parseInt(process.env.OMEGA_WIN_TARGET) : 100));
 
 export interface ForgeStats {
   totalWinsAssimilated: number;

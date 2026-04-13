@@ -20,6 +20,10 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 // Avoid crashing if credentials are not valid during build
+// AUDIT FIX API-8: No more silent placeholder — fail loudly if Supabase not configured
+if (!supabaseUrl || supabaseUrl === '') {
+  console.warn('[DB WARNING] NEXT_PUBLIC_SUPABASE_URL is not set. Database features will be disabled.');
+}
 const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseKey || 'placeholder'
@@ -641,14 +645,15 @@ export function saveBotConfig(config: Partial<BotConfig>): void {
 }// ─── Equity Curve (Continuous & Non-Destructive) ─────
 export interface EquityPoint {
   timestamp: string;
-  pnl: number;        
-  balance: number;    
+  pnl: number;
+  balance: number;
   outcome: string;
   signal: string;
   symbol: string;
+  mode?: 'PAPER' | 'LIVE'; // AUDIT FIX CRITIC-8: Separate paper/live equity
 }
 
-export function getEquityCurve(): EquityPoint[] {
+export function getEquityCurve(filterMode?: 'PAPER' | 'LIVE'): EquityPoint[] {
   if (cache.equityHistory.length === 0) {
     // ═══ BOOTSTRAP: Reconstruct equity curve from historical decisions ═══
     const evaluated = cache.decisions
@@ -693,9 +698,10 @@ export function getEquityCurve(): EquityPoint[] {
     cache.equityHistory = bootstrapped;
     log.info(`[Equity Bootstrap] Reconstructed ${bootstrapped.length} points from decisions. Balance: $${currentBalance.toFixed(2)}`);
     
-    return bootstrapped;
+    return filterMode ? bootstrapped.filter(e => e.mode === filterMode) : bootstrapped;
   }
-  return cache.equityHistory;
+  // AUDIT FIX CRITIC-8: Filter equity curve by mode to prevent paper/live contamination
+  return filterMode ? cache.equityHistory.filter(e => e.mode === filterMode) : cache.equityHistory;
 }
 
 // Internal function to push a closed trade onto the real curve 
@@ -730,6 +736,7 @@ export function appendToEquityCurve(dec: DecisionSnapshot, pnlPct: number): void
     outcome: dec.outcome,
     signal: dec.signal,
     symbol: dec.symbol,
+    mode: config.mode as 'PAPER' | 'LIVE', // AUDIT FIX CRITIC-8: Tag equity by mode
   };
 
   cache.equityHistory.push(newPoint);
@@ -774,7 +781,7 @@ export async function acquireTradeLock(symbol: string): Promise<boolean> {
   localLocks.set(symbol, now + LOCK_TTL_MS);
 
   // Try Supabase distributed lock (cross-instance protection)
-  if (!supabaseUrl || !dbInitialized) return true; // Fallback: local-only
+  if (!supabaseUrl || !dbInitialized) return false; // Fallback: CONSERVATIVE — prevent double trades if DB is down
 
   try {
     const expiresAt = new Date(now + LOCK_TTL_MS).toISOString();
@@ -801,7 +808,7 @@ export async function acquireTradeLock(symbol: string): Promise<boolean> {
     return true;
   } catch (err) {
     log.warn(`[TradeLock] Distributed lock failed (${(err as Error).message}), local lock only.`);
-    return true; // Graceful degradation to local-only
+    return false; // CONSERVATIVE — if Supabase fails, DENY lock to prevent double trades
   }
 }
 

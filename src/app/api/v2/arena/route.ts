@@ -10,10 +10,11 @@ export async function GET() {
     const gladiators = gladiatorStore.getLeaderboard();
     const omega = gladiatorStore.getGladiators().find(g => g.isOmega);
     
-    // Calculate real Omega progress from extracted DNA
+    // AUDIT FIX CRITIC-7: Progress based on WINS only, not all battles
     const dnaBank = getGladiatorDna();
+    const actualWins = dnaBank.filter(d => d.isWin === true).length;
     const targetWins = 100; // Genesis target for Omega to awaken
-    const realProgress = Math.min(100, Math.round((dnaBank.length / targetWins) * 100));
+    const realProgress = Math.min(100, Math.round((actualWins / targetWins) * 100));
     
     // Update Omega in store with real progress based on DNA bank
     if (omega) {
@@ -68,7 +69,7 @@ export async function GET() {
         trainingProgress: realProgress,
         winRate: '0.00', // Still learning, doesn't trade yet
         status: realProgress >= 100 ? 'ACTIVE' : 'IN_TRAINING',
-        totalWinsAssimilated: dnaBank.length,
+        totalWinsAssimilated: actualWins,
         targetWins,
         totalTradesAnalyzed: dnaBank.length,
       } : null,

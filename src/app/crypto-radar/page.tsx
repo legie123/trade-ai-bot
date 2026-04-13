@@ -94,8 +94,8 @@ export default function CryptoRadarPage() {
   const [syncing, setSyncing] = useState(true);
   const [tokenSearch, setTokenSearch] = useState('');
   const [tokenChainFilter, setTokenChainFilter] = useState('');
-  const [sortCol, setSortCol] = useState<'change24h' | 'volume24h' | 'price'>('change24h');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [sortCol] = useState<'change24h' | 'volume24h' | 'price'>('change24h');
+  const [sortDir] = useState<'asc' | 'desc'>('desc');
 
   const fetchMain = useCallback(async () => {
     try {
@@ -216,8 +216,8 @@ export default function CryptoRadarPage() {
 
       {/* ── TOP HEADER ──────────────────────────────── */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(5, 6, 9, 0.8)',
-        backdropFilter: 'blur(20px)', borderBottom: `1px solid rgba(255,255,255,0.05)`, padding: '14px 24px',
-        display: 'flex', alignItems: 'center', gap: 20 }}>
+        backdropFilter: 'blur(20px)', borderBottom: `1px solid rgba(255,255,255,0.05)`, padding: '12px 16px',
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
 
         <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.15em', color: C.text, textShadow: '0 0 10px rgba(255,255,255,0.2)' }}>
           RADAR<span style={{ color: C.blue }}>.AI</span>

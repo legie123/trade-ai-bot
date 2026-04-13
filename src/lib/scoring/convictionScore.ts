@@ -170,7 +170,8 @@ export function calculateConviction(input: ConvictionInput): ConvictionResult {
   const score = components.vwap + components.rsi + components.bb + components.fearGreed + components.mtf;
   const clampedScore = Math.max(0, Math.min(100, score));
 
-  // Grade
+  // AUDIT FIX CUT: Deprecated letter grades — numeric score is canonical
+  // Letters kept for backward compatibility but should not be used for decisions
   let grade: ConvictionResult['grade'];
   if (clampedScore >= 85) grade = 'A+';
   else if (clampedScore >= 70) grade = 'A';
@@ -179,7 +180,7 @@ export function calculateConviction(input: ConvictionInput): ConvictionResult {
   else if (clampedScore >= 25) grade = 'D';
   else grade = 'F';
 
-  const reason = `Conviction ${clampedScore}/100 (${grade}) — VWAP:${components.vwap}/25, RSI:${components.rsi}/25, BB:${components.bb}/15, F&G:${components.fearGreed}/15, MTF:${components.mtf}/20`;
+  const reason = `Conviction ${clampedScore}/100 — VWAP:${components.vwap}/25, RSI:${components.rsi}/25, BB:${components.bb}/15, F&G:${components.fearGreed}/15, MTF:${components.mtf}/20`;
   
   log.info('Conviction Context Generated', { score: clampedScore, grade, direction: input.direction });
 

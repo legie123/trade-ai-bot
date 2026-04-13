@@ -19,7 +19,23 @@ export interface KillSwitchState {
   manualOverride: boolean;     // true if user manually set it
   dailyLossTriggered: boolean;
   maxExposureTriggered: boolean;
+  velocityTriggered: boolean;  // Faza 9: rapid-spend detection
 }
+
+// ─── Velocity Kill Switch — Faza 9 ────────────────
+// Tracks recent trade timestamps and spend deltas.
+// IF trades happen faster than threshold AND spend acceleration exceeds limit → TRIGGER
+interface VelocityEntry {
+  timestamp: number;
+  spendPercent: number;       // cumulative spend as % of equity
+}
+const velocityWindow: VelocityEntry[] = [];
+
+const VELOCITY_CONFIG = {
+  windowMinutes: 15,          // Look-back window
+  maxTradesInWindow: 8,       // Max trades allowed in window
+  maxSpendDeltaPercent: 5,    // Max cumulative spend in window
+} as const;
 
 // ─── Global singleton ───────────────────────────────
 const g = globalThis as unknown as { __killSwitch?: KillSwitchState };
@@ -46,6 +62,7 @@ function loadFromDisk(): KillSwitchState {
     manualOverride: false,
     dailyLossTriggered: false,
     maxExposureTriggered: false,
+    velocityTriggered: false,
   };
 }
 
@@ -100,10 +117,38 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
       error: lastError.message
     });
 
+    // VERIFICATION LOOP: Query MEXC every 5min to confirm positions are actually closed
+    let isVerified = false;
+    let verifyAttempts = 0;
+    const maxVerifyAttempts = 12; // 60 minutes total
+    const verifyInterval = 5 * 60_000; // 5 minutes
+
+    const verifyLoop = setInterval(async () => {
+      verifyAttempts++;
+      try {
+        const { getMexcOpenOrders } = await import('@/lib/exchange/mexcClient');
+        const openPos = await getMexcOpenOrders();
+        if (!openPos || openPos.length === 0) {
+          log.info('KILL SWITCH VERIFICATION: All positions confirmed CLOSED on MEXC');
+          isVerified = true;
+          clearInterval(verifyLoop);
+        } else {
+          log.warn(`[KILL SWITCH VERIFICATION] Still ${openPos.length} open position(s) on MEXC after ${verifyAttempts * 5}min`);
+        }
+      } catch (err) {
+        log.error(`[KILL SWITCH VERIFICATION] Query failed: ${(err as Error).message}`);
+      }
+
+      if (verifyAttempts >= maxVerifyAttempts) {
+        clearInterval(verifyLoop);
+        log.fatal('KILL SWITCH VERIFICATION: Timeout — Could not verify position closure after 60 minutes. MANUAL INTERVENTION CRITICAL.');
+      }
+    }, verifyInterval);
+
     // Send Telegram alert about failed liquidation
     try {
       const { sendMessage } = await import('@/lib/alerts/telegram');
-      await sendMessage(`🚨 *KILL SWITCH CRITICAL FAILURE*\nReason: ${reason}\nLiquidation FAILED after 3 retries.\nError: ${lastError.message}\nIMEDIATE MANUAL INTERVENTION REQUIRED`);
+      await sendMessage(`🚨 *KILL SWITCH CRITICAL FAILURE*\nReason: ${reason}\nLiquidation FAILED after 3 retries.\nError: ${lastError.message}\nIMEDIATE MANUAL INTERVENTION REQUIRED\n\n[Verification Loop Running — checking MEXC every 5 min for position closure]`);
     } catch (err) {
       log.fatal('KILL SWITCH: Failed to send Telegram alert', { error: (err as Error).message });
     }
@@ -168,6 +213,51 @@ export function checkExposureLimit(
   return false;
 }
 
+// ─── Velocity Kill Switch (Faza 9) ─────────────────
+/**
+ * Track a new trade execution for velocity monitoring.
+ * Call this AFTER every trade (live or phantom promoted to live).
+ * @param spendPercent - this trade's size as % of equity
+ * @returns true if velocity kill switch was triggered
+ */
+export function trackTradeVelocity(spendPercent: number): boolean {
+  const now = Date.now();
+  const cutoff = now - VELOCITY_CONFIG.windowMinutes * 60_000;
+
+  // Add entry
+  velocityWindow.push({ timestamp: now, spendPercent });
+
+  // Prune old entries
+  while (velocityWindow.length > 0 && velocityWindow[0].timestamp < cutoff) {
+    velocityWindow.shift();
+  }
+
+  // Check trade frequency
+  if (velocityWindow.length > VELOCITY_CONFIG.maxTradesInWindow) {
+    state.velocityTriggered = true;
+    engageKillSwitch(
+      `Velocity Kill Switch: ${velocityWindow.length} trades in ${VELOCITY_CONFIG.windowMinutes}min ` +
+      `(limit: ${VELOCITY_CONFIG.maxTradesInWindow})`,
+      true,
+    );
+    return true;
+  }
+
+  // Check cumulative spend delta
+  const totalSpend = velocityWindow.reduce((s, e) => s + e.spendPercent, 0);
+  if (totalSpend > VELOCITY_CONFIG.maxSpendDeltaPercent) {
+    state.velocityTriggered = true;
+    engageKillSwitch(
+      `Velocity Kill Switch: ${totalSpend.toFixed(2)}% spend in ${VELOCITY_CONFIG.windowMinutes}min ` +
+      `(limit: ${VELOCITY_CONFIG.maxSpendDeltaPercent}%)`,
+      true,
+    );
+    return true;
+  }
+
+  return false;
+}
+
 // ─── Get state ──────────────────────────────────────
 export function getKillSwitchState(): KillSwitchState {
   return { ...state };
@@ -177,6 +267,13 @@ export function getKillSwitchState(): KillSwitchState {
 export function resetDailyTriggers(): void {
   state.dailyLossTriggered = false;
   state.maxExposureTriggered = false;
+  state.velocityTriggered = false;
+  // SHIFT velocity window by 24h instead of clearing — carry metrics forward to prevent midnight attacks
+  const now = Date.now();
+  const cutoff24h = now - 24 * 60 * 60_000;
+  while (velocityWindow.length > 0 && velocityWindow[0].timestamp < cutoff24h) {
+    velocityWindow.shift();
+  }
   if (state.autoEngaged && !state.manualOverride) {
     disengageKillSwitch();
     log.info('Kill switch auto-disengaged on new day');

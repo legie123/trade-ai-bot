@@ -88,11 +88,27 @@ class GladiatorStore {
     return this.gladiators;
   }
 
+  // AUDIT FIX BUG-3: Single canonical ranking function using readinessScore
   public getLeaderboard(): Gladiator[] {
     this.ensureLoaded();
     return this.gladiators
       .filter(g => !g.isOmega)
-      .sort((a, b) => b.stats.winRate - a.stats.winRate);
+      .sort((a, b) => {
+        // Primary: readinessScore (composite metric)
+        const scoreA = (a.stats as any).readinessScore ?? this.computeQuickScore(a);
+        const scoreB = (b.stats as any).readinessScore ?? this.computeQuickScore(b);
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        // Tiebreaker: profitFactor × winRate
+        return (b.stats.profitFactor * b.stats.winRate) - (a.stats.profitFactor * a.stats.winRate);
+      });
+  }
+
+  // Quick score fallback if readinessScore not yet computed
+  private computeQuickScore(g: Gladiator): number {
+    const wr = Math.min(100, Math.max(0, g.stats.winRate));
+    const pf = Math.min(100, Math.max(0, g.stats.profitFactor * 25));
+    const dd = Math.max(0, 100 - g.stats.maxDrawdown * 3);
+    return wr * 0.40 + pf * 0.35 + dd * 0.25;
   }
 
   public updateGladiatorStats(id: string, tick: { pnlPercent: number, isWin: boolean }) {

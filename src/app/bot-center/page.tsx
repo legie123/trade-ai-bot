@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { TradingViewPanel } from '@/components/TradingViewChart';
 import KpiBar from '@/components/KpiBar';
 import PipelineStatus from '@/components/PipelineStatus';
-import InstallPwaButton from '@/components/InstallPwaButton';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
 import EquityCurve from '@/components/EquityCurve';
@@ -248,19 +247,28 @@ export default function BotCenterPage() {
       )}
       <style>{`@keyframes toastSlideIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }`}</style>
       {/* ---- Premium Navigation & Top Bar ---- */}
-      <header className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', marginBottom: 24, borderRadius: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div className="logo" style={{ fontSize: 20, letterSpacing: '0.05em' }}>
+      <header className="glass-card" style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        padding: '12px 20px', 
+        marginBottom: 20, 
+        borderRadius: 20,
+        flexWrap: 'wrap',
+        gap: 12
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '1 1 auto' }}>
+          <div className="logo" style={{ fontSize: 'clamp(16px, 4vw, 20px)', letterSpacing: '0.05em' }}>
             <span style={{ color: '#fff', textShadow: '0 0 10px rgba(255,255,255,0.3)' }}>TRADE</span>
             <span style={{ color: 'var(--accent-cyan)', textShadow: 'var(--neon-cyan)' }}> AI</span>
           </div>
-          <div style={{ padding: '4px 12px', background: 'rgba(0,0,0,0.3)', borderRadius: 20, fontSize: 11, border: '1px solid var(--border)' }}>
+          <div style={{ padding: '3px 10px', background: 'rgba(0,0,0,0.3)', borderRadius: 20, fontSize: 10, border: '1px solid var(--border)', flexShrink: 0 }}>
             <span className={`status-dot ${s?.mode === 'PAPER' ? 'dot-amber' : s?.mode === 'LIVE' ? 'dot-green' : 'dot-red'}`} />
             <span style={{ fontWeight: 600, letterSpacing: '0.05em' }}>{s?.mode || 'OFFLINE'}</span>
           </div>
         </div>
 
-        <nav className="nav-toggle">
+        <nav className="nav-toggle" style={{ order: typeof window !== 'undefined' && window.innerWidth < 768 ? 3 : 'initial', flex: typeof window !== 'undefined' && window.innerWidth < 768 ? '1 1 100%' : 'initial', justifyContent: 'center' }}>
           <Link href="/bot-center" className="nav-toggle-item active">
             <span className="nav-dot" /> <span className="nav-toggle-icon">🏆</span> <span className="nav-toggle-label" style={{marginLeft: 4}}>Arena</span>
           </Link>
@@ -269,20 +277,16 @@ export default function BotCenterPage() {
           </Link>
         </nav>
 
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <LiveIndicator
-            status={connectionStatus}
-            lastUpdate={lastUpdate}
-            updateCount={updateCount}
-            onReconnect={reconnect}
-          />
-          <InstallPwaButton />
-          <button className="btn" onClick={() => botAction('evaluate')} disabled={evalLoading} style={{ border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)', opacity: evalLoading ? 0.6 : 1, cursor: evalLoading ? 'wait' : 'pointer' }}>
-            {evalLoading ? '⏳ ...' : '▶ Evaluate'}
-          </button>
-          <button className="btn" onClick={handleSync} disabled={syncLoading} style={{ background: 'transparent', borderColor: 'var(--border)', opacity: syncLoading ? 0.6 : 1, cursor: syncLoading ? 'wait' : 'pointer' }}>
-            {syncLoading ? '⏳ ...' : '↻ Sync'}
-          </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <LiveIndicator status={connectionStatus} lastUpdate={lastUpdate} updateCount={updateCount} onReconnect={reconnect} />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn" onClick={() => botAction('evaluate')} disabled={evalLoading} style={{ padding: '6px 12px', border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)', opacity: evalLoading ? 0.6 : 1 }}>
+              {evalLoading ? '⏳' : '▶ Eval'}
+            </button>
+            <button className="btn" onClick={handleSync} disabled={syncLoading} style={{ padding: '6px 12px', background: 'transparent', borderColor: 'var(--border)', opacity: syncLoading ? 0.6 : 1 }}>
+              {syncLoading ? '⏳' : '↻ Sync'}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -317,8 +321,8 @@ export default function BotCenterPage() {
             {/* LEVEL 1: THE MASTERS */}
             <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--accent-red)' }}>👑 SINDICATUL MAEȘTRILOR</span>
-                <span className="pulse" style={{ fontSize: 10, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', padding: '2px 8px', borderRadius: 10 }}>CONSENSUS: 70%</span>
+                <span style={{ fontSize: 'clamp(10px, 2.5vw, 13px)', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--accent-red)' }}>👑 SINDICATUL MAEȘTRILOR</span>
+                <span className="pulse" style={{ fontSize: 9, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', padding: '2px 8px', borderRadius: 10 }}>CONSENSUS: 70%</span>
               </div>
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {data.v2Entities?.masters?.map((m) => (

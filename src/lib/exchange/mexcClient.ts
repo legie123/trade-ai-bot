@@ -26,11 +26,13 @@ const rateLimiter = {
 };
 
 function getMexcConfig() {
-  return {
-    apiKey: process.env.MEXC_API_KEY || '',
-    apiSecret: process.env.MEXC_API_SECRET || '',
-  };
+  const apiKey = process.env.MEXC_API_KEY || '';
+  const apiSecret = process.env.MEXC_API_SECRET || '';
+  // AUDIT FIX API-3: Log warning if keys missing (prevents silent auth failures)
+  if (!apiKey && !_mexcKeyWarned) { log.warn('[MEXC CONFIG] MEXC_API_KEY is empty — signed requests will fail'); _mexcKeyWarned = true; }
+  return { apiKey, apiSecret };
 }
+let _mexcKeyWarned = false;
 
 function sign(queryString: string): string {
   const { apiSecret } = getMexcConfig();

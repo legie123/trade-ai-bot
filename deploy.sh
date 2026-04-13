@@ -61,32 +61,21 @@ fi
 echo "✅ Pre-flight checks passed."
 echo ""
 
-# ── Step 1: Build Docker image ──
-echo "📦 Building Docker image..."
-docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .
-
-# ── Step 2: Push to GCR ──
-echo "⬆️  Pushing to Google Container Registry..."
-docker push "${IMAGE}:${TAG}"
-docker push "${IMAGE}:latest"
-
-# ── Step 3: Prepare env vars string for Cloud Run ──
-# Read .env.local and format as KEY=VALUE pairs (skip comments and empty lines)
+# ── Step 1: Prepare env vars ──
 ENV_VARS=$(grep -v '^#' .env.local | grep -v '^\s*$' | grep '=' | tr '\n' ',' | sed 's/,$//')
 
-# ── Step 4: Deploy to Cloud Run ──
-echo "🚀 Deploying to Cloud Run..."
+# ── Step 2: Build & Deploy via Google Cloud (Serverless Build) ──
+echo "🚀 Building and Deploying to Cloud Run via --source..."
 gcloud run deploy "${SERVICE_NAME}" \
-  --image "${IMAGE}:${TAG}" \
+  --source . \
   --region "${REGION}" \
-  --platform managed \
-  --port 8080 \
-  --memory 1Gi \
+  --memory 512Mi \
   --cpu 1 \
-  --min-instances 1 \
+  --min-instances 0 \
   --max-instances 3 \
   --timeout 300 \
   --concurrency 80 \
+  --cpu-throttling \
   --allow-unauthenticated \
   --set-env-vars "${ENV_VARS}"
 
@@ -111,6 +100,7 @@ echo "⏰ Setting up Cloud Scheduler cron jobs..."
 CRON_SECRET_VAL=$(grep 'CRON_SECRET=' .env.local | cut -d'=' -f2)
 
 # Cron: Main evaluation cycle (every 5 minutes)
+gcloud scheduler jobs delete "${SERVICE_NAME}-cron-main" --location="${REGION}" --quiet 2>/dev/null || true
 gcloud scheduler jobs create http "${SERVICE_NAME}-cron-main" \
   --location="${REGION}" \
   --schedule="*/5 * * * *" \
@@ -118,16 +108,10 @@ gcloud scheduler jobs create http "${SERVICE_NAME}-cron-main" \
   --http-method=GET \
   --headers="Authorization=Bearer ${CRON_SECRET_VAL}" \
   --attempt-deadline=120s \
-  --time-zone="UTC" \
-  2>/dev/null || gcloud scheduler jobs update http "${SERVICE_NAME}-cron-main" \
-  --location="${REGION}" \
-  --schedule="*/5 * * * *" \
-  --uri="${SERVICE_URL}/api/cron" \
-  --http-method=GET \
-  --headers="Authorization=Bearer ${CRON_SECRET_VAL}" \
-  --attempt-deadline=120s
+  --time-zone="UTC"
 
 # Cron: Position management (every 2 minutes)
+gcloud scheduler jobs delete "${SERVICE_NAME}-cron-positions" --location="${REGION}" --quiet 2>/dev/null || true
 gcloud scheduler jobs create http "${SERVICE_NAME}-cron-positions" \
   --location="${REGION}" \
   --schedule="*/2 * * * *" \
@@ -135,16 +119,10 @@ gcloud scheduler jobs create http "${SERVICE_NAME}-cron-positions" \
   --http-method=GET \
   --headers="Authorization=Bearer ${CRON_SECRET_VAL}" \
   --attempt-deadline=60s \
-  --time-zone="UTC" \
-  2>/dev/null || gcloud scheduler jobs update http "${SERVICE_NAME}-cron-positions" \
-  --location="${REGION}" \
-  --schedule="*/2 * * * *" \
-  --uri="${SERVICE_URL}/api/v2/cron/positions" \
-  --http-method=GET \
-  --headers="Authorization=Bearer ${CRON_SECRET_VAL}" \
-  --attempt-deadline=60s
+  --time-zone="UTC"
 
 # Cron: Arena phantom trade evaluation (every 3 minutes)
+gcloud scheduler jobs delete "${SERVICE_NAME}-cron-arena" --location="${REGION}" --quiet 2>/dev/null || true
 gcloud scheduler jobs create http "${SERVICE_NAME}-cron-arena" \
   --location="${REGION}" \
   --schedule="*/3 * * * *" \
@@ -152,48 +130,29 @@ gcloud scheduler jobs create http "${SERVICE_NAME}-cron-arena" \
   --http-method=GET \
   --headers="Authorization=Bearer ${CRON_SECRET_VAL}" \
   --attempt-deadline=90s \
-  --time-zone="UTC" \
-  2>/dev/null || gcloud scheduler jobs update http "${SERVICE_NAME}-cron-arena" \
-  --location="${REGION}" \
-  --schedule="*/3 * * * *" \
-  --uri="${SERVICE_URL}/api/v2/arena" \
-  --http-method=GET \
-  --headers="Authorization=Bearer ${CRON_SECRET_VAL}" \
-  --attempt-deadline=90s
+  --time-zone="UTC"
 
 # Cron: Daily rotation / Butcher / Forge (once daily at 00:05 UTC)
+gcloud scheduler jobs delete "${SERVICE_NAME}-cron-daily" --location="${REGION}" --quiet 2>/dev/null || true
 gcloud scheduler jobs create http "${SERVICE_NAME}-cron-daily" \
   --location="${REGION}" \
   --schedule="5 0 * * *" \
   --uri="${SERVICE_URL}/api/cron" \
   --http-method=POST \
-  --headers="Authorization=Bearer ${CRON_SECRET_VAL}" \
-  --body='{"action":"dailyRotation"}' \
+  --headers="Authorization=Bearer ${CRON_SECRET_VAL},Content-Type=application/json" \
+  --message-body='{"action":"dailyRotation"}' \
   --attempt-deadline=300s \
-  --time-zone="UTC" \
-  2>/dev/null || gcloud scheduler jobs update http "${SERVICE_NAME}-cron-daily" \
-  --location="${REGION}" \
-  --schedule="5 0 * * *" \
-  --uri="${SERVICE_URL}/api/cron" \
-  --http-method=POST \
-  --headers="Authorization=Bearer ${CRON_SECRET_VAL}" \
-  --body='{"action":"dailyRotation"}' \
-  --attempt-deadline=300s
+  --time-zone="UTC"
 
 # Cron: Watchdog ping (every 10 minutes)
+gcloud scheduler jobs delete "${SERVICE_NAME}-watchdog" --location="${REGION}" --quiet 2>/dev/null || true
 gcloud scheduler jobs create http "${SERVICE_NAME}-watchdog" \
   --location="${REGION}" \
   --schedule="*/10 * * * *" \
   --uri="${SERVICE_URL}/api/watchdog/ping" \
   --http-method=GET \
   --attempt-deadline=30s \
-  --time-zone="UTC" \
-  2>/dev/null || gcloud scheduler jobs update http "${SERVICE_NAME}-watchdog" \
-  --location="${REGION}" \
-  --schedule="*/10 * * * *" \
-  --uri="${SERVICE_URL}/api/watchdog/ping" \
-  --http-method=GET \
-  --attempt-deadline=30s
+  --time-zone="UTC"
 
 echo ""
 echo "✅ Cloud Scheduler cron jobs configured."

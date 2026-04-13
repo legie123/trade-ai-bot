@@ -57,9 +57,11 @@ function detectDivergence(closes: number[], rsiValues: number[]): 'BULL_DIV' | '
 
   const len = closes.length;
   const recentPrice = closes[len - 1];
-  const prevPrice = closes[len - 15]; // ~15 bars back
+  // AUDIT FIX BUG-7: Increased lookback from 15 to 25 bars for more reliable divergence detection
+  const lookback = 25;
+  const prevPrice = closes[len - lookback];
   const recentRSI = rsiValues[rsiValues.length - 1];
-  const prevRSI = rsiValues[rsiValues.length - 15];
+  const prevRSI = rsiValues[rsiValues.length - lookback];
 
   // Bearish divergence: price makes higher high, but RSI makes lower high
   if (recentPrice > prevPrice && recentRSI < prevRSI && recentRSI > 60) {

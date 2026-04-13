@@ -119,8 +119,9 @@ export class SentinelGuard {
    * Drawdown = (peak - current) / peak.
    */
   private checkEquityDrawdown(): { safe: boolean; reason?: string; currentMDD?: number } {
-    const equityCurve = getEquityCurve();
     const config = getBotConfig();
+    // AUDIT FIX CRITIC-8: Filter equity by current mode — no paper/live contamination
+    const equityCurve = getEquityCurve(config.mode as 'PAPER' | 'LIVE');
     const startBalance = equityCurve.length > 0 ? equityCurve[0].balance : (config.paperBalance || 1000);
     
     // Hard Mode Fix: Do not bypass protection simply because there are < 5 trades.

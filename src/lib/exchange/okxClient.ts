@@ -33,20 +33,20 @@ async function okxRequest(
 ): Promise<Record<string, unknown>> {
   const { apiKey, passphrase } = getOkxConfig();
 
-  let url = `${OKX_BASE_URL}${path}`;
+  // AUDIT FIX API-4: Build query string ONCE, reuse for URL and signature
+  const hasParams = Object.keys(params).length > 0;
+  const qs = hasParams ? Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&') : '';
   let body = '';
 
-  if (method === 'GET' && Object.keys(params).length > 0) {
-    const qs = Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&');
+  let url = `${OKX_BASE_URL}${path}`;
+  if (method === 'GET' && qs) {
     url += `?${qs}`;
   }
-  if (method === 'POST' && Object.keys(params).length > 0) {
+  if (method === 'POST' && hasParams) {
     body = JSON.stringify(params);
   }
 
-  const requestPath = method === 'GET' && Object.keys(params).length > 0
-    ? `${path}?${Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&')}`
-    : path;
+  const requestPath = (method === 'GET' && qs) ? `${path}?${qs}` : path;
 
   let lastError: Error | null = null;
   const start = Date.now();
@@ -108,21 +108,21 @@ export async function getOkxServerTime(): Promise<string> {
 }
 
 export async function getOkxPrice(symbol: string): Promise<number> {
-  // OKX uses instId format: BTC-USDT
-  const instId = symbol.replace('USDT', '-USDT').replace('USDC', '-USDC');
+  // AUDIT FIX BUG-8: Use regex with $ anchor to avoid USDTUSD → USD-TUSDT-USD
+  const instId = symbol.replace(/USDT$/, '-USDT').replace(/USDC$/, '-USDC');
   const data = await okxRequest('GET', '/api/v5/market/ticker', { instId }, false);
   const arr = data.data as { last: string }[];
   return parseFloat(arr?.[0]?.last || '0');
 }
 
 export async function getOkxTicker24h(symbol: string): Promise<Record<string, unknown>> {
-  const instId = symbol.replace('USDT', '-USDT');
+  const instId = symbol.replace(/USDT$/, '-USDT');
   const data = await okxRequest('GET', '/api/v5/market/ticker', { instId }, false);
   return (data.data as Record<string, unknown>[])?.[0] || {};
 }
 
 export async function getOkxOrderbook(symbol: string, sz = '10'): Promise<Record<string, unknown>> {
-  const instId = symbol.replace('USDT', '-USDT');
+  const instId = symbol.replace(/USDT$/, '-USDT');
   const data = await okxRequest('GET', '/api/v5/market/books', { instId, sz }, false);
   return (data.data as Record<string, unknown>[])?.[0] || {};
 }
@@ -145,7 +145,7 @@ export async function placeOkxMarketOrder(
   sz: string,
   tdMode: string = 'cash'
 ): Promise<Record<string, unknown>> {
-  const instId = symbol.replace('USDT', '-USDT');
+  const instId = symbol.replace(/USDT$/, '-USDT');
   const data = await okxRequest('POST', '/api/v5/trade/order', {
     instId,
     tdMode,
@@ -163,7 +163,7 @@ export async function placeOkxLimitOrder(
   px: string,
   tdMode: string = 'cash'
 ): Promise<Record<string, unknown>> {
-  const instId = symbol.replace('USDT', '-USDT');
+  const instId = symbol.replace(/USDT$/, '-USDT');
   const data = await okxRequest('POST', '/api/v5/trade/order', {
     instId,
     tdMode,
@@ -176,7 +176,7 @@ export async function placeOkxLimitOrder(
 }
 
 export async function cancelOkxOrder(symbol: string, ordId: string): Promise<Record<string, unknown>> {
-  const instId = symbol.replace('USDT', '-USDT');
+  const instId = symbol.replace(/USDT$/, '-USDT');
   const data = await okxRequest('POST', '/api/v5/trade/cancel-order', { instId, ordId });
   return (data.data as Record<string, unknown>[])?.[0] || {};
 }

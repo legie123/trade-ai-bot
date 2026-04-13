@@ -94,12 +94,16 @@ export async function executeMexcTrade(
     let usdtBalance = balances.find(b => b.asset === 'USDT')?.free || 0;
     
     // OMEGA: For PAPER mode, mimic real API by injecting virtual balance
+    // AUDIT FIX BUG-5: Removed hardcoded 1000 fallback — use config or fail clearly
     if (dryRun) {
       try {
         const { getBotConfig } = await import('@/lib/store/db');
-        usdtBalance = getBotConfig().paperBalance || 1000;
+        const config = getBotConfig();
+        usdtBalance = config.paperBalance || 10000; // Default $10k paper balance (institutional standard)
+        if (!config.paperBalance) log.warn('[PAPER] Using default $10k paper balance — set paperBalance in config');
       } catch {
-        usdtBalance = 1000;
+        usdtBalance = 10000;
+        log.warn('[PAPER] Config unavailable — using default $10k paper balance');
       }
     }
 
@@ -152,6 +156,7 @@ export async function executeMexcTrade(
 
         // --- NATIVE STOP LOSS (AWAITED + RETRY) ---
         // Must verify SL exists before continuing — no fire-and-forget
+        let slCheckPassed = (side !== 'BUY'); // SELL orders don't require SL
         if (side === 'BUY') {
            const slPercent = 0.05; // 5% Hard stop loss
            let stopPrice = price * (1 - slPercent);
@@ -171,7 +176,15 @@ export async function executeMexcTrade(
            if (!slPlaced) {
              log.error(`[NATIVE SL CRITICAL] Could NOT place SL for ${mexcSymbol} after 3 attempts — position has NO hardware protection`);
              sendMessage(`⚠️ *SL FAILED* for ${mexcSymbol}\nPosition has NO hardware stop loss!\nManual intervention required.`).catch(() => {});
+             slCheckPassed = false; // VETO: No SL = no trade
+           } else {
+             slCheckPassed = true;
            }
+        }
+
+        // VETO: If SL check failed, reject the trade entirely
+        if (!slCheckPassed) {
+          return { symbol: mexcSymbol, side, price, quantity, usdAmount: tradeAmount, executed: false, error: 'Stop Loss placement FAILED — trade rejected for safety' };
         }
       } catch (err) {
         throw new Error(`[LIMIT FAILED] ${(err as Error).message}. Vetoing fallback to prevent explicit double-spend.`);

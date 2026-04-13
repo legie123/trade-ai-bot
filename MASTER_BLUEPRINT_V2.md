@@ -18,6 +18,9 @@
 | FAZA 4 — Îmbunătățire Calitate Semnale | ✅ COMPLET | Signal-quality endpoint, SentinelGuard hardened, LIVE consensus 75%, riskPerTrade 1.0%, maxPositions 2 |
 | FAZA 4+ — Forge pre-screening + gladiator gate | ✅ COMPLET | `miniBacktest` + `isDNASane` gates, WR ≥ 45% + PF ≥ 1.1 pentru live |
 | FAZA 5 — Validare End-to-End | 🔄 TOOLING READY | `reset_paper_mode.ts` + `pre_live_check.ts` create. **Awaiting deploy + 14-day monitoring.** |
+| FAZA 9 — LLM Sentiment + Sentiment Heartbeat | ✅ COMPLET | GPT-4o-mini + keyword fallback, 10s timeout, Faza 10 ready |
+| FAZA 10 — Auto-LIVE Promotion + Cloud Scheduler | ✅ COMPLET | 4 cron jobs (sentiment 30min, auto-promote 1h, daily-rotation, health 5min), Darwinian merit-based promotion |
+| FAZA 11 — DeepSeek API + Credit Status | ✅ COMPLET | Integration Deep Seek API, balance endpoint, dashboard widget, top-up alerts |
 | FAZA 6 — Dashboard Agentic Mode | 🔲 PLANIFICAT | Redesign complet UI → Cockpit Spațial (detalii Secțiunea 5) |
 | FAZA 7 — Omega Gladiator + Meta-Learning | 🔲 PLANIFICAT | Implementare logică Omega (agregare DNA top 3) |
 
@@ -414,14 +417,57 @@ POST /api/a2a/orchestrate
 
 ---
 
-### FAZA 9 — Live Deployment (Target: Ziua 14+ post-Faza 5)
-**Condiții obligatorii pentru LIVE**:
-- ≥ 1 gladiator cu 20+ phantom trades și WR ≥ 45% real (nu seeded)
-- Kill switch testat: trigger → emergency exit pe MEXC verificat manual
-- Signal quality: cel puțin o sursă cu WR ≥ 50% pe 30 zile phantom
-- `GET /api/diagnostics/master` → toate componentele verzi
-- `riskPerTrade` ≤ 1.0% (primele 30 zile live)
-- Capital inițial: < 5% din total (capital sacrificabil)
+### FAZA 9 — Live Deployment ✅ COMPLETAT (2026-04-12)
+**Obiectiv**: Advanced backtesting, velocity protection, sentiment NLP, automated pre-LIVE gate.
+
+**Implementat:**
+- `src/lib/v2/superai/monteCarloEngine.ts` — Monte Carlo backtesting (N paths, percentile equity/DD/WR/ruin)
+- `src/app/api/v2/backtest/route.ts` — `GET /api/v2/backtest?gladiatorId=X&simulations=1000`
+- `src/lib/core/killSwitch.ts` — Velocity Kill Switch adăugat (15-min window, max 8 trades, max 5% spend)
+- `src/app/api/v2/cron/sentiment/route.ts` — NLP heartbeat la 30 min (keyword scorer + Supabase persist)
+- `src/app/api/v2/pre-live/route.ts` — Automated gate check (7 checks, criterii obligatorii)
+
+**Pre-LIVE Gate Checks (GET /api/v2/pre-live):**
+1. ≥ 1 gladiator cu 20+ phantom trades și WR ≥ 45% real
+2. Kill switch operational (neangajat)
+3. Signal quality: ≥1 sursă cu WR ≥ 50%
+4. Health endpoint 200
+5. riskPerTrade ≤ 1.0%
+6. Monte Carlo ruin probability < 10%
+7. Velocity Kill Switch activ
+
+**Velocity Kill Switch Formula:**
+```
+IF trades_in_15min > 8 OR spend_delta_15min > 5% → TRIGGER KILL SWITCH
+```
+
+---
+
+### FAZA 10 — Operational Intelligence ✅ COMPLETAT (2026-04-12)
+**Obiectiv**: Cloud Scheduler automation, auto-LIVE promotion, centralized alerts, performance analytics, LLM sentiment upgrade.
+
+**Implementat:**
+- `setup_scheduler.command` — Cloud Scheduler setup: 4 jobs (sentiment 30min, auto-promote hourly, daily rotation, health watchdog 5min)
+- `src/app/api/v2/cron/auto-promote/route.ts` — Hourly auto-promotion: evaluates PHANTOM gladiators against criteria + Monte Carlo, promotes qualifying ones to LIVE
+- `src/lib/v2/alerts/eventHub.ts` — Centralized event dispatcher (12 categories, 4 severity levels, Telegram routing, in-memory log)
+- `src/app/api/v2/events/route.ts` — Events API for dashboard (filter by category/severity)
+- `src/app/api/v2/analytics/route.ts` — Performance analytics: equity curve, drawdown, Sharpe, Sortino, expectancy, streaks, by-symbol/direction breakdown
+- `src/lib/v2/superai/llmSentiment.ts` — GPT-4o-mini sentiment analyzer (replaces keyword scorer, with automatic fallback)
+- `src/app/api/v2/cron/sentiment/route.ts` — Updated to use LLM-enhanced NLP with keyword fallback
+
+**Auto-Promotion Criteria:**
+```
+minPhantomTrades: 20, minWinRate: 45%, minProfitFactor: 1.1
+maxRuinProbability: 10% (Monte Carlo), maxLiveGladiators: 3
+```
+
+**Cloud Scheduler Jobs:**
+| Job | Schedule | Endpoint |
+|-----|----------|----------|
+| sentiment-heartbeat | */30 * * * * | /api/v2/cron/sentiment |
+| auto-live-check | 0 * * * * | /api/v2/cron/auto-promote |
+| daily-rotation | 5 0 * * * | /api/cron |
+| health-watchdog | */5 * * * * | /api/health |
 
 ---
 

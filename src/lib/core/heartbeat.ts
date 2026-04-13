@@ -64,9 +64,9 @@ export function recordError(): void {
 function takeSnapshot(): HealthSnapshot {
   const mem = process.memoryUsage();
   
-  // V2 Genesis Timestamp: April 4, 2026
-  const GENESIS_TIMESTAMP = 1775260800000;
-  const realUptimeSeconds = (Date.now() - GENESIS_TIMESTAMP) / 1000;
+  // AUDIT FIX BUG-4: Use real process start time instead of hardcoded genesis
+  const processStartTime = (globalThis as any).__processStartTime || Date.now();
+  const realUptimeSeconds = (Date.now() - processStartTime) / 1000;
 
   // Get scan loop state
   let scanRunning = false;

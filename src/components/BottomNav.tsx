@@ -13,7 +13,7 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="bottom-nav" role="navigation" aria-label="Main navigation">
+    <nav className="bottom-nav" role="navigation" aria-label="Main navigation" style={{ paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))' }}>
       {NAV_ITEMS.map((item) => {
         const isActive = pathname === item.href;
         return (

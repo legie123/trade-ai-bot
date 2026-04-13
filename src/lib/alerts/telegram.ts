@@ -97,7 +97,9 @@ export async function sendMessage(text: string): Promise<boolean> {
     });
     const data = await res.json();
     return data.ok === true;
-  } catch {
+  } catch (err) {
+    // AUDIT FIX BUG-10: Log Telegram failures instead of silently swallowing
+    console.error(`[Telegram] Failed to send message: ${(err as Error).message}`);
     return false;
   }
 }

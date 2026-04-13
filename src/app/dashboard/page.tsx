@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
 import BottomNav from '@/components/BottomNav';
+import DeepSeekStatus from '@/app/components/DeepSeekStatus';
 
 const C = {
   bg:'#07080d', surface:'#0d1018', surfaceAlt:'#111520', border:'#1a2133', borderAlt:'#242d40',
@@ -41,6 +42,7 @@ interface ExchangeRow { name:string;enabled:boolean;mode:string;connected:boolea
 interface ExchangeData { activeExchange:string; exchanges:ExchangeRow[]; }
 
 function hColor(s:string|boolean|undefined):string{
+  if(s===undefined||s===null)return C.mutedLight;
   const v=String(s).toUpperCase();
   if(s===true||['OK','HEALTHY','GREEN','ACTIVE','SAFE','CONNECTED'].includes(v))return C.green;
   if(s===false||['ERROR','DEGRADED','CRITICAL','RED','INVALID_KEY','MISSING_KEY','NETWORK_ERROR'].includes(v))return C.red;
@@ -69,8 +71,10 @@ function lColor(l:string):string{
   if(u==='DEBUG')return C.muted;
   return C.mutedLight;
 }
-function gColor(g:string):string{
-  return g==='A'?C.green:g==='B'?C.yellow:g==='C'?C.red:C.mutedLight;
+function gColor(g:string|undefined):string{
+  if(!g)return C.mutedLight;
+  const u=g.toUpperCase();
+  return u==='A'?C.green:u==='B'?C.yellow:u==='C'?C.red:C.mutedLight;
 }
 
 export default function StatusPage(){
@@ -136,9 +140,9 @@ export default function StatusPage(){
   const connColor:Record<string,string>={connected:C.green,connecting:C.yellow,reconnecting:C.yellow,polling:C.blue,error:C.red};
 
   const card=(label:string,val:string,col?:string)=>(
-    <div style={{background:C.surface,padding:'10px 10px 8px'}}>
-      <div style={{fontSize:9,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase',marginBottom:4}}>{label}</div>
-      <div style={{fontSize:17,fontWeight:700,color:col||C.white}}>{val}</div>
+    <div className="stat-card" style={{background:C.surface, padding:'12px'}}>
+      <div className="stat-label" style={{color:C.mutedLight}}>{label}</div>
+      <div className="stat-value" style={{color:col||C.white, fontSize:'1.2rem'}}>{val}</div>
     </div>
   );
 
@@ -159,28 +163,34 @@ export default function StatusPage(){
       `}</style>
 
       {/* ── HEADER ── */}
-      <header style={{position:'sticky',top:0,zIndex:50,background:C.bg,borderBottom:`1px solid ${C.border}`,padding:'10px 14px',display:'flex',alignItems:'center',gap:10}}>
-        {loading
-          ?<div style={{width:10,height:10,borderRadius:'50%',border:`2px solid ${C.yellow}`,borderTopColor:'transparent',animation:'spin .8s linear infinite'}}/>
-          :<div style={{width:10,height:10,borderRadius:'50%',background:statusCol,boxShadow:`0 0 8px ${statusCol}`,flexShrink:0}}/>
-        }
-        <div>
-          <div style={{fontSize:13,fontWeight:700,color:C.white,lineHeight:1}}>TRADE AI — STATUS</div>
-          <div style={{fontSize:10,color:C.mutedLight,marginTop:2}}>
-            {overallStatus}{health?.version?` · v${health.version.split(' ')[0]}`:''}{health?.uptimeSecs?` · up ${uptime(health.uptimeSecs)}`:''}
+      <header style={{position:'sticky',top:0,zIndex:50,background:C.bg,borderBottom:`1px solid ${C.border}`,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,flex:1,minWidth:'200px'}}>
+          {loading
+            ?<div style={{width:10,height:10,borderRadius:'50%',border:`2px solid ${C.yellow}`,borderTopColor:'transparent',animation:'spin .8s linear infinite'}}/>
+            :<div style={{width:10,height:10,borderRadius:'50%',background:statusCol,boxShadow:`0 0 8px ${statusCol}`,flexShrink:0}}/>
+          }
+          <div className="no-overflow">
+            <div style={{fontSize:13,fontWeight:700,color:C.white,lineHeight:1}}>TRADE AI — STATUS</div>
+            <div style={{fontSize:10,color:C.mutedLight,marginTop:2}} className="no-overflow">
+              {overallStatus}{health?.version?` · v${health.version.split(' ')[0]}`:''}{health?.uptimeSecs?` · up ${uptime(health.uptimeSecs)}`:''}
+            </div>
           </div>
         </div>
-        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:5,border:`1px solid ${(connColor[connectionStatus]||C.muted)}30`,background:hBg(connectionStatus==='connected'?'OK':connectionStatus==='error'?'ERROR':'WARN')}}>
-          <div style={{width:6,height:6,borderRadius:'50%',background:connColor[connectionStatus]||C.mutedLight,animation:connectionStatus==='connected'?'pulse 2s infinite':'none'}}/>
-          <span style={{fontSize:9,fontWeight:700,color:connColor[connectionStatus]||C.mutedLight}}>{connLabel[connectionStatus]||connectionStatus.toUpperCase()}</span>
+        
+        <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
+          <div style={{display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:5,border:`1px solid ${(connColor[connectionStatus]||C.muted)}30`,background:hBg(connectionStatus==='connected'?'OK':connectionStatus==='error'?'ERROR':'WARN')}}>
+            <div style={{width:6,height:6,borderRadius:'50%',background:connColor[connectionStatus]||C.mutedLight,animation:connectionStatus==='connected'?'pulse 2s infinite':'none'}}/>
+            <span style={{fontSize:9,fontWeight:700,color:connColor[connectionStatus]||C.mutedLight}}>{connLabel[connectionStatus]||connectionStatus.toUpperCase()}</span>
+          </div>
+          <button style={{padding:'4px 10px',background:'transparent',border:`1px solid ${C.borderAlt}`,color:C.mutedLight,borderRadius:5,fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4,fontFamily:'inherit'}} onClick={refreshAll}>
+            <span style={{animation:loading||diagLoading?'spin .8s linear infinite':'none',display:'inline-block'}}>↺</span>Refresh
+          </button>
         </div>
-        <button style={{padding:'4px 10px',background:'transparent',border:`1px solid ${C.borderAlt}`,color:C.mutedLight,borderRadius:5,fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4,fontFamily:'inherit'}} onClick={refreshAll}>
-          <span style={{animation:loading||diagLoading?'spin .8s linear infinite':'none',display:'inline-block'}}>↺</span>Refresh
-        </button>
       </header>
 
       {/* ── CORE SERVICES STRIP ── */}
-      <div style={{margin:'12px 12px 0',display:'flex',gap:7,overflowX:'auto',paddingBottom:2}}>
+      <div style={{margin:'12px 12px 0'}} className="scroll-x">
+        <div style={{display:'flex',gap:7,paddingBottom:2}}>
         {[
           {label:'STREAM',val:connLabel[connectionStatus]||'—',col:connColor[connectionStatus]||C.mutedLight},
           {label:'HEARTBEAT',val:dash?.heartbeat?.status||health?.coreMonitor?.heartbeat||'—',col:hColor(dash?.heartbeat?.status||health?.coreMonitor?.heartbeat)},
@@ -197,6 +207,7 @@ export default function StatusPage(){
             </div>
           </div>
         ))}
+        </div>
       </div>
 
       {/* ── KILL SWITCH ALERT ── */}
@@ -217,9 +228,9 @@ export default function StatusPage(){
           {exchanges?.activeExchange&&<span style={{fontSize:9,color:C.blue,fontWeight:600}}>ACTIVE: {exchanges.activeExchange.toUpperCase()}</span>}
         </div>
         {health?.api&&[
-          {name:'Binance',ok:health.api.binance.ok,latency:health.api.binance.latencyMs,mode:health.api.binance.mode},
-          {name:'DexScreener',ok:health.api.dexScreener.ok,latency:null,mode:null},
-          {name:'CoinGecko',ok:health.api.coinGecko.ok,latency:null,mode:null},
+          {name:'Binance',ok:health.api.binance?.ok,latency:health.api.binance?.latencyMs,mode:health.api.binance?.mode},
+          {name:'DexScreener',ok:health.api.dexScreener?.ok,latency:null,mode:null},
+          {name:'CoinGecko',ok:health.api.coinGecko?.ok,latency:null,mode:null},
         ].map(r=>(
           <div key={r.name} className="ex-row">
             <div style={{width:26,height:26,borderRadius:6,flexShrink:0,background:C.surfaceAlt,border:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,fontWeight:800,color:C.mutedLight}}>{r.name.slice(0,2).toUpperCase()}</div>
@@ -251,16 +262,14 @@ export default function StatusPage(){
           {diagLoading&&<span style={{fontSize:9,color:C.yellow}}>◌ checking…</span>}
           {lastDiag&&!diagLoading&&<span style={{fontSize:9,color:C.mutedLight}}>checked {ft(lastDiag.toISOString())}</span>}
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:1,background:C.border}}>
+        <div className="grid-2" style={{background:C.border, gap:'1px'}}>
           <div style={{background:C.surface,padding:'10px 12px'}}>
             <div style={{fontSize:9,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase',marginBottom:4}}>OpenAI GPT</div>
             <div style={{fontSize:15,fontWeight:700,color:hColor(credits?.openai.status)}}>{credits?credits.openai.status:'—'}</div>
             <div style={{fontSize:9,color:C.mutedLight,marginTop:2}}>GPT-4 / Analysis</div>
           </div>
-          <div style={{background:C.surface,padding:'10px 12px'}}>
-            <div style={{fontSize:9,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase',marginBottom:4}}>DeepSeek</div>
-            <div style={{fontSize:15,fontWeight:700,color:hColor(credits?.deepseek.status)}}>{credits?.deepseek.balance||(credits?credits.deepseek.status:'—')}</div>
-            <div style={{fontSize:9,color:C.mutedLight,marginTop:2}}>{credits?.deepseek.is_available?'● Available':'○ Unavailable'}</div>
+          <div style={{background:C.surface,padding:'10px 12px',gridColumn:'span 1',minWidth:'200px'}}>
+            <DeepSeekStatus />
           </div>
           <div style={{background:C.surface,padding:'10px 12px'}}>
             <div style={{fontSize:9,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase',marginBottom:4}}>Supabase DB</div>
@@ -285,7 +294,7 @@ export default function StatusPage(){
           <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Trading Operations</span>
           <span style={{fontSize:9,color:health?.systemMode==='AUTO_TRADE'?C.yellow:C.blue,fontWeight:700}}>{health?.systemMode||bot?.stats?.mode||'PAPER'}</span>
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:1,background:C.border}}>
+        <div className="grid-4" style={{background:C.border, gap:'1px'}}>
           {card('Decisions Today',(health?.trading?.decisionsToday??dash?.trading?.totalSignals??'—').toString(),C.blue)}
           {card('Open Positions',(diag?.positions?.open??dash?.trading?.openPositions??'—').toString(),C.white)}
           {card('Win Rate',bot?.stats?.overallWinRate!=null?`${bot.stats.overallWinRate.toFixed(1)}%`:'—',bot?.stats?.overallWinRate!=null&&bot.stats.overallWinRate>=55?C.green:bot?.stats?.overallWinRate!=null&&bot.stats.overallWinRate>=45?C.yellow:C.red)}
@@ -294,12 +303,12 @@ export default function StatusPage(){
         {diag?.equity&&(
           <div style={{padding:'9px 12px',display:'flex',gap:16,borderTop:`1px solid ${C.border}`,flexWrap:'wrap'}}>
             {[
-              {l:'W',v:diag.equity.wins.toString(),c:C.green},
-              {l:'L',v:diag.equity.losses.toString(),c:C.red},
-              {l:'WR',v:`${diag.equity.winRatePercent.toFixed(1)}%`,c:diag.equity.winRatePercent>=55?C.green:C.yellow},
-              {l:'Equity',v:`$${diag.equity.currentBalance.toFixed(0)}`,c:C.white},
-              {l:'Peak',v:`$${diag.equity.peakBalance.toFixed(0)}`,c:C.blue},
-              {l:'MaxDD',v:`${diag.equity.maxDrawdownPercent.toFixed(1)}%`,c:diag.equity.maxDrawdownPercent>15?C.red:C.yellow},
+              {l:'W',v:(diag.equity.wins??0).toString(),c:C.green},
+              {l:'L',v:(diag.equity.losses??0).toString(),c:C.red},
+              {l:'WR',v:`${(diag.equity.winRatePercent??0).toFixed(1)}%`,c:(diag.equity.winRatePercent??0)>=55?C.green:C.yellow},
+              {l:'Equity',v:`$${(diag.equity.currentBalance??0).toFixed(0)}`,c:C.white},
+              {l:'Peak',v:`$${(diag.equity.peakBalance??0).toFixed(0)}`,c:C.blue},
+              {l:'MaxDD',v:`${(diag.equity.maxDrawdownPercent??0).toFixed(1)}%`,c:(diag.equity.maxDrawdownPercent??0)>15?C.red:C.yellow},
             ].map(x=>(
               <div key={x.l} style={{fontSize:9,color:C.mutedLight}}>{x.l}&nbsp;<span style={{color:x.c,fontWeight:700}}>{x.v}</span></div>
             ))}
@@ -324,7 +333,7 @@ export default function StatusPage(){
                 <div style={{fontSize:9,color:C.mutedLight,marginTop:1}}>{omega.arena||'MAIN ARENA'}</div>
               </div>
               <div style={{textAlign:'right'}}>
-                <div style={{fontSize:16,fontWeight:700,color:omega.winRate>=55?C.green:omega.winRate>=45?C.yellow:C.red}}>{omega.winRate.toFixed(1)}%</div>
+                <div style={{fontSize:16,fontWeight:700,color:(omega.winRate??0)>=55?C.green:(omega.winRate??0)>=45?C.yellow:C.red}}>{(omega.winRate??0).toFixed(1)}%</div>
                 <div style={{fontSize:9,color:C.mutedLight}}>Win Rate</div>
               </div>
             </div>
@@ -350,7 +359,7 @@ export default function StatusPage(){
           <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>System Resources</span>
           {diag?.system&&<span style={{fontSize:9,color:C.mutedLight}}>diag in {diag.system.diagnosticDurationMs}ms</span>}
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:1,background:C.border}}>
+        <div className="grid-3" style={{background:C.border, gap:'1px'}}>
           {card('RSS Memory',diag?.system?`${diag.system.memoryUsageMB.rss} MB`:(dash?.system?.memoryUsageRssMB?`${dash.system.memoryUsageRssMB} MB`:'—'),diag?.system&&diag.system.memoryUsageMB.rss>400?C.yellow:C.text)}
           {card('Heap',diag?.system?`${diag.system.memoryUsageMB.heapUsed}/${diag.system.memoryUsageMB.heapTotal} MB`:'—',C.text)}
           {card('Uptime',diag?.system?uptime(diag.system.uptimeSeconds):(dash?.system?.uptime?uptime(dash.system.uptime):'—'),C.green)}
@@ -432,7 +441,7 @@ export default function StatusPage(){
                 <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,color:last.decision==='BUY'?C.green:last.decision==='SELL'?C.red:C.yellow,background:last.decision==='BUY'?C.greenBg:last.decision==='SELL'?C.redBg:C.yellowBg}}>{last.decision}</span>
                 <span style={{fontSize:9,color:C.blue,marginLeft:'auto',fontWeight:700}}>{Math.round(last.confidence*100)}% conf</span>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              <div className="grid-2" style={{gap:8}}>
                 {[{name:'ARCHITECT',data:last.architect},{name:'ORACLE',data:last.oracle}].map(a=>(
                   <div key={a.name} style={{background:C.surfaceAlt,borderRadius:6,padding:'7px 9px',border:`1px solid ${C.border}`}}>
                     <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:3}}>{a.name}</div>

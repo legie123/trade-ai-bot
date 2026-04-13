@@ -11,7 +11,7 @@ function getBybitConfig() {
   return {
     apiKey: process.env.BYBIT_API_KEY || '',
     apiSecret: process.env.BYBIT_API_SECRET || '',
-    testnet: process.env.BYBIT_TESTNET !== 'false', // default testnet
+    testnet: process.env.BYBIT_TESTNET === 'true', // AUDIT FIX API-2: Default to LIVE (was testnet=true)
   };
 }
 
@@ -19,11 +19,26 @@ function getBaseUrl(): string {
   return getBybitConfig().testnet ? BYBIT_TESTNET_URL : BYBIT_LIVE_URL;
 }
 
+// AUDIT FIX API-2: Added timeout, retry with backoff, rate limiting
+const bybitRateLimiter = {
+  lastCall: 0,
+  minIntervalMs: 100,
+  async wait() {
+    const now = Date.now();
+    const elapsed = now - this.lastCall;
+    if (elapsed < this.minIntervalMs) {
+      await new Promise(r => setTimeout(r, this.minIntervalMs - elapsed));
+    }
+    this.lastCall = Date.now();
+  }
+};
+
 async function bybitRequest(
   method: 'GET' | 'POST',
   endpoint: string,
   params: Record<string, string | number> = {},
-  signed = true
+  signed = true,
+  retries = 2
 ): Promise<Record<string, unknown>> {
   const { apiKey, apiSecret } = getBybitConfig();
   const timestamp = Date.now().toString();
@@ -61,17 +76,44 @@ async function bybitRequest(
     headers['X-BAPI-RECV-WINDOW'] = recvWindow;
   }
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    ...(method === 'POST' ? { body } : {}),
-  });
+  let lastError: Error | null = null;
 
-  const data = await res.json();
-  if (data.retCode !== 0 && data.retCode !== undefined) {
-    throw new Error(`Bybit Error ${data.retCode}: ${data.retMsg}`);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      await bybitRateLimiter.wait();
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
+      const res = await fetch(url, {
+        method,
+        headers,
+        signal: controller.signal,
+        ...(method === 'POST' ? { body } : {}),
+      });
+      clearTimeout(timer);
+
+      // Rate limited — backoff
+      if (res.status === 429) {
+        const wait = 1000 * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+
+      const data = await res.json();
+      if (data.retCode !== 0 && data.retCode !== undefined) {
+        throw new Error(`Bybit Error ${data.retCode}: ${data.retMsg}`);
+      }
+      return data;
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < retries) {
+        const wait = 500 * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, wait));
+      }
+    }
   }
-  return data;
+  throw lastError || new Error('[BYBIT] Unknown error');
 }
 
 // ─── Public endpoints ────────────────────────────
