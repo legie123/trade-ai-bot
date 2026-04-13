@@ -67,8 +67,8 @@ export async function GET(request: Request) {
               marketId: opportunity.marketId,
               direction: evaluation.direction,
               outcomeId: opportunity.market.outcomes.find(
-                o => (evaluation.direction === 'BUY_YES' && o.name === 'YES') ||
-                     (evaluation.direction === 'BUY_NO' && o.name === 'NO'),
+                o => (evaluation.direction === 'BUY_YES' && o.name.toUpperCase() === 'YES') ||
+                     (evaluation.direction === 'BUY_NO' && o.name.toUpperCase() === 'NO'),
               )?.id || '',
               entryPrice: opportunity.market.outcomes[0]?.price || 0.5,
               shares: 0,

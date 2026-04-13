@@ -54,8 +54,8 @@ export async function GET(request: Request) {
 
           if (market.closed) {
             // Get final prices
-            const yesOutcome = market.outcomes.find(o => o.name === 'YES');
-            const noOutcome = market.outcomes.find(o => o.name === 'NO');
+            const yesOutcome = market.outcomes.find(o => o.name.toUpperCase() === 'YES');
+            const noOutcome = market.outcomes.find(o => o.name.toUpperCase() === 'NO');
 
             if (yesOutcome && noOutcome) {
               if (yesOutcome.price > 0.95) outcome = 'YES';

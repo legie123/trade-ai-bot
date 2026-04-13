@@ -203,7 +203,7 @@ export async function POST(request: Request) {
         }
 
         // Find outcome
-        const outcome = market.outcomes.find(o => o.name === direction.replace('BUY_', ''));
+        const outcome = market.outcomes.find(o => o.name.toUpperCase() === direction.replace('BUY_', ''));
         if (!outcome) {
           return NextResponse.json(
             { status: 'error', error: 'Outcome not found for direction' },

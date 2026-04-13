@@ -77,8 +77,8 @@ const C = {
   border: '#1a2035', borderLight: '#242d44',
 };
 const DIVISIONS = [
-  'TRENDING','CRYPTO','POLITICS','SPORTS','ENTERTAINMENT','SCIENCE','ECONOMICS',
-  'TECHNOLOGY','CULTURE','WEATHER','GEOPOLITICS','LEGAL','HEALTH','EDUCATION','ENVIRONMENT','OTHER'
+  'TRENDING','BREAKING','NEW','POLITICS','SPORTS','CRYPTO','ESPORTS',
+  'IRAN','FINANCE','GEOPOLITICS','TECH','CULTURE','ECONOMY','WEATHER','MENTIONS','ELECTIONS'
 ];
 
 /* ── Helpers ─────────────────────────────────────── */
@@ -693,7 +693,7 @@ export default function PolymarketPage() {
         {activeTab === 'markets' && (
           <>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              {['TRENDING', 'CRYPTO', 'POLITICS', 'SPORTS', 'TECHNOLOGY', 'SCIENCE'].map(div => (
+              {['TRENDING', 'CRYPTO', 'POLITICS', 'SPORTS', 'FINANCE', 'TECH', 'ELECTIONS', 'GEOPOLITICS'].map(div => (
                 <button key={div} className={`division-chip ${selectedDivision === div ? 'active' : ''}`}
                   onClick={() => { setSelectedDivision(div); fetchMarkets(div); }}>
                   {div}

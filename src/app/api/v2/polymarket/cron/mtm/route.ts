@@ -46,17 +46,17 @@ export async function GET(request: Request) {
 
           if (position.direction === 'BUY_YES') {
             // YES outcome price
-            const yesOutcome = market.outcomes.find(o => o.name === 'YES');
+            const yesOutcome = market.outcomes.find(o => o.name.toUpperCase() === 'YES');
             if (yesOutcome) {
               currentPrice = yesOutcome.price;
             }
           } else {
             // NO outcome price (which is 1 - YES price)
-            const noOutcome = market.outcomes.find(o => o.name === 'NO');
+            const noOutcome = market.outcomes.find(o => o.name.toUpperCase() === 'NO');
             if (noOutcome) {
               currentPrice = noOutcome.price;
             } else {
-              const yesOutcome = market.outcomes.find(o => o.name === 'YES');
+              const yesOutcome = market.outcomes.find(o => o.name.toUpperCase() === 'YES');
               if (yesOutcome) {
                 currentPrice = 1 - yesOutcome.price;
               }
@@ -85,12 +85,13 @@ export async function GET(request: Request) {
       }
     }
 
-    // Recalculate wallet unrealized PnL and totals
+    // Recalculate wallet unrealized PnL and totals (reset first to avoid accumulation)
     let totalUnrealizedPnL = 0;
     for (const divBalance of wallet.divisionBalances.values()) {
+      divBalance.unrealizedPnL = 0; // Reset before summing
       for (const position of divBalance.positions) {
         totalUnrealizedPnL += position.unrealizedPnL || 0;
-        divBalance.unrealizedPnL = (divBalance.unrealizedPnL || 0) + (position.unrealizedPnL || 0);
+        divBalance.unrealizedPnL += (position.unrealizedPnL || 0);
       }
     }
 
