@@ -827,4 +827,35 @@ export async function releaseTradeLock(symbol: string): Promise<void> {
   }
 }
 
+// ─── Polymarket State Persistence ───────────────────────
+export async function loadPolyStateFromCloud(): Promise<{ wallet: Record<string, unknown> | null; gladiators: unknown[] | null }> {
+  if (!supabaseUrl || !dbInitialized) return { wallet: null, gladiators: null };
+
+  try {
+    const { data, error } = await supabase
+      .from('json_store')
+      .select('*')
+      .in('id', ['poly_wallet', 'poly_gladiators']);
+    if (error) return { wallet: null, gladiators: null };
+
+    const walletRow = data?.find((r: Record<string, unknown>) => r.id === 'poly_wallet');
+    const gladiatorsRow = data?.find((r: Record<string, unknown>) => r.id === 'poly_gladiators');
+
+    return {
+      wallet: (walletRow?.data as Record<string, unknown>) || null,
+      gladiators: (gladiatorsRow?.data as unknown[]) || null,
+    };
+  } catch {
+    return { wallet: null, gladiators: null };
+  }
+}
+
+export function savePolyWalletToCloud(wallet: Record<string, unknown>): void {
+  syncToCloud('poly_wallet', wallet);
+}
+
+export function savePolyGladiatorsToCloud(gladiators: unknown[]): void {
+  syncToCloud('poly_gladiators', gladiators);
+}
+
 export { supabase }; // Export for diagnostics endpoint
