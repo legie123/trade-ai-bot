@@ -3,15 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useBotStats } from '@/hooks/useBotStats';
 import BottomNav from '@/components/BottomNav';
-import SectorInfo from '@/components/SectorInfo';
 
 interface Signal {
   symbol: string;
   direction: string;
   confidence: number;
   timestamp: string;
-  edgeScore?: number;
-  risk?: number;
 }
 
 interface TokenRow {
@@ -42,19 +39,35 @@ interface CombatAudit {
   opinions?: { seat: string; direction: string; confidence: number; reasoning: string }[];
 }
 
-const COLORS = {
-  bg: '#0a0e17',
-  card: '#111827',
-  border: '#1e293b',
-  text: '#f1f5f9',
-  muted: '#64748b',
-  green: '#10b981',
-  red: '#ef4444',
-  amber: '#f59e0b',
-  blue: '#3b82f6',
-  cyan: '#06b6d4',
-  purple: '#8b5cf6',
+const C = {
+  text: '#e8ecf4',
+  muted: '#6b7891',
+  mutedLight: '#9aa5be',
+  green: '#00e676',
+  red: '#ff3d57',
+  blue: '#29b6f6',
+  yellow: '#ffd740',
+  borderLight: '#242d44',
+  border: '#1a2035',
 };
+
+function directionColor(d: string) {
+  if (!d) return C.blue;
+  const up = ['BUY', 'LONG'];
+  const down = ['SELL', 'SHORT'];
+  if (up.includes(d.toUpperCase())) return C.green;
+  if (down.includes(d.toUpperCase())) return C.red;
+  return C.blue;
+}
+
+function directionBg(d: string) {
+  if (!d) return 'rgba(41,182,246,0.15)';
+  const up = ['BUY', 'LONG'];
+  const down = ['SELL', 'SHORT'];
+  if (up.includes(d.toUpperCase())) return 'rgba(0,230,118,0.15)';
+  if (down.includes(d.toUpperCase())) return 'rgba(255,61,87,0.15)';
+  return 'rgba(41,182,246,0.15)';
+}
 
 function formatNum(n: number): string {
   if (!isFinite(n)) return '—';
@@ -71,12 +84,6 @@ function formatCompact(n: number): string {
   return n.toFixed(0);
 }
 
-function getConfidenceColor(conf: number): string {
-  if (conf >= 80) return COLORS.green;
-  if (conf >= 65) return COLORS.amber;
-  return COLORS.muted;
-}
-
 export default function CryptoRadarPage() {
   const { stats: botStats } = useBotStats(15_000);
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -84,13 +91,13 @@ export default function CryptoRadarPage() {
   const [btcData, setBtcData] = useState<BTCData | null>(null);
   const [combatAudits, setCombatAudits] = useState<CombatAudit[]>([]);
   const [lastSync, setLastSync] = useState<string>('—');
-  const [scanDuration, setScanDuration] = useState<number>(0);
   const [syncing, setSyncing] = useState(true);
-  const [sortBy, setSortBy] = useState<'confidence' | 'edge' | 'risk'>('confidence');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [tokenSearch, setTokenSearch] = useState('');
+  const [tokenChainFilter, setTokenChainFilter] = useState('');
+  const [sortCol] = useState<'change24h' | 'volume24h' | 'price'>('change24h');
+  const [sortDir] = useState<'asc' | 'desc'>('desc');
 
   const fetchMain = useCallback(async () => {
-    const startTime = performance.now();
     try {
       const [signalsRes, btcRes, botRes] = await Promise.all([
         fetch('/api/tradingview', { signal: AbortSignal.timeout(8000) }).catch(() => null),
@@ -99,7 +106,7 @@ export default function CryptoRadarPage() {
       ]);
       if (signalsRes?.ok) {
         const d = await signalsRes.json();
-        setSignals((d.signals || []).slice(0, 50));
+        setSignals((d.signals || []).slice(0, 20));
       }
       if (btcRes?.ok) {
         const d = await btcRes.json();
@@ -110,7 +117,6 @@ export default function CryptoRadarPage() {
         if (d.syndicateAudits) setCombatAudits(d.syndicateAudits.slice(0, 5));
       }
     } catch { /* silent */ }
-    setScanDuration(Math.round(performance.now() - startTime));
   }, []);
 
   const fetchTokens = useCallback(async () => {
@@ -144,7 +150,7 @@ export default function CryptoRadarPage() {
     const m = setInterval(() => {
       fetchMain();
       setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    }, 60_000);
+    }, 15_000);
     const t = setInterval(fetchTokens, 60_000);
     return () => { clearInterval(m); clearInterval(t); };
   }, [fetchMain, fetchTokens]);
@@ -152,275 +158,304 @@ export default function CryptoRadarPage() {
   const latestAudit = combatAudits[0];
   const conf = latestAudit?.weightedConfidence ?? 0;
 
-  const signalsAboveThreshold = signals.filter(s => s.confidence >= 65).length;
-  const avgConfidence = signals.length > 0 ? signals.reduce((sum, s) => sum + s.confidence, 0) / signals.length : 0;
-  const topSignal = signals[0];
-
-  const sortedSignals = [...signals].sort((a, b) => {
-    let aVal = 0, bVal = 0;
-    if (sortBy === 'confidence') {
-      aVal = a.confidence;
-      bVal = b.confidence;
-    } else if (sortBy === 'edge') {
-      aVal = a.edgeScore || 0;
-      bVal = b.edgeScore || 0;
-    } else {
-      aVal = a.risk || 0;
-      bVal = b.risk || 0;
-    }
-    return sortDir === 'desc' ? bVal - aVal : aVal - bVal;
-  });
-
-  const btcRegime = btcData ? (btcData.price > btcData.ema50 ? 'BULL' : btcData.price > btcData.ema200 ? 'RANGE' : 'BEAR') : 'UNKNOWN';
+  const filteredTokens = tokens
+    .filter(t => {
+      if (tokenSearch && !t.symbol.toLowerCase().includes(tokenSearch.toLowerCase()) &&
+          !t.name.toLowerCase().includes(tokenSearch.toLowerCase())) return false;
+      if (tokenChainFilter && t.chain.toLowerCase() !== tokenChainFilter.toLowerCase()) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const aVal = a[sortCol] ?? (sortDir === 'desc' ? -Infinity : Infinity);
+      const bVal = b[sortCol] ?? (sortDir === 'desc' ? -Infinity : Infinity);
+      return sortDir === 'desc' ? (bVal as number) - (aVal as number) : (aVal as number) - (bVal as number);
+    });
 
   return (
-    <div style={{ minHeight: '100vh', background: COLORS.bg, color: COLORS.text, paddingBottom: 80, fontFamily: "'JetBrains Mono', 'Courier New', monospace" }}>
+    <div style={{ minHeight: '100vh', background: 'radial-gradient(circle at 50% 0%, #151a2d, #050609)', color: C.text, paddingBottom: 80,
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Outfit", "Inter", sans-serif' }}>
+      
       <style>{`
-        * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid ${COLORS.border}; }
-        th { background: rgba(255,255,255,0.02); font-weight: 700; font-size: 11px; letter-spacing: 0.1em; }
-        tr:hover { background: rgba(255,255,255,0.02); }
-        input, select { background: ${COLORS.card}; border: 1px solid ${COLORS.border}; color: ${COLORS.text}; padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 12px; }
-        input:focus, select:focus { outline: none; border-color: ${COLORS.blue}; box-shadow: 0 0 10px rgba(59,130,246,0.3); }
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap');
+        
+        @keyframes pulseGlow { 0%,100%{opacity:1; transform: scale(1)} 50%{opacity:.6; transform: scale(1.02)} }
+        @keyframes slideUpFade { from{opacity:0; transform:translateY(15px)} to{opacity:1; transform:translateY(0)} }
+        @keyframes radarScan { 0% { transform: rotate(0deg); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: rotate(360deg); opacity: 0; } }
+        
+        .glass-card {
+          background: rgba(18, 22, 38, 0.55);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(255,255,255,0.04);
+          border-radius: 16px;
+          box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+          transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
+        }
+        .glass-card:hover {
+          border-color: rgba(255,255,255,0.1);
+          box-shadow: 0 12px 48px 0 rgba(0, 0, 0, 0.35);
+        }
+        
+        .token-card {
+          background: rgba(12, 15, 26, 0.45);
+          backdrop-filter: blur(8px);
+          border: 1px solid rgba(255,255,255,0.03);
+          border-radius: 12px;
+          padding: 14px;
+          transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .token-card:hover {
+          transform: translateY(-3px);
+          border-color: rgba(41,182,246,0.3);
+          background: rgba(15, 18, 32, 0.7);
+        }
+        
+        input::placeholder { color: ${C.muted}; font-family: 'Outfit', sans-serif; }
+        input:focus, select:focus { outline: none; border-color: ${C.blue} !important; }
       `}</style>
 
-      {/* MARKET HEADER BAR */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: COLORS.bg, borderBottom: `1px solid ${COLORS.border}`, padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: '0.15em' }}>CRYPTO RADAR</span>
+      {/* ── TOP HEADER ──────────────────────────────── */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(5, 6, 9, 0.8)',
+        backdropFilter: 'blur(20px)', borderBottom: `1px solid rgba(255,255,255,0.05)`, padding: '12px 16px',
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
 
-          {btcData && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 12, borderLeft: `1px solid ${COLORS.border}` }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>BTC</span>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, color: btcData.price >= btcData.dailyOpen ? COLORS.green : COLORS.red }}>
-                ${formatNum(btcData.price)}
-              </span>
-              <span style={{ fontSize: 12, color: btcData.price >= btcData.dailyOpen ? COLORS.green : COLORS.red }}>
-                {btcData.price >= btcData.dailyOpen ? '▲' : '▼'} {Math.abs(((btcData.price - btcData.dailyOpen) / btcData.dailyOpen) * 100).toFixed(2)}%
-              </span>
-            </div>
-          )}
-        </div>
+        <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.15em', color: C.text, textShadow: '0 0 10px rgba(255,255,255,0.2)' }}>
+          RADAR<span style={{ color: C.blue }}>.AI</span>
+        </span>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 12, borderRight: `1px solid ${COLORS.border}` }}>
-          {btcData && (
-            <>
-              <span style={{ fontSize: 10, color: COLORS.muted, fontWeight: 600 }}>EMA50:</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: btcData.price > btcData.ema50 ? COLORS.green : COLORS.red }}>
-                {btcData.price > btcData.ema50 ? '✓' : '✗'}
-              </span>
-              <span style={{ fontSize: 10, color: COLORS.muted, fontWeight: 600 }}>EMA200:</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: btcData.price > btcData.ema200 ? COLORS.green : COLORS.red }}>
-                {btcData.price > btcData.ema200 ? '✓' : '✗'}
-              </span>
-              <span style={{ fontSize: 10, color: COLORS.muted, fontWeight: 600 }}>EMA800:</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: btcData.price > btcData.ema800 ? COLORS.green : COLORS.red }}>
-                {btcData.price > btcData.ema800 ? '✓' : '✗'}
-              </span>
-            </>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.02)', padding: '6px 10px', borderRadius: 4, fontSize: 11, color: COLORS.muted }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: syncing ? COLORS.amber : COLORS.green, animation: syncing ? 'pulse 1.5s infinite' : 'none' }} />
-            {syncing ? 'SCANNING...' : lastSync}
-          </div>
-          <button onClick={() => fetchMain()} style={{ padding: '6px 10px', background: COLORS.card, border: `1px solid ${COLORS.border}`, color: COLORS.blue, cursor: 'pointer', fontSize: 11, fontWeight: 700, borderRadius: 4, transition: 'all 0.2s' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = COLORS.blue; e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.background = COLORS.card; }}>
-            ↻ SYNC
-          </button>
-        </div>
-      </div>
-
-      {/* SIGNAL QUALITY STRIP */}
-      <div style={{ background: 'rgba(255,255,255,0.01)', borderBottom: `1px solid ${COLORS.border}`, padding: '12px 20px', display: 'flex', gap: 20, alignItems: 'center', fontSize: 12, flexWrap: 'wrap', overflowX: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: COLORS.muted }}>SIGNALS SCANNED:</span>
-          <span style={{ fontWeight: 700, color: COLORS.text }}>{signals.length}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: COLORS.muted }}>ABOVE 65%:</span>
-          <span style={{ fontWeight: 700, color: COLORS.green }}>{signalsAboveThreshold}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: COLORS.muted }}>TOP SIGNAL:</span>
-          {topSignal ? (
-            <>
-              <span style={{ fontWeight: 700, color: COLORS.text }}>{topSignal.symbol}</span>
-              <span style={{ fontWeight: 700, color: getConfidenceColor(topSignal.confidence) }}>{topSignal.confidence.toFixed(0)}%</span>
-            </>
-          ) : (
-            <span style={{ color: COLORS.muted }}>IDLE</span>
-          )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: COLORS.muted }}>AVG CONFIDENCE:</span>
-          <span style={{ fontWeight: 700, color: getConfidenceColor(avgConfidence) }}>{avgConfidence.toFixed(1)}%</span>
-        </div>
-      </div>
-
-      <div style={{ padding: '20px', maxWidth: 1920, margin: '0 auto' }}>
-
-        {/* ACTIVE SIGNALS TABLE */}
-        <div style={{ marginBottom: 20, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: 'hidden' }}>
-          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px 20px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, letterSpacing: '0.1em' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>ACTIVE SIGNALS ({sortedSignals.length}) <SectorInfo title="Active Signals" description="Real-time token screening. The ML ensemble (momentum + mean-reversion + volatility-regime learners) scores each token and the LLM Syndicate validates the signal direction." dataSource="MEXC/Binance market data, 3 ML weak learners, LLM Syndicate consensus" output="Ranked signals by confidence. BUY/SELL direction, edge score, risk level, syndicate vote" role="Primary decision engine. Only signals above 65% confidence are actionable. Walk-forward validated." /></span>
-            <div style={{ display: 'flex', gap: 12 }}>
-              {(['confidence', 'edge', 'risk'] as const).map(col => (
-                <button key={col} onClick={() => { setSortBy(col); setSortDir(sortDir === 'desc' ? 'asc' : 'desc'); }}
-                  style={{ background: sortBy === col ? 'rgba(255,255,255,0.05)' : 'transparent', border: sortBy === col ? `1px solid ${COLORS.border}` : 'none', color: sortBy === col ? COLORS.blue : COLORS.muted, cursor: 'pointer', padding: '4px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s' }}>
-                  {col.toUpperCase()} {sortBy === col && (sortDir === 'desc' ? '▼' : '▲')}
-                </button>
+        {btcData && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(255,255,255,0.03)', padding: '6px 16px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700 }}>
+              BTC <span style={{ color: btcData.price >= btcData.dailyOpen ? C.green : C.red, textShadow: `0 0 10px ${btcData.price >= btcData.dailyOpen ? C.green : C.red}80` }}>${formatNum(btcData.price)}</span>
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {btcData.signals.slice(0, 2).map((sig, i) => (
+                <span key={i} style={{
+                  fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 6,
+                  background: directionBg(sig.signal), color: directionColor(sig.signal),
+                  border: `1px solid ${directionColor(sig.signal)}40`,
+                }}>{sig.signal}</span>
               ))}
             </div>
+            <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.1)' }} />
+            <span style={{ fontSize: 11, color: btcData.price >= btcData.ema200 ? C.green : C.red, fontWeight: 600 }}>
+               {btcData.price >= btcData.ema200 ? '▲ > EMA200' : '▼ < EMA200'}
+            </span>
           </div>
+        )}
 
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: '5%' }}>RANK</th>
-                <th style={{ width: '12%' }}>SYMBOL</th>
-                <th style={{ width: '12%' }}>SIGNAL</th>
-                <th style={{ width: '15%' }}>CONFIDENCE</th>
-                <th style={{ width: '12%' }}>EDGE SCORE</th>
-                <th style={{ width: '12%' }}>RISK</th>
-                <th style={{ width: '15%' }}>VOL 24H</th>
-                <th style={{ width: '10%' }}>REGIME</th>
-                <th style={{ width: '7%' }}>ACTION</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedSignals.length === 0 ? (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '30px', color: COLORS.muted, fontSize: 12 }}>NO SIGNALS ACTIVE</td>
-                </tr>
-              ) : (
-                sortedSignals.slice(0, 30).map((sig, idx) => {
-                  const isSignalBull = sig.direction?.toUpperCase().includes('BUY');
-                  const signalColor = isSignalBull ? COLORS.green : COLORS.red;
-                  const row = idx + 1;
-                  return (
-                    <tr key={idx} style={{ animation: `fadeIn 0.3s ease ${idx * 30}ms both` }}>
-                      <td style={{ fontWeight: 700, color: COLORS.blue }}>{row}</td>
-                      <td style={{ fontWeight: 700 }}>{sig.symbol}</td>
-                      <td>
-                        <span style={{ padding: '3px 8px', background: isSignalBull ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: signalColor, borderRadius: 4, fontSize: 11, fontWeight: 700, border: `1px solid ${signalColor}40` }}>
-                          {isSignalBull ? '▲ BUY' : '▼ SELL'}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 60, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
-                            <div style={{ width: `${sig.confidence}%`, height: '100%', background: getConfidenceColor(sig.confidence) }} />
-                          </div>
-                          <span style={{ fontWeight: 700, color: getConfidenceColor(sig.confidence), minWidth: 40 }}>{sig.confidence.toFixed(1)}%</span>
-                        </div>
-                      </td>
-                      <td style={{ fontFamily: "'JetBrains Mono', monospace", color: sig.edgeScore ? (sig.edgeScore > 0 ? COLORS.green : COLORS.red) : COLORS.muted }}>
-                        {sig.edgeScore ? (sig.edgeScore > 0 ? '+' : '') + sig.edgeScore.toFixed(2) : '—'}
-                      </td>
-                      <td style={{ fontFamily: "'JetBrains Mono', monospace", color: sig.risk ? (sig.risk < 2 ? COLORS.green : sig.risk < 5 ? COLORS.amber : COLORS.red) : COLORS.muted }}>
-                        {sig.risk ? sig.risk.toFixed(2) : '—'}
-                      </td>
-                      <td style={{ fontFamily: "'JetBrains Mono', monospace" }}>$—</td>
-                      <td>
-                        <span style={{ fontSize: 10, padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: 3, color: COLORS.muted }}>{isSignalBull ? 'BULL' : 'BEAR'}</span>
-                      </td>
-                      <td style={{ textAlign: 'center', fontSize: 12, color: COLORS.blue, cursor: 'pointer', fontWeight: 700 }}>→</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: 8 }}>
+            <span style={{ fontSize: 11, color: C.mutedLight, fontWeight: 600, letterSpacing: '0.05em' }}>
+              {syncing ? 'UPDATING...' : `${lastSync}`}
+            </span>
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: syncing ? C.yellow : C.blue,
+              boxShadow: `0 0 10px ${syncing ? C.yellow : C.blue}`,
+              animation: 'pulseGlow 2s infinite',
+            }} />
+          </div>
+          <button onClick={() => fetchMain()} style={{
+            padding: '8px 16px', background: 'rgba(41,182,246,0.1)',
+            border: `1px solid rgba(41,182,246,0.3)`, borderRadius: 8,
+            color: C.blue, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(41,182,246,0.2)'; e.currentTarget.style.boxShadow = '0 0 15px rgba(41,182,246,0.4)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(41,182,246,0.1)'; e.currentTarget.style.boxShadow = 'none'; }}
+          >↻ SYNC</button>
+        </div>
+      </div>
+
+      <div style={{ padding: '24px', maxWidth: 1600, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+        {/* ── KPI ROW ─────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+          {[
+            { label: 'TOTAL EQUITY', value: `$${formatNum(botStats.equity || 0)}`, color: '#fff', glow: 'none' },
+            {
+              label: 'DAILY ALPHA (PnL)', color: (botStats.todayPnlPercent || 0) >= 0 ? C.green : C.red,
+              glow: (botStats.todayPnlPercent || 0) >= 0 ? `0 0 20px ${C.green}40` : `0 0 20px ${C.red}40`,
+              value: `${(botStats.todayPnlPercent || 0) >= 0 ? '+' : ''}${(botStats.todayPnlPercent || 0).toFixed(2)}%`,
+            },
+            { label: 'GLOBAL WIN RATE', value: `${(botStats.overallWinRate || 0).toFixed(1)}%`, color: C.blue, glow: `0 0 15px ${C.blue}30` },
+            { label: 'MAX STRESS (DD)', value: `${(botStats.maxDrawdown || 0).toFixed(2)}%`, color: C.red, glow: 'none' },
+          ].map((kpi, idx) => (
+            <div key={kpi.label} className="glass-card" style={{ padding: '20px 24px', animation: `slideUpFade 0.4s ease ${idx * 100}ms both` }}>
+              <div style={{ fontSize: 11, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.15em', marginBottom: 8 }}>
+                {kpi.label}
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'monospace', color: kpi.color, textShadow: kpi.glow }}>
+                {kpi.value}
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* RIGHT PANEL */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
-
+        {/* ── MAINFRAME GRID ─────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(380px, 1fr) 1fr', gap: 24 }}>
+          
           {/* SYNDICATE CONSENSUS */}
-          <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: 8, background: 'rgba(255,255,255,0.01)', overflow: 'hidden' }}>
-            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 16px', borderBottom: `1px solid ${COLORS.border}`, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>■ SYNDICATE CONSENSUS <SectorInfo title="Syndicate Consensus" description="3 LLM agents (DeepSeek Architect 60% weight + OpenAI Oracle 40%) debate each signal. Consensus = final direction + confidence. Anti-hallucination filters active." dataSource="DeepSeek, OpenAI GPT-4o, Gemini — cascade fallback" output="BULL/BEAR/NEUTRAL vote per agent, weighted consensus %, final direction" role="Second brain. Prevents the ML ensemble from acting alone. Catches false signals through adversarial debate." /></div>
-            <div style={{ padding: '14px 16px' }}>
-              {latestAudit?.opinions && latestAudit.opinions.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {latestAudit.opinions.slice(0, 3).map((op, idx) => (
-                    <div key={idx} style={{ borderLeft: `2px solid ${op.direction?.toUpperCase().includes('BUY') ? COLORS.green : COLORS.red}`, paddingLeft: 10, fontSize: 11 }}>
-                      <div style={{ fontWeight: 700, color: COLORS.text, marginBottom: 2 }}>{op.seat}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10 }}>
-                        <span style={{ color: op.direction?.toUpperCase().includes('BUY') ? COLORS.green : COLORS.red, fontWeight: 700 }}>
-                          {op.direction?.toUpperCase()}
-                        </span>
-                        <span style={{ color: COLORS.muted }}>●</span>
-                        <span style={{ color: getConfidenceColor(op.confidence), fontWeight: 600 }}>{op.confidence.toFixed(0)}%</span>
-                      </div>
-                      {op.reasoning && <div style={{ fontSize: 9, color: COLORS.muted, marginTop: 4, lineHeight: 1.3 }}>{op.reasoning.slice(0, 50)}</div>}
+          <div className="glass-card" style={{ padding: '24px', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: -50, right: -50, width: 200, height: 200, background: `radial-gradient(circle, ${C.blue}20, transparent 70%)`, filter: 'blur(30px)', zIndex: 0 }} />
+            
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 4, height: 14, background: C.blue, borderRadius: 2 }} />
+                SYNDICATE RADAR
+              </div>
+              
+              {latestAudit ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
+                  <div style={{ position: 'relative', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {/* Radar swept background */}
+                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: `1px solid ${C.borderLight}` }} />
+                    <div style={{ position: 'absolute', inset: 10, borderRadius: '50%', border: `1px dashed ${C.border}` }} />
+                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `conic-gradient(from 0deg, transparent 70%, ${directionColor(latestAudit.finalDirection || '')}60 100%)`, animation: 'radarScan 4s linear infinite' }} />
+                    
+                    {/* Center Core */}
+                    <div style={{ zIndex: 2, background: 'rgba(12, 15, 26, 0.8)', backdropFilter: 'blur(10px)', borderRadius: '50%', width: 100, height: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: `2px solid ${directionColor(latestAudit.finalDirection || '')}`, boxShadow: `0 0 20px ${directionColor(latestAudit.finalDirection || '')}50` }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: directionColor(latestAudit.finalDirection || ''), letterSpacing: '0.05em' }}>
+                          {latestAudit.finalDirection || 'IDLE'}
+                        </div>
+                        <div style={{ fontSize: 14, fontFamily: 'monospace', fontWeight: 800, color: C.text }}>
+                          {conf.toFixed(0)}%
+                        </div>
                     </div>
-                  ))}
-                  <div style={{ paddingTop: 8, borderTop: `1px solid ${COLORS.border}`, fontSize: 11, fontWeight: 700, color: getConfidenceColor(conf) }}>
-                    AGGREGATE: {conf.toFixed(0)}% {conf >= 70 ? '✓' : conf >= 50 ? '◐' : '✗'}
+                  </div>
+
+                  <div style={{ width: '100%', background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ fontSize: 10, color: C.mutedLight, letterSpacing: '0.1em', fontWeight: 700, marginBottom: 4 }}>NODE OPINIONS (T-0)</div>
+                    {latestAudit.opinions && latestAudit.opinions.slice(0, 4).map(op => (
+                      <div key={op.seat} style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{op.seat}</div>
+                          <div style={{ fontSize: 10, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{op.reasoning || "Technical consensus aligned."}</div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                          <span style={{ fontSize: 10, fontWeight: 800, color: directionColor(op.direction), background: directionBg(op.direction), padding: '2px 8px', borderRadius: 4, letterSpacing: '0.05em' }}>
+                            {op.direction}
+                          </span>
+                          <span style={{ fontSize: 11, fontFamily: 'monospace', color: C.mutedLight, fontWeight: 600 }}>{op.confidence.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ) : (
-                <div style={{ color: COLORS.muted, fontSize: 12, textAlign: 'center', padding: '20px 0' }}>AWAITING CONSENSUS</div>
+                <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontWeight: 600, letterSpacing: '0.1em' }}>
+                  AWAITING VECTORS...
+                </div>
               )}
             </div>
           </div>
 
-          {/* MARKET REGIME */}
-          <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: 8, background: 'rgba(255,255,255,0.01)', overflow: 'hidden' }}>
-            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 16px', borderBottom: `1px solid ${COLORS.border}`, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>■ MARKET REGIME <SectorInfo title="Market Regime" description="Omega Engine detects the current market state: BULL, BEAR, RANGE, or HIGH_VOL. Strategy parameters adapt automatically to each regime." dataSource="BTC EMA50/200/800 crossovers, volatility metrics, volume analysis" output="Current regime classification, BTC dominance %, regime duration" role="Strategic context. A signal that works in BULL may fail in BEAR. Regime detection prevents strategy mismatch." /></span></div>
-            <div style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 10, color: COLORS.muted, marginBottom: 4 }}>REGIME</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: btcRegime === 'BULL' ? COLORS.green : btcRegime === 'BEAR' ? COLORS.red : COLORS.amber }}>
-                    {btcRegime}
+          {/* ACTIVE TARGETS FEED */}
+          <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 4, height: 14, background: C.green, borderRadius: 2 }} />
+                ACTIVE TARGETS
+              </div>
+              <span style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: 12, fontSize: 11, color: C.mutedLight }}>
+                {signals.length} SPOTTED
+              </span>
+            </div>
+
+            {signals.length === 0 ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontSize: 12, fontWeight: 600 }}>NO HIGH-CONVICTION SIGNALS DETECTED</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+                {signals.map((sig, i) => (
+                  <div key={i} className="token-card" style={{ animation: `slideUpFade 0.3s ease ${i * 40}ms both` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '0.02em' }}>{sig.symbol}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: directionColor(sig.direction), background: directionBg(sig.direction), padding: '3px 8px', borderRadius: 6, letterSpacing: '0.05em' }}>
+                        {sig.direction}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                      <div style={{ fontSize: 10, color: C.mutedLight, fontWeight: 600, letterSpacing: '0.05em' }}>CONFIDENCE</div>
+                      <div style={{ fontSize: 16, fontFamily: 'monospace', fontWeight: 800, color: sig.confidence > 75 ? C.green : C.yellow }}>
+                        {sig.confidence.toFixed(1)}%
+                      </div>
+                    </div>
+                    {/* Mini progress bar inside card */}
+                    <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
+                       <div style={{ height: '100%', width: `${sig.confidence}%`, background: directionColor(sig.direction), borderRadius: 2 }} />
+                    </div>
                   </div>
-                </div>
-                <div style={{ borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
-                  <div style={{ fontSize: 10, color: COLORS.muted, marginBottom: 4 }}>BTC DOMINANCE</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.text }}>—</div>
-                </div>
-                <div style={{ borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
-                  <div style={{ fontSize: 10, color: COLORS.muted, marginBottom: 4 }}>FEAR & GREED</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.amber }}>NEUTRAL</div>
-                </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── TOKEN HEATGRID (Replaces generic table) ──────── */}
+        <div className="glass-card" style={{ padding: '24px' }}>
+           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 4, height: 14, background: C.yellow, borderRadius: 2 }} />
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text }}>
+                MARKET HEATGRID
               </div>
             </div>
-          </div>
 
-          {/* SCAN STATUS */}
-          <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: 8, background: 'rgba(255,255,255,0.01)', overflow: 'hidden' }}>
-            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 16px', borderBottom: `1px solid ${COLORS.border}`, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>■ SCAN STATUS <SectorInfo title="Scan Status" description="Monitors the automated market scanning process. Shows when the last scan ran, how long it took, and how many tokens were evaluated." dataSource="Internal cron scheduler, API health probes" output="Last scan timestamp, duration in seconds, markets scanned count, API health" role="Operational heartbeat. If scans stop running, the system is blind to new opportunities." /></span></div>
-            <div style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: COLORS.muted }}>LAST SCAN:</span>
-                  <span style={{ fontWeight: 700 }}>{lastSync}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: COLORS.muted }}>DURATION:</span>
-                  <span style={{ fontWeight: 700, color: COLORS.cyan }}>{scanDuration}ms</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: COLORS.muted }}>MARKETS:</span>
-                  <span style={{ fontWeight: 700 }}>3</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: COLORS.muted }}>API HEALTH:</span>
-                  <span style={{ fontWeight: 700, color: COLORS.green }}>●</span>
-                </div>
-              </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <input type="text" placeholder="Filter symbol..." value={tokenSearch} onChange={e => setTokenSearch(e.target.value)}
+                style={{ width: 160, padding: '8px 14px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: C.text, fontSize: 12, fontWeight: 600 }}
+              />
+              <select value={tokenChainFilter} onChange={e => setTokenChainFilter(e.target.value)}
+                style={{ padding: '8px 14px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: C.text, fontSize: 12, fontWeight: 600 }}>
+                <option value="">ALL CHAINS</option>
+                <option value="solana">SOLANA</option>
+                <option value="ethereum">ETHEREUM</option>
+              </select>
             </div>
           </div>
-
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, maxHeight: 500, overflowY: 'auto' }}>
+             {filteredTokens.length === 0 ? (
+                <div style={{ gridColumn: '1 / -1', padding: 40, textAlign: 'center', color: C.muted, fontWeight: 600, letterSpacing: '0.1em' }}>NO TARGETS FOUND</div>
+             ) : (
+                filteredTokens.slice(0, 50).map((t, i) => {
+                  const isUp = t.change24h !== null && t.change24h >= 0;
+                  return (
+                    <div key={i} className="token-card" style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: `slideUpFade 0.3s ease ${i * 15}ms both` }}>
+                      {/* Token Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                           <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.02em', color: C.text }}>{t.symbol}</div>
+                           <div style={{ fontSize: 10, color: C.mutedLight, fontWeight: 600 }}>{t.name?.slice(0, 20)}</div>
+                        </div>
+                        <div style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase' }}>
+                          {t.chain}
+                        </div>
+                      </div>
+                      
+                      {/* Price & Metrics */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>PRICE</span>
+                          <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700 }}>{t.price !== null ? `$${formatNum(t.price)}` : '—'}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+                           <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>1H MOVE</span>
+                           <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 800, color: isUp ? C.green : C.red }}>
+                             {t.change24h !== null ? `${isUp ? '+' : ''}${t.change24h.toFixed(2)}%` : '—'}
+                           </span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                          <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>VOL 24H</span>
+                          <span style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 600, color: C.text }}>{t.volume24h !== null ? `$${formatCompact(t.volume24h)}` : '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+             )}
+          </div>
         </div>
 
       </div>
