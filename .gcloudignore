@@ -24,6 +24,10 @@ yarn-error.log*
 dist
 build
 out
+*.tsbuildinfo
+
+# IDE & Indexed data
+.gitnexus/
 
 # Local secrets & configs
 secrets.json

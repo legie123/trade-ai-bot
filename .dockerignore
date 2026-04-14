@@ -13,3 +13,6 @@ data/
 tmp/
 src/scripts/
 scripts/
+*.tsbuildinfo
+.gitnexus/
+.npm-cache/
