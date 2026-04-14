@@ -28,7 +28,7 @@ export default function LoginPage() {
     }).catch(() => {});
 
     // Fetch live stats
-    fetch('/api/health').then(r => r.json()).then(d => {
+    fetch('/api/v2/health').then(r => r.json()).then(d => {
       setStats(prev => ({
         ...prev,
         decisions: d.decisions?.total || 0,

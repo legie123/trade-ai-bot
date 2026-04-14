@@ -81,12 +81,14 @@ export async function GET(request: Request) {
             if (divBalance) {
               const position = divBalance.positions.find(p => p.marketId === bet.marketId);
               if (position) {
-                // Use outcome to determine exit price
-                const exitPrice =
+                // Resolved market: winning shares → $1.00, losing → $0.00, cancel → entry price
+                const isWin =
                   (outcome === 'YES' && position.direction === 'BUY_YES') ||
-                  (outcome === 'NO' && position.direction === 'BUY_NO')
-                    ? 0.98 // Close winning position at near-certainty price
-                    : 0.02; // Close losing position at near-zero price
+                  (outcome === 'NO' && position.direction === 'BUY_NO');
+                const exitPrice =
+                  outcome === 'CANCEL' ? position.entryPrice
+                  : isWin ? 1.00
+                  : 0.00;
 
                 closePosition(wallet, position, exitPrice);
                 positionsClosed++;

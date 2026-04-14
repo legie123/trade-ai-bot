@@ -92,7 +92,7 @@ export default function StatusPage(){
   const fetchLight=useCallback(async()=>{
     try{
       const[hR,eR]=await Promise.allSettled([
-        fetch('/api/health').then(r=>r.ok?r.json():null),
+        fetch('/api/v2/health').then(r=>r.ok?r.json():null),
         fetch('/api/exchanges').then(r=>r.ok?r.json():null),
       ]);
       if(hR.status==='fulfilled'&&hR.value)setHealth(hR.value);

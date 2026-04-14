@@ -132,7 +132,7 @@ export function setLastScans(results: Record<string, unknown>): void {
 export async function persistWallet(): Promise<void> {
   try {
     const serialized = serializeWallet(polyWallet);
-    savePolyWalletToCloud(serialized);
+    await savePolyWalletToCloud(serialized);
     log.debug('Wallet persisted', { balance: polyWallet.totalBalance });
   } catch (err) {
     log.error('Failed to persist wallet', { error: String(err) });
@@ -141,7 +141,7 @@ export async function persistWallet(): Promise<void> {
 
 export async function persistGladiators(): Promise<void> {
   try {
-    savePolyGladiatorsToCloud(polyGladiators);
+    await savePolyGladiatorsToCloud(polyGladiators);
     log.debug('Gladiators persisted', { count: polyGladiators.length });
   } catch (err) {
     log.error('Failed to persist gladiators', { error: String(err) });
