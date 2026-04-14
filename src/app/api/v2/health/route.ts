@@ -32,7 +32,7 @@ interface HealthResponse {
 async function checkPolymarket(): Promise<SystemStatus> {
   const start = Date.now();
   try {
-    const res = await fetch('https://api.gamma.reservoir.tools/markets', {
+    const res = await fetch('https://gamma-api.polymarket.com/markets?limit=1', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(5000),

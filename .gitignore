@@ -74,3 +74,7 @@ docs/gemini_analysis_v2.md
 scripts/test-forge.ts
 .claude/
 .env*
+
+# Claude autonomous deploy credentials (NEVER COMMIT)
+.claude-creds
+.gcp-key.json
