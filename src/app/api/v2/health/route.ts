@@ -54,8 +54,8 @@ async function checkSupabase(): Promise<SystemStatus> {
   const start = Date.now();
   try {
     const supabase = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || ''
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     );
     const { data, error } = await supabase.from('json_store').select('id').limit(1);
     const latency = Date.now() - start;
