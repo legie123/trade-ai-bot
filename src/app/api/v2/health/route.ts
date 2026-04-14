@@ -6,6 +6,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { successResponse, errorResponse } from '@/lib/api-response';
+import { getTradingModeSummary } from '@/lib/core/tradingMode';
+import { polyWsClient } from '@/lib/polymarket/polyWsClient';
+import { WsStreamManager } from '@/lib/providers/wsStreams';
 
 export const dynamic = 'force-dynamic';
 
@@ -181,7 +184,10 @@ export async function GET() {
       overall_status = statusCounts.ERROR >= 2 ? 'CRITICAL' : 'DEGRADED';
     }
 
-    const response: HealthResponse = {
+    const response: HealthResponse & {
+      trading_mode?: ReturnType<typeof getTradingModeSummary>;
+      feeds?: { polymarketWs: unknown; mexcWs: unknown };
+    } = {
       timestamp,
       overall_status,
       systems,
@@ -189,6 +195,11 @@ export async function GET() {
         healthy: statusCounts.OK,
         degraded: statusCounts.UNKNOWN,
         critical: statusCounts.ERROR,
+      },
+      trading_mode: getTradingModeSummary(),
+      feeds: {
+        polymarketWs: polyWsClient.getFeedHealth(),
+        mexcWs: WsStreamManager.getInstance().getFeedHealth(),
       },
     };
 

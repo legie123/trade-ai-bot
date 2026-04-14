@@ -52,7 +52,7 @@ class AutoDebugEngine {
 
     // Trigger instant deterministic diagnostic on 3 rapid errors or immediately on FATAL
     if (this.errorBuffer.length >= 3 || message.includes('FATAL')) {
-      this.runDeterministicDiagnostics().catch(() => {});
+      this.runDeterministicDiagnostics().catch((e) => log.warn('deterministic diagnostics failed', { error: String(e) }));
     }
   }
 

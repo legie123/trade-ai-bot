@@ -1,12 +1,28 @@
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { createLogger } from '@/lib/core/logger';
+import { recordProviderHealth } from '@/lib/core/heartbeat';
 
 const log = createLogger('WS-Stream');
+
+// ─── ADDITIVE RESILIENCE CONSTANTS ───
+const PING_INTERVAL_MS = 20_000;      // send PING every 20s
+const STALE_THRESHOLD_MS = 45_000;    // mark stale if no message in 45s
+const STALE_CHECK_INTERVAL_MS = 10_000; // evaluate staleness every 10s
+const RECONNECT_BASE_MS = 5_000;      // first reconnect delay
+const RECONNECT_CAP_MS = 60_000;      // max backoff
+const MAX_CONSECUTIVE_RECONNECTS = 999; // soft cap, logs loudly past this
 
 /**
  * WebSocket Stream Manager (MEXC Native)
  * Automatically converts MEXC V3 WebSocket events into the structure AlphaScout expects.
+ *
+ * PHASE 2 BATCH 2 HARDENING (additive):
+ *   - PING keepalive every 20s
+ *   - Stale-feed detection: marks STALE after 45s with no server message
+ *   - Exponential backoff reconnect (5s → 10s → 20s → 40s → cap 60s)
+ *   - Provider health tracking via heartbeat module
+ *   - Public getFeedHealth() for observability
  */
 export class WsStreamManager extends EventEmitter {
   private static instance: WsStreamManager;
@@ -14,7 +30,17 @@ export class WsStreamManager extends EventEmitter {
   private isConnected = false;
   private activeStreams: Set<string> = new Set();
   private reconnectTimer: NodeJS.Timeout | null = null;
-  
+  private pingTimer: NodeJS.Timeout | null = null;
+  private staleTimer: NodeJS.Timeout | null = null;
+
+  // Resilience tracking
+  private lastMessageAt = 0;
+  private lastOpenAt = 0;
+  private lastCloseAt = 0;
+  private reconnectAttempts = 0;
+  private totalReconnects = 0;
+  private isStale = false;
+
   // Track last kline timestamp to simulate 'closed' (k.x = true)
   private lastKlineTime: Map<string, number> = new Map();
 
@@ -31,14 +57,26 @@ export class WsStreamManager extends EventEmitter {
 
   public connect(): void {
     if (this.isConnected || this.ws) return;
-    
+
     log.info('🔌 [WS] Connecting to MEXC WebSocket...');
     this.ws = new WebSocket('wss://wbs.mexc.com/ws');
 
     this.ws.on('open', () => {
       log.info('🟢 [WS] MEXC WebSocket connected');
       this.isConnected = true;
-      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      this.lastOpenAt = Date.now();
+      this.lastMessageAt = Date.now();
+      this.isStale = false;
+      this.reconnectAttempts = 0; // reset backoff on successful open
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+      recordProviderHealth('mexc-ws', true, null);
+
+      // Start keepalive + stale watchdog
+      this.startPing();
+      this.startStaleWatchdog();
 
       // Resubscribe active streams
       if (this.activeStreams.size > 0) {
@@ -47,8 +85,15 @@ export class WsStreamManager extends EventEmitter {
     });
 
     this.ws.on('message', (data: Buffer) => {
+      this.lastMessageAt = Date.now();
+      if (this.isStale) {
+        log.info('🟢 [WS] MEXC feed recovered from STALE');
+        this.isStale = false;
+        recordProviderHealth('mexc-ws', true, null);
+      }
       try {
         const payload = JSON.parse(data.toString());
+        // Swallow server pong/ack frames (no c/d fields)
         this.handleMexcMessage(payload);
       } catch (err) {
         log.warn('Failed to parse MEXC WS message', { error: (err as Error).message });
@@ -58,23 +103,110 @@ export class WsStreamManager extends EventEmitter {
     this.ws.on('close', () => {
       log.warn('🔴 [WS] MEXC WebSocket disconnected');
       this.isConnected = false;
+      this.lastCloseAt = Date.now();
       this.ws = null;
+      this.stopPing();
+      this.stopStaleWatchdog();
+      recordProviderHealth('mexc-ws', false, null);
       this.scheduleReconnect();
     });
 
     this.ws.on('error', (err) => {
       log.error(`[WS] MEXC Error: ${err.message}`);
+      recordProviderHealth('mexc-ws', false, null);
     });
   }
 
   private scheduleReconnect() {
-    if (!this.reconnectTimer) {
-      this.reconnectTimer = setTimeout(() => {
-        log.info('🔌 [WS] Attempting to reconnect...');
-        this.reconnectTimer = null;
-        this.connect();
-      }, 5000); // 5 sec backoff
+    if (this.reconnectTimer) return;
+    this.reconnectAttempts++;
+    this.totalReconnects++;
+    if (this.reconnectAttempts > MAX_CONSECUTIVE_RECONNECTS) {
+      log.error(`[WS] MEXC max consecutive reconnects (${MAX_CONSECUTIVE_RECONNECTS}) reached — continuing with capped backoff`);
     }
+    const delay = Math.min(
+      RECONNECT_BASE_MS * Math.pow(2, Math.min(this.reconnectAttempts - 1, 4)),
+      RECONNECT_CAP_MS
+    );
+    log.info(`🔌 [WS] Reconnect attempt #${this.reconnectAttempts} in ${delay}ms`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
+  }
+
+  private startPing() {
+    this.stopPing();
+    this.pingTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        try {
+          // MEXC V3 accepts PING as a JSON method
+          this.ws.send(JSON.stringify({ method: 'PING' }));
+        } catch (err) {
+          log.warn('[WS] PING send failed', { error: (err as Error).message });
+        }
+      }
+    }, PING_INTERVAL_MS);
+  }
+
+  private stopPing() {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  private startStaleWatchdog() {
+    this.stopStaleWatchdog();
+    this.staleTimer = setInterval(() => {
+      if (!this.isConnected) return;
+      const age = Date.now() - this.lastMessageAt;
+      if (age > STALE_THRESHOLD_MS && !this.isStale) {
+        log.warn(`[WS] MEXC feed STALE — no message for ${age}ms. Forcing reconnect.`);
+        this.isStale = true;
+        recordProviderHealth('mexc-ws', false, null);
+        try {
+          this.ws?.close();
+        } catch (err) {
+          log.warn('[WS] close on stale failed', { error: (err as Error).message });
+        }
+      }
+    }, STALE_CHECK_INTERVAL_MS);
+  }
+
+  private stopStaleWatchdog() {
+    if (this.staleTimer) {
+      clearInterval(this.staleTimer);
+      this.staleTimer = null;
+    }
+  }
+
+  /**
+   * Public observability surface. Consumed by /api/v2/polymarket?action=feed-health
+   * and any future dashboard truthfulness layer.
+   */
+  public getFeedHealth(): {
+    provider: 'mexc-ws';
+    connected: boolean;
+    stale: boolean;
+    lastMessageAgoMs: number | null;
+    lastOpenAt: number | null;
+    lastCloseAt: number | null;
+    reconnectAttempts: number;
+    totalReconnects: number;
+    activeStreams: number;
+  } {
+    return {
+      provider: 'mexc-ws',
+      connected: this.isConnected,
+      stale: this.isStale,
+      lastMessageAgoMs: this.lastMessageAt ? Date.now() - this.lastMessageAt : null,
+      lastOpenAt: this.lastOpenAt || null,
+      lastCloseAt: this.lastCloseAt || null,
+      reconnectAttempts: this.reconnectAttempts,
+      totalReconnects: this.totalReconnects,
+      activeStreams: this.activeStreams.size,
+    };
   }
 
   // AlphaScout passes Binance-style formatted strings: "btcusdt@kline_1m", "btcusdt@depth10@100ms"

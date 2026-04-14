@@ -5,6 +5,7 @@
 import crypto from 'crypto';
 import { recordProviderHealth } from '@/lib/core/heartbeat';
 import { createLogger } from '@/lib/core/logger';
+import { assertLiveTradingAllowed } from '@/lib/core/tradingMode';
 
 const log = createLogger('BinanceClient');
 const BINANCE_BASE_URL = 'https://api.binance.com';
@@ -139,6 +140,7 @@ export async function placeBinanceLimitOrder(
   quantity: number,
   price: number
 ): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`placeBinanceLimitOrder(${symbol},${side},${quantity}@${price})`);
   const tickerSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
   return binanceRequest('POST', '/api/v3/order', {
     symbol: tickerSymbol,
@@ -156,6 +158,7 @@ export async function placeBinanceMarketOrder(
   side: 'BUY' | 'SELL',
   quantity: number
 ): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`placeBinanceMarketOrder(${symbol},${side},${quantity})`);
   const tickerSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
   return binanceRequest('POST', '/api/v3/order', {
     symbol: tickerSymbol,
@@ -172,6 +175,7 @@ export async function placeBinanceStopLossOrder(
   quantity: number,
   stopPrice: number
 ): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`placeBinanceStopLossOrder(${symbol},${side},${quantity}@${stopPrice})`);
   const tickerSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
   return binanceRequest('POST', '/api/v3/order', {
     symbol: tickerSymbol,

@@ -6,6 +6,7 @@
 import crypto from 'crypto';
 import { recordProviderHealth } from '@/lib/core/heartbeat';
 import { createLogger } from '@/lib/core/logger';
+import { assertLiveTradingAllowed } from '@/lib/core/tradingMode';
 
 const log = createLogger('OkxClient');
 const OKX_BASE_URL = 'https://www.okx.com';
@@ -145,6 +146,7 @@ export async function placeOkxMarketOrder(
   sz: string,
   tdMode: string = 'cash'
 ): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`placeOkxMarketOrder(${symbol},${side},${sz})`);
   const instId = symbol.replace(/USDT$/, '-USDT');
   const data = await okxRequest('POST', '/api/v5/trade/order', {
     instId,
@@ -163,6 +165,7 @@ export async function placeOkxLimitOrder(
   px: string,
   tdMode: string = 'cash'
 ): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`placeOkxLimitOrder(${symbol},${side},${sz}@${px})`);
   const instId = symbol.replace(/USDT$/, '-USDT');
   const data = await okxRequest('POST', '/api/v5/trade/order', {
     instId,
@@ -176,6 +179,7 @@ export async function placeOkxLimitOrder(
 }
 
 export async function cancelOkxOrder(symbol: string, ordId: string): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`cancelOkxOrder(${symbol},${ordId})`);
   const instId = symbol.replace(/USDT$/, '-USDT');
   const data = await okxRequest('POST', '/api/v5/trade/cancel-order', { instId, ordId });
   return (data.data as Record<string, unknown>[])?.[0] || {};

@@ -5,6 +5,7 @@ import { getExchangeInfoCached, getSymbolFilters, roundToStep } from '@/lib/v2/s
 import { createLogger } from '@/lib/core/logger';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
 import { DNAExtractor } from '../superai/dnaExtractor';
+import { isLiveTradingEnabled } from '@/lib/core/tradingMode';
 
 const log = createLogger('PositionManager');
 
@@ -29,6 +30,10 @@ export class PositionManager {
   }
 
   public async evaluateLivePositions() {
+    if (!isLiveTradingEnabled()) {
+      log.info('[PositionManager] Skipped — TRADING_MODE=PAPER. No live position evaluation.');
+      return;
+    }
     const openPositions = getLivePositions().filter(p => p.status === 'OPEN');
     if (openPositions.length === 0) return;
 
@@ -127,8 +132,8 @@ export class PositionManager {
              const filters = getSymbolFilters(exchangeInfo, pos.symbol);
              const remainingQty = roundToStep(pos.quantity, filters.stepSize);
              if (remainingQty >= filters.minQty) {
-                await cancelAllMexcOrders(pos.symbol).catch(() => {});
-                await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty).catch(() => {});
+                await cancelAllMexcOrders(pos.symbol).catch((e) => log.error('cancelAllMexcOrders failed (zombie prevention)', { symbol: pos.symbol, error: String(e) }));
+                await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty).catch((e) => log.error('placeMexcMarketOrder failed (zombie prevention exit)', { symbol: pos.symbol, error: String(e) }));
              }
              updateLivePosition(pos.id, { status: 'CLOSED' });
           }
@@ -159,9 +164,9 @@ export class PositionManager {
               return;
             }
 
-            await cancelAllMexcOrders(pos.symbol).catch(() => {});
+            await cancelAllMexcOrders(pos.symbol).catch((e) => log.error('cancelAllMexcOrders failed (trailing exit)', { symbol: pos.symbol, error: String(e) }));
             await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty);
-            
+
             updateLivePosition(pos.id, {
                status: 'CLOSED',
                highestPriceObserved,
@@ -185,7 +190,7 @@ export class PositionManager {
             log.info(`[PositionManager] Trailing exit complete for ${pos.symbol}. Home run secured.`);
 
             // 🔗 [MOLTBOOK BROADCAST] Full Trailing Exit
-            this.broadcastExitToMoltbook('TRAILING_EXIT', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 70).catch(() => {});
+            this.broadcastExitToMoltbook('TRAILING_EXIT', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 70).catch((e) => log.warn('moltbook broadcast failed (trailing)', { error: String(e) }));
           } catch (err: unknown) {
              const errorMsg = err instanceof Error ? err.message : String(err);
              log.error(`[PositionManager] Failed trailing SL order for ${pos.symbol}:`, { error: errorMsg });
@@ -218,7 +223,7 @@ export class PositionManager {
               return;
             }
 
-            await cancelAllMexcOrders(pos.symbol).catch(() => {});
+            await cancelAllMexcOrders(pos.symbol).catch((e) => log.error('cancelAllMexcOrders failed (initial SL)', { symbol: pos.symbol, error: String(e) }));
             await placeMexcMarketOrder(pos.symbol, isLong ? 'SELL' : 'BUY', remainingQty);
 
             updateLivePosition(pos.id, {
@@ -243,7 +248,7 @@ export class PositionManager {
             });
 
             // 🔗 [MOLTBOOK BROADCAST] Initial SL
-            this.broadcastExitToMoltbook('STOP_LOSS', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 100).catch(() => {});
+            this.broadcastExitToMoltbook('STOP_LOSS', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 100).catch((e) => log.warn('moltbook broadcast failed (SL)', { error: String(e) }));
           } catch (err: unknown) {
              const errorMsg = err instanceof Error ? err.message : String(err);
              log.error(`[PositionManager] Failed initial SL order for ${pos.symbol}:`, { error: errorMsg });

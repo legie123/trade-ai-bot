@@ -67,7 +67,7 @@ const brokeWallet = createPolyWallet('PAPER');
 brokeWallet.dailyRealizedPnL = -50;  // Already at limit
 const limits2 = checkLossLimits(brokeWallet);
 assert(limits2.canTrade === false, 'Rejects trade at -$50 daily limit');
-assert(limits2.reason?.includes('Daily loss'), 'Reason mentions daily loss');
+assert(limits2.reason?.includes('Daily loss') ?? false, 'Reason mentions daily loss');
 
 // Test 1.4: Reject if below daily loss limit
 const pastLimitWallet = createPolyWallet('PAPER');
@@ -106,8 +106,9 @@ try {
   console.log(`❌ LIVE wallet should throw FATAL error`);
   failed++;
 } catch (err) {
-  const isFatal = err.message.includes('FATAL');
-  const isPaperCheck = err.message.includes('NON-PAPER wallet');
+  const msg = err instanceof Error ? err.message : String(err);
+  const isFatal = msg.includes('FATAL');
+  const isPaperCheck = msg.includes('NON-PAPER wallet');
   assert(isFatal && isPaperCheck, 'LIVE wallet throws FATAL with correct message');
 }
 
@@ -123,9 +124,10 @@ walletBeforeSerialize.dailyRealizedPnL = -42;
 walletBeforeSerialize.dailyLossTrackingDate = '2026-04-14';
 
 const serialized = serializeWallet(walletBeforeSerialize);
-assert(serialized.includes('dailyRealizedPnL'), 'Serialization includes dailyRealizedPnL');
-assert(serialized.includes('dailyLossTrackingDate'), 'Serialization includes dailyLossTrackingDate');
-assert(serialized.includes('PAPER'), 'Serialization includes wallet type');
+const serializedJson = JSON.stringify(serialized);
+assert(serializedJson.includes('dailyRealizedPnL'), 'Serialization includes dailyRealizedPnL');
+assert(serializedJson.includes('dailyLossTrackingDate'), 'Serialization includes dailyLossTrackingDate');
+assert(serializedJson.includes('PAPER'), 'Serialization includes wallet type');
 
 // Test 3.2: Deserialization preserves daily tracking
 const deserialized = deserializeWallet(serialized);
@@ -174,7 +176,8 @@ try {
     'Uses LLM_TIMEOUT_MS constant in all API calls'
   );
 } catch (err) {
-  console.log(`⚠️  Could not verify LLM functions (${err.message})`);
+  const msg = err instanceof Error ? err.message : String(err);
+  console.log(`⚠️  Could not verify LLM functions (${msg})`);
 }
 
 console.log('\n' + '═'.repeat(60));

@@ -308,7 +308,7 @@ export class SentinelGuard {
       const openPositions = getLivePositions().filter(p => p.status === 'OPEN');
       for (const pos of openPositions) {
         try {
-          await cancelAllMexcOrders(pos.symbol).catch(() => {});
+          await cancelAllMexcOrders(pos.symbol).catch((e) => log.error('sentinelGuard cancelAllMexcOrders failed', { symbol: pos.symbol, error: String(e) }));
           const isLong = pos.side === 'LONG';
           let qty = pos.quantity;
 

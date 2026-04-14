@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     // SRE Auto-Debug Diagnostics Check (Continuous ML Evaluation)
     try {
       const { autoDebugEngine } = await import('@/lib/v2/safety/autoDebugEngine');
-      autoDebugEngine.runDeterministicDiagnostics().catch(() => {});
+      autoDebugEngine.runDeterministicDiagnostics().catch((e) => log.warn('autoDebug diagnostics failed', { error: String(e) }));
     } catch (e) {
       log.error('Failed to trigger AutoDebugEngine', { error: String(e) });
     }

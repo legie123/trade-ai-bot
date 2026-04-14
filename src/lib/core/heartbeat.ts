@@ -160,8 +160,8 @@ export function startHeartbeat(): void {
               `Last Scan: ${snap.scanLoop.lastScanAt || 'never'}\n` +
               `Memory: ${snap.memory.rss}MB\n` +
               `Errors: ${snap.errors}`
-            ).catch(() => {});
-          }).catch(() => {});
+            ).catch((e) => log.warn('heartbeat telegram alert failed', { error: String(e) }));
+          }).catch((e) => log.warn('heartbeat telegram module load failed', { error: String(e) }));
         }
       }
     } catch (err) {

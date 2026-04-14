@@ -20,6 +20,8 @@ import {
   waitForInit,
 } from '@/lib/polymarket/polyState';
 import { createLogger } from '@/lib/core/logger';
+import { polyWsClient } from '@/lib/polymarket/polyWsClient';
+import { WsStreamManager } from '@/lib/providers/wsStreams';
 
 const log = createLogger('PolymarketRoute');
 
@@ -126,6 +128,44 @@ export async function GET(request: Request) {
           persistence: 'supabase',
           divisions: Object.values(PolyDivision).length,
           gladiators: gladiators.length,
+          timestamp: Date.now(),
+        });
+      }
+
+      case 'feed-health': {
+        // ADDITIVE: aggregated feed health across all live feeds
+        const polyWs = polyWsClient.getFeedHealth();
+        const mexcWs = WsStreamManager.getInstance().getFeedHealth();
+        return successResponse({
+          status: 'ok',
+          feeds: {
+            polymarketWs: polyWs,
+            mexcWs,
+          },
+          autostart: {
+            polymarketWs: (process.env.POLYMARKET_WS_AUTOSTART || '').toLowerCase() === 'true',
+          },
+          timestamp: Date.now(),
+        });
+      }
+
+      case 'ws-start': {
+        // ADDITIVE: manually start the Polymarket WS client (idempotent)
+        polyWsClient.connect();
+        return successResponse({
+          status: 'ok',
+          message: 'polymarket-ws connect requested',
+          health: polyWsClient.getFeedHealth(),
+          timestamp: Date.now(),
+        });
+      }
+
+      case 'ws-stop': {
+        polyWsClient.disconnect();
+        return successResponse({
+          status: 'ok',
+          message: 'polymarket-ws disconnect requested',
+          health: polyWsClient.getFeedHealth(),
           timestamp: Date.now(),
         });
       }

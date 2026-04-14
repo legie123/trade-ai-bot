@@ -6,6 +6,11 @@
 // ============================================================
 import { NextResponse } from 'next/server';
 import { successResponse, errorResponse } from '@/lib/api-response';
+import { isAuthenticated } from '@/lib/auth';
+import { getTradingModeSummary, isLiveTradingEnabled } from '@/lib/core/tradingMode';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('ExchangesAPI');
 
 export const dynamic = 'force-dynamic';
 
@@ -68,10 +73,26 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    // ─── AUTH GATE ───
+    if (!isAuthenticated(request)) {
+      return errorResponse('UNAUTHENTICATED', 'Authentication required', 401);
+    }
+
     const body = await request.json();
     const exchange = body.exchange || process.env.ACTIVE_EXCHANGE || 'mexc';
     const action = body.action;
     const symbol = body.symbol;
+
+    // ─── TRADING MODE GATE (order action only) ───
+    if (action === 'order' && !isLiveTradingEnabled()) {
+      const summary = getTradingModeSummary();
+      log.warn('[ExchangesAPI] Live order refused: TRADING_MODE=PAPER', { exchange, symbol, side: body.side });
+      return errorResponse(
+        'LIVE_TRADING_DISABLED',
+        `Live orders blocked — TRADING_MODE=${summary.mode}. Paper mode enforced. To enable live: set TRADING_MODE=LIVE and LIVE_TRADING_CONFIRM=YES_I_UNDERSTAND_RISK.`,
+        403
+      );
+    }
 
     // ─── Binance ───
     if (exchange === 'binance') {

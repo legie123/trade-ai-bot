@@ -7,8 +7,40 @@ import crypto from 'crypto';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'trading-ai-secret-2026';
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || 'admin123';
 
+// ─── ADDITIVE SAFETY: refuse weak defaults in non-dev environments ───
+// Logs loudly at module init. Does not crash dev. In production, throws on first use.
+const IS_PROD = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+const WEAK_PASSWORD = DASHBOARD_PASSWORD === 'admin123' || DASHBOARD_PASSWORD.length < 12;
+const WEAK_SECRET = AUTH_SECRET === 'trading-ai-secret-2026' || AUTH_SECRET.length < 24;
+
+if (WEAK_PASSWORD) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[AUTH] DASHBOARD_PASSWORD is weak or default. Set a strong value (>= 12 chars, no "admin123").' +
+      (IS_PROD ? ' Production refuses auth with weak password.' : ' Development mode tolerates it.')
+  );
+}
+if (WEAK_SECRET) {
+  // eslint-disable-next-line no-console
+  console.warn('[AUTH] AUTH_SECRET is weak or default. Set a strong random value (>= 24 chars).');
+}
+
+function assertStrongCredentials(): void {
+  if (IS_PROD && WEAK_PASSWORD) {
+    throw new Error(
+      '[AUTH] Refusing to operate in production with weak/default DASHBOARD_PASSWORD. Set DASHBOARD_PASSWORD env var.'
+    );
+  }
+  if (IS_PROD && WEAK_SECRET) {
+    throw new Error(
+      '[AUTH] Refusing to operate in production with weak/default AUTH_SECRET. Set AUTH_SECRET env var (>= 24 chars).'
+    );
+  }
+}
+
 // Simple JWT-like token (HMAC SHA256)
 function createToken(payload: Record<string, unknown>): string {
+  assertStrongCredentials();
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify({ ...payload, iat: Date.now(), exp: Date.now() + 24 * 60 * 60 * 1000 })).toString('base64url');
   const signature = crypto.createHmac('sha256', AUTH_SECRET).update(`${header}.${body}`).digest('base64url');
@@ -31,6 +63,8 @@ function verifyToken(token: string): Record<string, unknown> | null {
 }
 
 export function isAuthenticated(request: Request): boolean {
+  // In production with weak creds, refuse silently. Login route will still fail via createToken.
+  if (IS_PROD && (WEAK_PASSWORD || WEAK_SECRET)) return false;
   // Check cookie
   const cookies = request.headers.get('cookie') || '';
   const tokenMatch = cookies.match(/auth_token=([^;]+)/);

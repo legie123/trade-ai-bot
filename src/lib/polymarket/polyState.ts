@@ -23,7 +23,7 @@ let initialized = false;
 let initPromise: Promise<void> | null = null;
 
 // ── Serialize Map → plain object for Supabase ──
-function serializeWallet(w: PolyWallet): Record<string, unknown> {
+export function serializeWallet(w: PolyWallet): Record<string, unknown> {
   return {
     id: w.id,
     createdAt: w.createdAt,
@@ -40,7 +40,7 @@ function serializeWallet(w: PolyWallet): Record<string, unknown> {
 }
 
 // ── Deserialize plain object → PolyWallet with Map ──
-function deserializeWallet(data: Record<string, unknown>): PolyWallet {
+export function deserializeWallet(data: Record<string, unknown>): PolyWallet {
   const type = (data.type as 'PAPER' | 'LIVE') ?? 'PAPER';
   const wallet = createPolyWallet(type);
   wallet.id = data.id as string;

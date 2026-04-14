@@ -81,7 +81,7 @@ export async function runDailyRotation() {
                     `⚡ ${omegaSummary}\n\n` +
                     `Evoluția nu iartă pe nimeni. #AlgorithmicTrading #AI`;
 
-    await postActivity(message, undefined, 'crypto').catch(() => {});
+    await postActivity(message, undefined, 'crypto').catch((e) => log.warn('postActivity failed (daily rotation)', { error: String(e) }));
 
   } catch (error) {
     log.error('🚨 [Daily Rotation] Failed to execute cycle', { error: (error as Error).message });

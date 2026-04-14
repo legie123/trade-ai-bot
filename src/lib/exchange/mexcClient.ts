@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { addInvalidSymbol, isSymbolValid } from '@/lib/store/db';
 import { recordProviderHealth } from '@/lib/core/heartbeat';
 import { createLogger } from '@/lib/core/logger';
+import { assertLiveTradingAllowed, assertLiveTradingAllowedForEmergencyExit } from '@/lib/core/tradingMode';
 
 const log = createLogger('MexcClient');
 const MEXC_BASE_URL = 'https://api.mexc.com';
@@ -201,6 +202,7 @@ export async function placeMexcMarketOrder(
   side: 'BUY' | 'SELL',
   quantity: number
 ): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`placeMexcMarketOrder(${symbol},${side},${quantity})`);
   return mexcRequest('POST', '/api/v3/order', {
     symbol,
     side,
@@ -215,6 +217,7 @@ export async function placeMexcLimitOrder(
   quantity: number,
   price: number
 ): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`placeMexcLimitOrder(${symbol},${side},${quantity}@${price})`);
   return mexcRequest('POST', '/api/v3/order', {
     symbol,
     side,
@@ -225,6 +228,7 @@ export async function placeMexcLimitOrder(
 }
 
 export async function cancelMexcOrder(symbol: string, orderId: string): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`cancelMexcOrder(${symbol},${orderId})`);
   return mexcRequest('DELETE', '/api/v3/order', { symbol, orderId });
 }
 
@@ -234,6 +238,7 @@ export async function placeMexcStopLossOrder(
   quantity: number,
   stopPrice: number
 ): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`placeMexcStopLossOrder(${symbol},${side},${quantity}@${stopPrice})`);
   return mexcRequest('POST', '/api/v3/order', {
     symbol,
     side,
@@ -251,6 +256,7 @@ export async function getMexcOpenOrders(symbol?: string): Promise<Record<string,
 }
 
 export async function cancelAllMexcOrders(symbol: string): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`cancelAllMexcOrders(${symbol})`);
   return mexcRequest('DELETE', '/api/v3/openOrders', { symbol });
 }
 
@@ -259,6 +265,7 @@ export async function cancelAllMexcOrders(symbol: string): Promise<Record<string
  * OMEGA FIX: Now applies roundToStep + minNotional validation per symbol.
  */
 export async function sellAllAssetsToUsdt(): Promise<void> {
+  assertLiveTradingAllowedForEmergencyExit('sellAllAssetsToUsdt');
   const balances = await getMexcBalances();
   const nonUsdt = balances.filter(b => b.asset !== 'USDT' && b.asset !== 'MX' && b.free > 0);
 

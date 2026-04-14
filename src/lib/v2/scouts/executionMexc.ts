@@ -115,7 +115,7 @@ export async function executeMexcTrade(
       const msg = `⚠️ [EXECUTION BLOCKED] Insufficient Funds. Account has $${usdtBalance.toFixed(2)} USDT. Minimum required is $10. Please fund API Wallet.`;
       log.error(msg);
       // Fire and forget telegram message
-      sendMessage(msg).catch(() => {});
+      sendMessage(msg).catch((e) => log.warn('telegram sendMessage failed (zero balance notice)', { error: String(e) }));
       return { symbol: mexcSymbol, side, price, quantity: 0, usdAmount: 0, executed: false, error: msg };
     }
 
@@ -175,7 +175,7 @@ export async function executeMexcTrade(
            }
            if (!slPlaced) {
              log.error(`[NATIVE SL CRITICAL] Could NOT place SL for ${mexcSymbol} after 3 attempts — position has NO hardware protection`);
-             sendMessage(`⚠️ *SL FAILED* for ${mexcSymbol}\nPosition has NO hardware stop loss!\nManual intervention required.`).catch(() => {});
+             sendMessage(`⚠️ *SL FAILED* for ${mexcSymbol}\nPosition has NO hardware stop loss!\nManual intervention required.`).catch((e) => log.warn('telegram sendMessage failed (SL FAILED alert)', { error: String(e) }));
              slCheckPassed = false; // VETO: No SL = no trade
            } else {
              slCheckPassed = true;
@@ -191,7 +191,7 @@ export async function executeMexcTrade(
       }
 
       const telegramMsg = `[TRADE EXECUTION V2]\nPair: ${mexcSymbol}\nSide: ${side}\nPrice: $${price}\nQty: ${quantity}\nValue: $${tradeAmount.toFixed(2)}\nBalance: $${usdtBalance.toFixed(2)}`;
-      sendMessage(telegramMsg).catch(() => {}); // Fire and forget, don't block on telegram
+      sendMessage(telegramMsg).catch((e) => log.warn('telegram sendMessage failed (trade notice)', { error: String(e) })); // Fire and forget, don't block on telegram
     }
 
     log.info(`[EXECUTION V2${dryRun ? ' DRY' : ''}] ${side} ${mexcSymbol}: ${quantity} @ $${price} ($${tradeAmount.toFixed(2)}) | Balance: $${usdtBalance.toFixed(2)}`);

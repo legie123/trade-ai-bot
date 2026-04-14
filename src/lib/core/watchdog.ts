@@ -84,8 +84,8 @@ function triggerRestart(): void {
       `⚠️ *WATCHDOG: Auto-Restart #${state.restartCount}*\n` +
       `Crashes: ${state.crashCount}\n` +
       `Time: ${state.lastRestart}`
-    ).catch(() => {});
-  }).catch(() => {});
+    ).catch((e) => log.warn('watchdog telegram send failed', { error: String(e) }));
+  }).catch((e) => log.warn('watchdog telegram module load failed', { error: String(e) }));
 
   if (restartCallback) {
     try {

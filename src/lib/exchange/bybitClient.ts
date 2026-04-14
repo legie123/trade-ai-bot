@@ -3,6 +3,7 @@
 // Testnet + Live, HMAC SHA256 signed requests
 // ============================================================
 import crypto from 'crypto';
+import { assertLiveTradingAllowed } from '@/lib/core/tradingMode';
 
 const BYBIT_TESTNET_URL = 'https://api-testnet.bybit.com';
 const BYBIT_LIVE_URL = 'https://api.bybit.com';
@@ -154,6 +155,7 @@ export async function placeBybitOrder(
   orderType: 'Market' | 'Limit' = 'Market',
   price?: number
 ): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`placeBybitOrder(${symbol},${side},${qty},${orderType})`);
   const params: Record<string, string | number> = {
     category: 'spot',
     symbol,
@@ -169,6 +171,7 @@ export async function placeBybitOrder(
 }
 
 export async function cancelBybitOrder(symbol: string, orderId: string): Promise<Record<string, unknown>> {
+  assertLiveTradingAllowed(`cancelBybitOrder(${symbol},${orderId})`);
   return bybitRequest('POST', '/v5/order/cancel', { category: 'spot', symbol, orderId });
 }
 
