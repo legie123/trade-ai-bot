@@ -6,6 +6,7 @@
 // ============================================================
 import { NextResponse } from 'next/server';
 import { createToken, DASHBOARD_PASSWORD, isAuthenticated } from '@/lib/auth';
+import { successResponse, errorResponse } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,12 +16,12 @@ export async function POST(request: Request) {
     const { password } = body;
 
     if (password !== DASHBOARD_PASSWORD) {
-      return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
+      return errorResponse('INVALID_PASSWORD', 'Invalid password', 401);
     }
 
     const token = createToken({ user: 'admin', role: 'admin' });
 
-    const response = NextResponse.json({
+    const response = successResponse({
       status: 'authenticated',
       token,
       expiresIn: '24h',
@@ -37,20 +38,20 @@ export async function POST(request: Request) {
 
     return response;
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return errorResponse('AUTH_ERROR', (err as Error).message, 500);
   }
 }
 
 export async function GET(request: Request) {
   const authed = isAuthenticated(request);
-  return NextResponse.json({
+  return successResponse({
     authenticated: authed,
     message: authed ? 'Logged in' : 'Not authenticated',
   });
 }
 
 export async function DELETE() {
-  const response = NextResponse.json({ status: 'logged out' });
+  const response = successResponse({ status: 'logged out' });
   response.cookies.set('auth_token', '', { maxAge: 0, path: '/' });
   return response;
 }

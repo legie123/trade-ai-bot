@@ -1,6 +1,7 @@
 // GET /api/v2/polymarket — Polymarket sector status, scanner, wallet
 // POST /api/v2/polymarket — Manual actions (open_position, close_position, etc.)
 import { NextResponse } from 'next/server';
+import { successResponse, errorResponse } from '@/lib/api-response';
 import { PolyDivision } from '@/lib/polymarket/polyTypes';
 import { testPolymarketConnection, getMarketsByCategory, getMarket } from '@/lib/polymarket/polyClient';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
           const result = await scanDivision(division, 15);
           const updatedScans = { ...lastScans, [division]: result };
           setLastScans(updatedScans);
-          return NextResponse.json({ status: 'ok', scan: result, timestamp: Date.now() });
+          return successResponse({ status: 'ok', scan: result, timestamp: Date.now() });
         }
         const quickDivisions = [PolyDivision.TRENDING, PolyDivision.CRYPTO, PolyDivision.POLITICS];
         const scans = await Promise.allSettled(quickDivisions.map(d => scanDivision(d, 10)));
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
         }
         setLastScans(updatedScans);
         // Persist scan results don't affect wallet — no save needed
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           scans: results,
           divisionsScanned: results.length,
@@ -68,7 +69,7 @@ export async function GET(request: Request) {
       case 'markets': {
         const div = division || PolyDivision.TRENDING;
         const markets = await getMarketsByCategory(div, 20);
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           division: div,
           markets: markets.map(m => ({
@@ -87,12 +88,12 @@ export async function GET(request: Request) {
 
       case 'wallet': {
         const summary = getWalletSummary(wallet);
-        return NextResponse.json({ status: 'ok', wallet: summary, timestamp: Date.now() });
+        return successResponse({ status: 'ok', wallet: summary, timestamp: Date.now() });
       }
 
       case 'gladiators': {
         const leaderboard = getPolyLeaderboard(gladiators, division || undefined);
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           gladiators: leaderboard.map(g => ({
             id: g.id,
@@ -114,7 +115,7 @@ export async function GET(request: Request) {
 
       case 'health': {
         const conn = await testPolymarketConnection();
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           polymarket: {
             clob: conn.clob,
@@ -134,7 +135,7 @@ export async function GET(request: Request) {
         const walletSummary = getWalletSummary(wallet);
         const leaderboard = getPolyLeaderboard(gladiators);
 
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           sector: 'POLYMARKET',
           version: '1.2.0',
@@ -163,10 +164,7 @@ export async function GET(request: Request) {
     }
   } catch (err) {
     log.error('GET handler error', { error: String(err) });
-    return NextResponse.json(
-      { status: 'error', error: (err as Error).message },
-      { status: 500 },
-    );
+    return errorResponse('POLYMARKET_GET_FAILED', (err as Error).message, 500);
   }
 }
 
@@ -190,25 +188,19 @@ export async function POST(request: Request) {
         const edgeScore = (body.edgeScore as number) ?? 50;
 
         if (!marketId || !divisionStr || !Object.values(PolyDivision).includes(divisionStr as PolyDivision)) {
-          return NextResponse.json(
-            { status: 'error', error: 'Missing or invalid marketId, division' },
-            { status: 400 },
-          );
+          return errorResponse('INVALID_REQUEST', 'Missing or invalid marketId, division', 400);
         }
 
         const division = divisionStr as PolyDivision;
         const market = await getMarket(marketId);
         if (!market) {
-          return NextResponse.json({ status: 'error', error: 'Market not found' }, { status: 404 });
+          return errorResponse('MARKET_NOT_FOUND', 'Market not found', 404);
         }
 
         // Find outcome
         const outcome = market.outcomes.find(o => o.name.toUpperCase() === direction.replace('BUY_', ''));
         if (!outcome) {
-          return NextResponse.json(
-            { status: 'error', error: 'Outcome not found for direction' },
-            { status: 400 },
-          );
+          return errorResponse('OUTCOME_NOT_FOUND', 'Outcome not found for direction', 400);
         }
 
         const position = openPosition(
@@ -223,15 +215,12 @@ export async function POST(request: Request) {
         );
 
         if (!position) {
-          return NextResponse.json(
-            { status: 'error', error: 'Could not open position (limits or insufficient funds)' },
-            { status: 400 },
-          );
+          return errorResponse('POSITION_FAILED', 'Could not open position (limits or insufficient funds)', 400);
         }
 
         await persistWallet();
 
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           position,
           walletBalance: wallet.totalBalance,
@@ -244,21 +233,18 @@ export async function POST(request: Request) {
         const exitPrice = (body.exitPrice as number) ?? 0.5;
 
         if (!marketId) {
-          return NextResponse.json({ status: 'error', error: 'Missing marketId' }, { status: 400 });
+          return errorResponse('INVALID_REQUEST', 'Missing marketId', 400);
         }
 
         const position = wallet.allPositions.find(p => p.marketId === marketId);
         if (!position) {
-          return NextResponse.json(
-            { status: 'error', error: 'Position not found' },
-            { status: 404 },
-          );
+          return errorResponse('POSITION_NOT_FOUND', 'Position not found', 404);
         }
 
         const pnl = closePosition(wallet, position, exitPrice);
         await persistWallet();
 
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           pnl,
           walletBalance: wallet.totalBalance,
@@ -271,10 +257,7 @@ export async function POST(request: Request) {
         const limit = (body.limit as number) ?? 15;
 
         if (divisionStr && !Object.values(PolyDivision).includes(divisionStr as PolyDivision)) {
-          return NextResponse.json(
-            { status: 'error', error: 'Invalid division' },
-            { status: 400 },
-          );
+          return errorResponse('INVALID_DIVISION', 'Invalid division', 400);
         }
 
         if (divisionStr) {
@@ -282,7 +265,7 @@ export async function POST(request: Request) {
           const result = await scanDivision(division, limit);
           const scans = { ...getLastScans(), [division]: result };
           setLastScans(scans);
-          return NextResponse.json({
+          return successResponse({
             status: 'ok',
             scan: result,
             timestamp: Date.now(),
@@ -300,7 +283,7 @@ export async function POST(request: Request) {
         }
         setLastScans(scans);
 
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           divisionsScanned: results.filter(r => r.status === 'fulfilled').length,
           timestamp: Date.now(),
@@ -312,21 +295,18 @@ export async function POST(request: Request) {
         const divisionStr = body.division as string;
 
         if (!marketId || !divisionStr || !Object.values(PolyDivision).includes(divisionStr as PolyDivision)) {
-          return NextResponse.json(
-            { status: 'error', error: 'Missing or invalid marketId, division' },
-            { status: 400 },
-          );
+          return errorResponse('INVALID_REQUEST', 'Missing or invalid marketId, division', 400);
         }
 
         const division = divisionStr as PolyDivision;
         const market = await getMarket(marketId);
         if (!market) {
-          return NextResponse.json({ status: 'error', error: 'Market not found' }, { status: 404 });
+          return errorResponse('MARKET_NOT_FOUND', 'Market not found', 404);
         }
 
         const analysis = await analyzeMarket(market, division);
 
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           analysis,
           timestamp: Date.now(),
@@ -351,7 +331,7 @@ export async function POST(request: Request) {
 
         await persistWallet();
 
-        return NextResponse.json({
+        return successResponse({
           status: 'ok',
           wallet: getWalletSummary(wallet),
           message: 'Wallet reset to initial state',
@@ -360,16 +340,10 @@ export async function POST(request: Request) {
       }
 
       default:
-        return NextResponse.json(
-          { status: 'error', error: `Unknown action: ${action}` },
-          { status: 400 },
-        );
+        return errorResponse('UNKNOWN_ACTION', `Unknown action: ${action}`, 400);
     }
   } catch (err) {
     log.error('POST handler error', { error: String(err) });
-    return NextResponse.json(
-      { status: 'error', error: (err as Error).message },
-      { status: 500 },
-    );
+    return errorResponse('POLYMARKET_POST_FAILED', (err as Error).message, 500);
   }
 }

@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { getGladiatorDna } from '@/lib/store/db';
+import { successResponse, errorResponse } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,7 +60,7 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({
+    return successResponse({
       status: 'ok',
       activeFighters: gladiators.length,
       liveFighters: gladiators.filter(g => g.isLive).length,
@@ -77,6 +78,6 @@ export async function GET() {
       timestamp: Date.now(),
     });
   } catch (err) {
-    return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });
+    return errorResponse('ARENA_ERROR', (err as Error).message, 500);
   }
 }

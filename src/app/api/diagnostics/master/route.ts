@@ -1,6 +1,7 @@
 // GET /api/diagnostics/master — Omega-Route Master Diagnostics
 import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
+import { successResponse } from '@/lib/api-response';
 
 const log = createLogger('DiagnosticsMaster');
 
@@ -178,5 +179,5 @@ export async function GET() {
 
   log.info(`[Diagnostics] Master report generated in ${totalDiagTime}ms — Status: ${report.overallHealth}`);
 
-  return NextResponse.json(report);
+  return successResponse(report);
 }

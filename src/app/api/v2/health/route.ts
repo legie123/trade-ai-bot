@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { successResponse, errorResponse } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -169,17 +170,8 @@ export async function GET() {
     };
 
     const statusCode = overall_status === 'HEALTHY' ? 200 : overall_status === 'DEGRADED' ? 206 : 503;
-    return NextResponse.json(response, { status: statusCode });
+    return successResponse(response, statusCode);
   } catch (err) {
-    return NextResponse.json(
-      {
-        timestamp,
-        overall_status: 'CRITICAL',
-        error: (err as Error).message,
-        systems: {},
-        summary: { healthy: 0, degraded: 0, critical: 5 },
-      },
-      { status: 503 }
-    );
+    return errorResponse('HEALTH_CHECK_FAILED', (err as Error).message, 503);
   }
 }

@@ -5,6 +5,7 @@
 // Supported: Binance, Bybit, MEXC, OKX
 // ============================================================
 import { NextResponse } from 'next/server';
+import { successResponse, errorResponse } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,7 +58,7 @@ export async function GET() {
 
   const activeExchange = process.env.ACTIVE_EXCHANGE || 'mexc';
 
-  return NextResponse.json({
+  return successResponse({
     activeExchange,
     exchanges,
     supported: ['binance', 'bybit', 'mexc', 'okx'],
@@ -77,15 +78,15 @@ export async function POST(request: Request) {
       const binance = await import('@/lib/exchange/binanceClient');
       if (action === 'price') {
         const price = await binance.getBinancePrice(symbol);
-        return NextResponse.json({ exchange: 'binance', symbol, price });
+        return successResponse({ exchange: 'binance', symbol, price });
       }
       if (action === 'balance') {
         const balances = await binance.getBinanceBalances();
-        return NextResponse.json({ exchange: 'binance', balances });
+        return successResponse({ exchange: 'binance', balances });
       }
       if (action === 'order') {
         const result = await binance.placeBinanceMarketOrder(symbol, body.side, body.qty);
-        return NextResponse.json({ exchange: 'binance', order: result });
+        return successResponse({ exchange: 'binance', order: result });
       }
     }
 
@@ -94,15 +95,15 @@ export async function POST(request: Request) {
       const okx = await import('@/lib/exchange/okxClient');
       if (action === 'price') {
         const price = await okx.getOkxPrice(symbol);
-        return NextResponse.json({ exchange: 'okx', symbol, price });
+        return successResponse({ exchange: 'okx', symbol, price });
       }
       if (action === 'balance') {
         const balances = await okx.getOkxBalance();
-        return NextResponse.json({ exchange: 'okx', balances });
+        return successResponse({ exchange: 'okx', balances });
       }
       if (action === 'order') {
         const result = await okx.placeOkxMarketOrder(symbol, body.side?.toLowerCase(), body.qty?.toString());
-        return NextResponse.json({ exchange: 'okx', order: result });
+        return successResponse({ exchange: 'okx', order: result });
       }
     }
 
@@ -111,15 +112,15 @@ export async function POST(request: Request) {
       const mexc = await import('@/lib/exchange/mexcClient');
       if (action === 'price') {
         const price = await mexc.getMexcPrice(symbol);
-        return NextResponse.json({ exchange: 'mexc', symbol, price });
+        return successResponse({ exchange: 'mexc', symbol, price });
       }
       if (action === 'balance') {
         const balances = await mexc.getMexcBalances();
-        return NextResponse.json({ exchange: 'mexc', balances });
+        return successResponse({ exchange: 'mexc', balances });
       }
       if (action === 'order') {
         const result = await mexc.placeMexcMarketOrder(symbol, body.side, body.qty);
-        return NextResponse.json({ exchange: 'mexc', order: result });
+        return successResponse({ exchange: 'mexc', order: result });
       }
     }
 
@@ -128,25 +129,25 @@ export async function POST(request: Request) {
       const bybit = await import('@/lib/exchange/bybitClient');
       if (action === 'price') {
         const price = await bybit.getBybitPrice(symbol);
-        return NextResponse.json({ exchange: 'bybit', symbol, price });
+        return successResponse({ exchange: 'bybit', symbol, price });
       }
       if (action === 'balance') {
         const balances = await bybit.getBybitBalance();
-        return NextResponse.json({ exchange: 'bybit', balances });
+        return successResponse({ exchange: 'bybit', balances });
       }
       if (action === 'order') {
         const result = await bybit.placeBybitOrder(symbol, body.side, body.qty, body.orderType || 'Market', body.price);
-        return NextResponse.json({ exchange: 'bybit', order: result });
+        return successResponse({ exchange: 'bybit', order: result });
       }
     }
 
     // ─── Binance (Removed) ───
     if (exchange === 'binance') {
-      return NextResponse.json({ error: 'Binance blocked by HTTP 451. Use MEXC.' }, { status: 400 });
+      return errorResponse('BINANCE_BLOCKED', 'Binance blocked by HTTP 451. Use MEXC.', 400);
     }
 
-    return NextResponse.json({ error: 'Invalid action. Use: price, balance, order' }, { status: 400 });
+    return errorResponse('INVALID_ACTION', 'Invalid action. Use: price, balance, order', 400);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return errorResponse('EXCHANGE_ERROR', (err as Error).message, 500);
   }
 }
