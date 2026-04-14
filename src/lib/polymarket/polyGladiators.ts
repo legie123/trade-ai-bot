@@ -228,8 +228,20 @@ export function recordPolyOutcome(
     }
   }
 
-  // Update cumulative edge
-  gladiator.cumulativeEdge += Math.abs(pnl);
+  // Update cumulative edge (only real profit, not abs value of losses)
+  gladiator.cumulativeEdge += pnl;
+
+  // Update profit factor (gross wins / gross losses)
+  if (outcome === 'WIN') {
+    gladiator.stats.grossWins = (gladiator.stats.grossWins || 0) + pnl;
+  } else if (outcome === 'LOSS') {
+    gladiator.stats.grossLosses = (gladiator.stats.grossLosses || 0) + Math.abs(pnl);
+  }
+  const grossLosses = gladiator.stats.grossLosses || 0;
+  gladiator.stats.profitFactor = grossLosses > 0
+    ? parseFloat(((gladiator.stats.grossWins || 0) / grossLosses).toFixed(2))
+    : (gladiator.stats.grossWins || 0) > 0 ? 99.0 : 0;
+
   gladiator.lastUpdated = Date.now();
 
   log.info('Recorded poly outcome', {
@@ -260,7 +272,7 @@ export function getPolyLeaderboard(
 
 // ─── Promote top gladiator ────────────────────────────
 export function promoteToLive(gladiator: PolyGladiator): void {
-  if (gladiator.readinessScore >= 60 && gladiator.stats.totalTrades >= 10) {
+  if (gladiator.readinessScore >= 60 && gladiator.stats.totalTrades >= 25) {
     gladiator.isLive = true;
     gladiator.status = 'ACTIVE';
     gladiator.rank = Math.max(1, Math.floor(gladiator.readinessScore / 10));

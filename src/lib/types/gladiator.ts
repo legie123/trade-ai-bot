@@ -23,6 +23,8 @@ export interface Gladiator {
     maxDrawdown: number;
     sharpeRatio: number;
     totalTrades: number;
+    grossWins?: number;
+    grossLosses?: number;
   };
   skills?: string[]; // Array of unique execution capabilities, e.g. MEME_SNIPER
   status?: 'ACTIVE' | 'IN_TRAINING' | 'RETIRED';
