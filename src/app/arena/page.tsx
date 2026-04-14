@@ -65,6 +65,8 @@ export default function ArenaPage() {
   const [lastSync, setLastSync] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('winRate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [expandedFighter, setExpandedFighter] = useState<string | null>(null);
+  const [expandedPodium, setExpandedPodium] = useState<string | null>(null);
 
   useEffect(() => {
     const fetch_ = async () => {
@@ -209,22 +211,25 @@ export default function ArenaPage() {
                 const ss = statusStyle(g.status);
                 const isFirst = i === 0;
                 const rankColor = isFirst ? '#FFD700' : i === 1 ? '#C0C0C0' : '#CD7F32';
-                
+                const isPodExpanded = expandedPodium === g.id;
+
                 return (
-                  <div key={g.id} style={{ 
+                  <div key={g.id} onClick={() => setExpandedPodium(isPodExpanded ? null : g.id)}
+                    style={{
                     position: 'relative', padding: isFirst ? '28px' : '20px',
-                    margin: isFirst ? '-8px 0 0 0' : '0', // Pop slightly up
+                    margin: isFirst ? '-8px 0 0 0' : '0',
                     background: isFirst ? 'rgba(25, 30, 45, 0.6)' : 'rgba(12, 15, 26, 0.4)',
-                    border: `1px solid ${isFirst ? rankColor + '80' : 'rgba(255,255,255,0.05)'}`,
+                    border: `1px solid ${isPodExpanded ? rankColor : isFirst ? rankColor + '80' : 'rgba(255,255,255,0.05)'}`,
                     borderRadius: 16, display: 'flex', flexDirection: 'column', gap: 12,
-                    boxShadow: isFirst ? `0 10px 40px ${rankColor}20` : 'none',
-                    animation: isFirst ? 'pulseGlow 3s infinite' : 'none'
+                    boxShadow: isPodExpanded ? `0 10px 40px ${rankColor}40` : isFirst ? `0 10px 40px ${rankColor}20` : 'none',
+                    animation: isFirst ? 'pulseGlow 3s infinite' : 'none',
+                    cursor: 'pointer', transition: 'all 0.2s ease'
                   }}>
                     {/* Rank Badge */}
                     <div style={{ position: 'absolute', top: -14, left: 20, background: 'rgba(5, 6, 9, 0.9)', border: `1px solid ${rankColor}`, padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 800, color: rankColor, boxShadow: `0 0 15px ${rankColor}60` }}>
                       RANK {i + 1}
                     </div>
-                    
+
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: isFirst ? 10 : 0 }}>
                        <div style={{ fontSize: isFirst ? 20 : 16, fontWeight: 800, color: C.text, letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden' }}>{g.name}</div>
                        <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 6, color: ss.color, background: ss.bg, border: `1px solid ${ss.border}` }}>
@@ -246,6 +251,43 @@ export default function ArenaPage() {
                          <div style={{ fontSize: 14, fontFamily: 'monospace', fontWeight: 800, color: C.text }}>{g.totalTrades}</div>
                        </div>
                     </div>
+
+                    {/* ── EXPANDED PODIUM DETAIL ── */}
+                    {isPodExpanded && (
+                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10, animation: 'slideRightCard 0.25s ease' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>SHARPE RATIO</div>
+                            <div style={{ fontSize: 14, fontFamily: 'monospace', fontWeight: 800, color: parseFloat(g.sharpeRatio) > 1 ? C.green : C.yellow, marginTop: 2 }}>{g.sharpeRatio}</div>
+                          </div>
+                          <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>MAX DRAWDOWN</div>
+                            <div style={{ fontSize: 14, fontFamily: 'monospace', fontWeight: 800, color: parseFloat(g.maxDrawdown) > 15 ? C.red : C.mutedLight, marginTop: 2 }}>{g.maxDrawdown}%</div>
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>GLADIATOR ID</div>
+                          <div style={{ fontSize: 11, fontFamily: 'monospace', color: C.mutedLight, marginTop: 2 }}>{g.id}</div>
+                        </div>
+                        {g.rankReason && (
+                          <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>RANK REASON</div>
+                            <div style={{ fontSize: 11, color: C.mutedLight, lineHeight: 1.5, marginTop: 2 }}>{g.rankReason}</div>
+                          </div>
+                        )}
+                        {/* Win rate visual bar */}
+                        <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em', marginBottom: 4 }}>WIN RATE VISUAL</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1, height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${g.winRate}%`, background: `linear-gradient(90deg, ${winColor(g.winRate)}60, ${winColor(g.winRate)})`, borderRadius: 4, transition: 'width 0.4s ease' }} />
+                            </div>
+                            <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 800, color: winColor(g.winRate) }}>{g.winRate}%</span>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontWeight: 600, letterSpacing: '0.1em' }}>TAP TO COLLAPSE</div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -315,51 +357,131 @@ export default function ArenaPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
              {sorted.map((g, i) => {
                const ss = statusStyle(g.status);
+               const isFExpanded = expandedFighter === g.id;
                return (
-                 <div key={g.id} className="fighter-plate" style={{ display: 'flex', alignItems: 'center', gap: 20, animation: `slideRightCard 0.3s ease ${i * 30}ms both` }}>
-                   
-                   <div style={{ minWidth: 24, fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: C.mutedLight }}>
-                     #{i + 1}
-                   </div>
-                   
-                   <div style={{ flex: 1, minWidth: 200 }}>
-                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                       <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{g.name}</span>
-                       <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, color: ss.color, background: ss.bg, border: `1px solid ${ss.border}` }}>
-                          {g.status}
-                       </span>
+                 <div key={g.id} className="fighter-plate" onClick={() => setExpandedFighter(isFExpanded ? null : g.id)}
+                   style={{ display: 'flex', flexDirection: 'column', gap: 0, animation: `slideRightCard 0.3s ease ${i * 30}ms both`, cursor: 'pointer',
+                     border: isFExpanded ? `1px solid ${C.blue}60` : undefined,
+                     boxShadow: isFExpanded ? `0 0 20px ${C.blue}15, -4px 0 15px ${C.blue}15` : undefined }}>
+
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                     <div style={{ minWidth: 24, fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: C.mutedLight }}>
+                       #{i + 1}
                      </div>
-                     <div style={{ fontSize: 11, color: C.mutedLight, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {g.rankReason}
+
+                     <div style={{ flex: 1, minWidth: 200 }}>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                         <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{g.name}</span>
+                         <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, color: ss.color, background: ss.bg, border: `1px solid ${ss.border}` }}>
+                            {g.status}
+                         </span>
+                       </div>
+                       <div style={{ fontSize: 11, color: C.mutedLight, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {g.rankReason}
+                       </div>
+                     </div>
+
+                     <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 80 }}>
+                           <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>WIN RATE</div>
+                           <div style={{ fontSize: 18, fontFamily: 'monospace', fontWeight: 800, color: winColor(g.winRate) }}>{g.winRate}%</div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
+                           <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>P/F</div>
+                           <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 800, color: C.text }}>{g.profitFactor}</div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
+                           <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>TRADES</div>
+                           <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 800, color: C.mutedLight }}>{g.totalTrades}</div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
+                           <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>MAX DD</div>
+                           <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 800, color: parseFloat(g.maxDrawdown) > 15 ? C.red : C.mutedLight }}>{g.maxDrawdown}</div>
+                        </div>
                      </div>
                    </div>
 
-                   <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 80 }}>
-                         <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>WIN RATE</div>
-                         <div style={{ fontSize: 18, fontFamily: 'monospace', fontWeight: 800, color: winColor(g.winRate) }}>{g.winRate}%</div>
-                      </div>
-                      
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
-                         <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>P/F</div>
-                         <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 800, color: C.text }}>{g.profitFactor}</div>
-                      </div>
-                      
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
-                         <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>TRADES</div>
-                         <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 800, color: C.mutedLight }}>{g.totalTrades}</div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
-                         <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>MAX DD</div>
-                         <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 800, color: parseFloat(g.maxDrawdown) > 15 ? C.red : C.mutedLight }}>{g.maxDrawdown}</div>
-                      </div>
-                   </div>
-                   
                    {/* Mini progress bar internal */}
                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'transparent' }}>
                       <div style={{ width: `${g.winRate}%`, height: '100%', background: `linear-gradient(90deg, transparent, ${winColor(g.winRate)})` }} />
                    </div>
+
+                   {/* ── EXPANDED FIGHTER DETAIL ── */}
+                   {isFExpanded && (
+                     <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: 12, animation: 'slideRightCard 0.25s ease' }}>
+                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
+                         <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '10px' }}>
+                           <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>SHARPE RATIO</div>
+                           <div style={{ fontSize: 16, fontFamily: 'monospace', fontWeight: 800, color: parseFloat(g.sharpeRatio) > 1 ? C.green : parseFloat(g.sharpeRatio) > 0 ? C.yellow : C.red, marginTop: 4 }}>
+                             {g.sharpeRatio}
+                           </div>
+                         </div>
+                         <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '10px' }}>
+                           <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>PROFIT FACTOR</div>
+                           <div style={{ fontSize: 16, fontFamily: 'monospace', fontWeight: 800, color: parseFloat(g.profitFactor) > 1.5 ? C.green : C.yellow, marginTop: 4 }}>
+                             {g.profitFactor}
+                           </div>
+                         </div>
+                         <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '10px' }}>
+                           <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>TOTAL TRADES</div>
+                           <div style={{ fontSize: 16, fontFamily: 'monospace', fontWeight: 800, color: C.text, marginTop: 4 }}>
+                             {g.totalTrades}
+                           </div>
+                         </div>
+                         <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '10px' }}>
+                           <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>MAX DRAWDOWN</div>
+                           <div style={{ fontSize: 16, fontFamily: 'monospace', fontWeight: 800, color: parseFloat(g.maxDrawdown) > 15 ? C.red : C.mutedLight, marginTop: 4 }}>
+                             {g.maxDrawdown}%
+                           </div>
+                         </div>
+                       </div>
+
+                       <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '10px' }}>
+                         <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>GLADIATOR ID</div>
+                         <div style={{ fontSize: 11, fontFamily: 'monospace', color: C.mutedLight, marginTop: 2 }}>{g.id}</div>
+                       </div>
+
+                       {g.rankReason && (
+                         <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '10px' }}>
+                           <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>RANK REASONING</div>
+                           <div style={{ fontSize: 12, color: C.mutedLight, lineHeight: 1.6, marginTop: 4 }}>{g.rankReason}</div>
+                         </div>
+                       )}
+
+                       {/* Performance visual bar */}
+                       <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '10px' }}>
+                         <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em', marginBottom: 6 }}>PERFORMANCE OVERVIEW</div>
+                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                             <span style={{ fontSize: 10, color: C.mutedLight, fontWeight: 600, minWidth: 60 }}>Win Rate</span>
+                             <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                               <div style={{ height: '100%', width: `${g.winRate}%`, background: winColor(g.winRate), borderRadius: 3 }} />
+                             </div>
+                             <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: winColor(g.winRate), minWidth: 40, textAlign: 'right' }}>{g.winRate}%</span>
+                           </div>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                             <span style={{ fontSize: 10, color: C.mutedLight, fontWeight: 600, minWidth: 60 }}>Sharpe</span>
+                             <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                               <div style={{ height: '100%', width: `${Math.min(Math.max(parseFloat(g.sharpeRatio) * 33, 0), 100)}%`, background: parseFloat(g.sharpeRatio) > 1 ? C.green : C.yellow, borderRadius: 3 }} />
+                             </div>
+                             <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: parseFloat(g.sharpeRatio) > 1 ? C.green : C.yellow, minWidth: 40, textAlign: 'right' }}>{g.sharpeRatio}</span>
+                           </div>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                             <span style={{ fontSize: 10, color: C.mutedLight, fontWeight: 600, minWidth: 60 }}>Risk</span>
+                             <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                               <div style={{ height: '100%', width: `${Math.min(parseFloat(g.maxDrawdown) * 2, 100)}%`, background: parseFloat(g.maxDrawdown) > 15 ? C.red : C.yellow, borderRadius: 3 }} />
+                             </div>
+                             <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: parseFloat(g.maxDrawdown) > 15 ? C.red : C.mutedLight, minWidth: 40, textAlign: 'right' }}>{g.maxDrawdown}%</span>
+                           </div>
+                         </div>
+                       </div>
+
+                       <div style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontWeight: 600, letterSpacing: '0.1em' }}>TAP TO COLLAPSE</div>
+                     </div>
+                   )}
                  </div>
                );
              })}

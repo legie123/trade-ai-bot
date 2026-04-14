@@ -47,6 +47,7 @@ const C = {
   red: '#ff3d57',
   blue: '#29b6f6',
   yellow: '#ffd740',
+  purple: '#c084fc',
   borderLight: '#242d44',
   border: '#1a2035',
 };
@@ -96,6 +97,9 @@ export default function CryptoRadarPage() {
   const [tokenChainFilter, setTokenChainFilter] = useState('');
   const [sortCol] = useState<'change24h' | 'volume24h' | 'price'>('change24h');
   const [sortDir] = useState<'asc' | 'desc'>('desc');
+  const [expandedSignal, setExpandedSignal] = useState<number | null>(null);
+  const [expandedToken, setExpandedToken] = useState<number | null>(null);
+  const [expandedAudit, setExpandedAudit] = useState<number | null>(null);
 
   const fetchMain = useCallback(async () => {
     try {
@@ -327,20 +331,48 @@ export default function CryptoRadarPage() {
 
                   <div style={{ width: '100%', background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={{ fontSize: 10, color: C.mutedLight, letterSpacing: '0.1em', fontWeight: 700, marginBottom: 4 }}>NODE OPINIONS (T-0)</div>
-                    {latestAudit.opinions && latestAudit.opinions.slice(0, 4).map(op => (
-                      <div key={op.seat} style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{op.seat}</div>
-                          <div style={{ fontSize: 10, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{op.reasoning || "Technical consensus aligned."}</div>
+                    {latestAudit.opinions && latestAudit.opinions.slice(0, 6).map((op, opIdx) => {
+                      const isOpExpanded = expandedAudit === opIdx;
+                      return (
+                      <div key={op.seat} onClick={(e) => { e.stopPropagation(); setExpandedAudit(isOpExpanded ? null : opIdx); }}
+                        style={{ display: 'flex', flexDirection: 'column', gap: 0, paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer',
+                          background: isOpExpanded ? 'rgba(41,182,246,0.05)' : 'transparent', borderRadius: isOpExpanded ? 8 : 0, padding: isOpExpanded ? 8 : '0 0 8px 0', transition: 'all 0.2s ease' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{op.seat}</div>
+                            {!isOpExpanded && (
+                              <div style={{ fontSize: 10, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{op.reasoning || "Technical consensus aligned."}</div>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                            <span style={{ fontSize: 10, fontWeight: 800, color: directionColor(op.direction), background: directionBg(op.direction), padding: '2px 8px', borderRadius: 4, letterSpacing: '0.05em' }}>
+                              {op.direction}
+                            </span>
+                            <span style={{ fontSize: 11, fontFamily: 'monospace', color: C.mutedLight, fontWeight: 600 }}>{op.confidence.toFixed(0)}%</span>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, color: directionColor(op.direction), background: directionBg(op.direction), padding: '2px 8px', borderRadius: 4, letterSpacing: '0.05em' }}>
-                            {op.direction}
-                          </span>
-                          <span style={{ fontSize: 11, fontFamily: 'monospace', color: C.mutedLight, fontWeight: 600 }}>{op.confidence.toFixed(0)}%</span>
-                        </div>
+                        {/* ── EXPANDED REASONING ── */}
+                        {isOpExpanded && (
+                          <div style={{ marginTop: 8, padding: '10px', background: 'rgba(0,0,0,0.3)', borderRadius: 8, animation: 'slideUpFade 0.2s ease' }}>
+                            <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em', marginBottom: 4 }}>FULL REASONING</div>
+                            <div style={{ fontSize: 11, color: C.mutedLight, lineHeight: 1.5 }}>
+                              {op.reasoning || "No detailed reasoning provided for this node."}
+                            </div>
+                            <div style={{ marginTop: 8, display: 'flex', gap: 12 }}>
+                              <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 6, padding: '4px 8px' }}>
+                                <span style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>CONFIDENCE: </span>
+                                <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 800, color: op.confidence > 70 ? C.green : C.yellow }}>{op.confidence.toFixed(1)}%</span>
+                              </div>
+                              <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 6, padding: '4px 8px' }}>
+                                <span style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>CALL: </span>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: directionColor(op.direction) }}>{op.direction}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -367,8 +399,13 @@ export default function CryptoRadarPage() {
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontSize: 12, fontWeight: 600 }}>NO HIGH-CONVICTION SIGNALS DETECTED</div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
-                {signals.map((sig, i) => (
-                  <div key={i} className="token-card" style={{ animation: `slideUpFade 0.3s ease ${i * 40}ms both` }}>
+                {signals.map((sig, i) => {
+                  const isExpanded = expandedSignal === i;
+                  return (
+                  <div key={i} className="token-card" onClick={() => setExpandedSignal(isExpanded ? null : i)}
+                    style={{ animation: `slideUpFade 0.3s ease ${i * 40}ms both`, cursor: 'pointer',
+                      border: isExpanded ? `1px solid ${directionColor(sig.direction)}60` : undefined,
+                      boxShadow: isExpanded ? `0 0 20px ${directionColor(sig.direction)}20` : undefined }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '0.02em' }}>{sig.symbol}</span>
                       <span style={{ fontSize: 10, fontWeight: 800, color: directionColor(sig.direction), background: directionBg(sig.direction), padding: '3px 8px', borderRadius: 6, letterSpacing: '0.05em' }}>
@@ -385,8 +422,43 @@ export default function CryptoRadarPage() {
                     <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
                        <div style={{ height: '100%', width: `${sig.confidence}%`, background: directionColor(sig.direction), borderRadius: 2 }} />
                     </div>
+
+                    {/* ── EXPANDED DETAIL PANEL ── */}
+                    {isExpanded && (
+                      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: 10, animation: 'slideUpFade 0.25s ease' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>TIMESTAMP</div>
+                            <div style={{ fontSize: 11, fontFamily: 'monospace', color: C.mutedLight, marginTop: 2 }}>
+                              {sig.timestamp ? new Date(sig.timestamp).toLocaleString() : '—'}
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>SIGNAL TYPE</div>
+                            <div style={{ fontSize: 11, fontFamily: 'monospace', color: directionColor(sig.direction), marginTop: 2 }}>
+                              {sig.direction} @ {sig.confidence.toFixed(1)}%
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>SIGNAL STRENGTH</div>
+                          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${sig.confidence}%`, background: `linear-gradient(90deg, ${directionColor(sig.direction)}80, ${directionColor(sig.direction)})`, borderRadius: 3, transition: 'width 0.4s ease' }} />
+                            </div>
+                            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: sig.confidence > 80 ? C.green : sig.confidence > 60 ? C.yellow : C.red }}>
+                              {sig.confidence > 80 ? 'STRONG' : sig.confidence > 60 ? 'MODERATE' : 'WEAK'}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontWeight: 600, letterSpacing: '0.1em' }}>
+                          TAP AGAIN TO COLLAPSE
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -421,8 +493,12 @@ export default function CryptoRadarPage() {
              ) : (
                 filteredTokens.slice(0, 50).map((t, i) => {
                   const isUp = t.change24h !== null && t.change24h >= 0;
+                  const isTkExpanded = expandedToken === i;
                   return (
-                    <div key={i} className="token-card" style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: `slideUpFade 0.3s ease ${i * 15}ms both` }}>
+                    <div key={i} className="token-card" onClick={() => setExpandedToken(isTkExpanded ? null : i)}
+                      style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: `slideUpFade 0.3s ease ${i * 15}ms both`, cursor: 'pointer',
+                        border: isTkExpanded ? '1px solid rgba(41,182,246,0.4)' : undefined,
+                        boxShadow: isTkExpanded ? '0 0 20px rgba(41,182,246,0.15)' : undefined }}>
                       {/* Token Header */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
@@ -433,7 +509,7 @@ export default function CryptoRadarPage() {
                           {t.chain}
                         </div>
                       </div>
-                      
+
                       {/* Price & Metrics */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -451,6 +527,57 @@ export default function CryptoRadarPage() {
                           <span style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 600, color: C.text }}>{t.volume24h !== null ? `$${formatCompact(t.volume24h)}` : '—'}</span>
                         </div>
                       </div>
+
+                      {/* ── EXPANDED TOKEN DETAIL ── */}
+                      {isTkExpanded && (
+                        <div style={{ paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: 10, animation: 'slideUpFade 0.25s ease' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>MARKET CAP</div>
+                              <div style={{ fontSize: 13, fontFamily: 'monospace', color: C.text, fontWeight: 700, marginTop: 2 }}>
+                                {t.marketCap ? `$${formatCompact(t.marketCap)}` : '—'}
+                              </div>
+                            </div>
+                            <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>DEX / EXCHANGE</div>
+                              <div style={{ fontSize: 13, fontFamily: 'monospace', color: C.blue, fontWeight: 700, marginTop: 2 }}>
+                                {t.exchange || '—'}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>CHAIN</div>
+                              <div style={{ fontSize: 13, fontFamily: 'monospace', color: C.purple || '#c084fc', fontWeight: 700, marginTop: 2, textTransform: 'uppercase' }}>
+                                {t.chain}
+                              </div>
+                            </div>
+                            <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>FULL NAME</div>
+                              <div style={{ fontSize: 12, color: C.mutedLight, fontWeight: 600, marginTop: 2 }}>
+                                {t.name || t.symbol}
+                              </div>
+                            </div>
+                          </div>
+                          {/* Volume vs MarketCap ratio indicator */}
+                          {t.volume24h && t.marketCap && t.marketCap > 0 && (
+                            <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: '0.1em' }}>VOL/MCAP RATIO</div>
+                              <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ flex: 1, height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', width: `${Math.min((t.volume24h / t.marketCap) * 100, 100)}%`, background: `linear-gradient(90deg, ${C.blue}80, ${C.blue})`, borderRadius: 3 }} />
+                                </div>
+                                <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: (t.volume24h / t.marketCap) > 0.5 ? C.green : C.mutedLight }}>
+                                  {((t.volume24h / t.marketCap) * 100).toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          <div style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontWeight: 600, letterSpacing: '0.1em' }}>
+                            TAP AGAIN TO COLLAPSE
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })

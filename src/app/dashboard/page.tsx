@@ -35,8 +35,8 @@ interface DiagData {
   system?:{memoryUsageMB:{rss:number;heapUsed:number;heapTotal:number};uptimeSeconds:number;nodeVersion:string;diagnosticDurationMs:number};
 }
 interface CreditsData {
-  openai:{status:string;balance:string};
-  deepseek:{status:string;balance:string;is_available:boolean};
+  openai:{status:string;balance:string;is_available?:boolean};
+  deepseek:{status:string;balance:string;is_available?:boolean};
 }
 interface ExchangeRow { name:string;enabled:boolean;mode:string;connected:boolean;error?:string; }
 interface ExchangeData { activeExchange:string; exchanges:ExchangeRow[]; }
@@ -87,6 +87,10 @@ export default function StatusPage(){
   const [diagLoading,setDiagLoading]=useState(false);
   const [lastDiag,setLastDiag]=useState<Date|null>(null);
   const [activeLog,setActiveLog]=useState<'all'|'error'|'warn'>('all');
+  const [expandedGlad,setExpandedGlad]=useState<Set<string>>(new Set());
+  const [expandedAudits,setExpandedAudits]=useState<Set<number>>(new Set());
+  const toggleGlad=(id:string)=>setExpandedGlad(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
+  const toggleAudit=(i:number)=>setExpandedAudits(s=>{const n=new Set(s);n.has(i)?n.delete(i):n.add(i);return n;});
   const diagRef=useRef<NodeJS.Timeout|null>(null);
 
   const fetchLight=useCallback(async()=>{
@@ -455,6 +459,204 @@ export default function StatusPage(){
         );
       })()}
 
+      {/* ── DEEP SYSTEM HEALTH GRID (NEW) ── */}
+      <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+        <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`}}>
+          <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Deep System Health</span>
+        </div>
+        <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:8}}>
+          {[
+            {name:'Supabase DB',latency:diag?.supabase?.roundtripMs,grade:diag?.supabase?.healthGrade,read:diag?.supabase?.readLatencyMs,write:diag?.supabase?.writeLatencyMs,consistent:diag?.supabase?.consistent},
+            {name:'MEXC Exchange',latency:diag?.mexc?.latencyMs,grade:diag?.mexc?.healthGrade,balance:diag?.mexc?.usdtBalance,drift:diag?.mexc?.clockDriftMs},
+            {name:'Binance',latency:health?.api?.binance?.latencyMs,grade:health?.api?.binance?.ok?'A':'F',mode:health?.api?.binance?.mode},
+          ].map(sys=>{
+            const ok=sys.grade==='A'||sys.grade==='B'||sys.grade===undefined;
+            const col=ok?C.green:sys.grade==='C'?C.yellow:C.red;
+            return(
+              <div key={sys.name} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:10}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                  <span style={{fontSize:11,fontWeight:700,color:C.white}}>{sys.name}</span>
+                  <span style={{fontSize:9,fontWeight:700,color:col,padding:'2px 6px',borderRadius:4,background:`${col}14`}}>{sys.grade||'—'}</span>
+                </div>
+                <div style={{fontSize:9,color:C.textDim,display:'flex',flexDirection:'column',gap:3}}>
+                  {sys.latency!=null&&<div>Latency: <span style={{color:C.white,fontWeight:600}}>{sys.latency}ms</span></div>}
+                  {sys.read!=null&&<div>Read: <span style={{color:C.white}}>{sys.read}ms</span> · Write: <span style={{color:C.white}}>{sys.write}ms</span></div>}
+                  {sys.consistent!=null&&<div>Consistent: <span style={{color:sys.consistent?C.green:C.red,fontWeight:600}}>{sys.consistent?'YES':'NO'}</span></div>}
+                  {sys.balance!=null&&<div>USDT Balance: <span style={{color:C.green,fontWeight:700}}>${sys.balance.toFixed(2)}</span></div>}
+                  {sys.drift!=null&&<div>Clock Drift: <span style={{color:Math.abs(sys.drift)<1000?C.green:C.red}}>{sys.drift}ms</span></div>}
+                  {sys.mode&&<div>Mode: <span style={{color:C.blue}}>{sys.mode}</span></div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── API CREDITS VISUALIZER (NEW) ── */}
+      {credits&&(
+        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`}}>
+            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>API Credit Reserves</span>
+          </div>
+          <div style={{padding:'10px 12px',display:'flex',flexDirection:'column',gap:10}}>
+            {[
+              {name:'OpenAI GPT',data:credits.openai,color:C.green},
+              {name:'DeepSeek',data:credits.deepseek,color:C.purple},
+            ].map(p=>{
+              const available=p.data?.is_available;
+              const bal=p.data?.balance||0;
+              const pct=Math.min(100,Math.max(0,bal>0?(bal/20)*100:available?80:0));
+              return(
+                <div key={p.name}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                    <span style={{fontSize:10,fontWeight:700,color:C.white}}>{p.name}</span>
+                    <span style={{fontSize:9,fontWeight:700,color:available?p.color:C.red}}>{available?'AVAILABLE':'UNAVAILABLE'}{bal>0?` · $${bal.toFixed(2)}`:''}</span>
+                  </div>
+                  <div style={{height:6,background:C.surfaceAlt,borderRadius:3,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${p.color},${p.color}88)`,borderRadius:3,transition:'width 0.6s ease'}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── ALL GLADIATORS OVERVIEW (NEW) ── */}
+      {bot?.gladiators&&bot.gladiators.length>0&&(
+        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>All Gladiators ({bot.gladiators.length})</span>
+            <span style={{fontSize:9,color:C.green}}>{bot.gladiators.filter((g:Record<string,unknown>)=>g.isLive||g.status==='LIVE').length} LIVE</span>
+          </div>
+          <div style={{maxHeight:320,overflowY:'auto',padding:'6px 12px'}}>
+            {bot.gladiators.map((g:Record<string,unknown>)=>{
+              const gId=String(g.id||'');const gName=String(g.name||g.id||'?');const gStatus=String(g.status||'UNKNOWN');
+              const gIsLive=!!g.isLive||gStatus==='LIVE';const gWinRate=Number(g.winRate)||0;const gTotalTrades=Number(g.totalTrades)||0;
+              const gProfitFactor=Number(g.profitFactor)||0;const gArena=String(g.arena||'—');const gTrainingProgress=Number(g.trainingProgress)||0;const gIsOmega=!!g.isOmega;
+              const statusCol=gIsLive?C.green:gStatus==='IN_TRAINING'?C.blue:gStatus==='RETIRED'||gStatus==='ELIMINATED'?C.red:C.yellow;
+              const open=expandedGlad.has(gId);
+              return(
+                <div key={gId} onClick={()=>toggleGlad(gId)} style={{background:C.surfaceAlt,border:`1px solid ${open?C.blue:C.border}`,borderRadius:8,padding:'8px 10px',marginBottom:6,cursor:'pointer',transition:'all 0.2s'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:6,height:6,borderRadius:'50%',background:statusCol,animation:gIsLive?'pulse 2s infinite':'none'}}/>
+                      <span style={{fontSize:11,fontWeight:700,color:C.white}}>{gName}</span>
+                      {gIsOmega&&<span style={{fontSize:8,fontWeight:700,color:C.purple,padding:'1px 5px',borderRadius:3,background:C.purpleBg}}>OMEGA</span>}
+                      <span style={{fontSize:8,fontWeight:700,color:statusCol,padding:'1px 5px',borderRadius:3,background:`${statusCol}14`}}>{gStatus}</span>
+                    </div>
+                    <div style={{display:'flex',gap:12,alignItems:'center'}}>
+                      <span style={{fontSize:10,fontWeight:700,color:gWinRate>=0.6?C.green:gWinRate>=0.45?C.yellow:C.red}}>{(gWinRate*100).toFixed(1)}%</span>
+                      <span style={{fontSize:9,color:C.mutedLight}}>{gTotalTrades} trades</span>
+                      <span style={{fontSize:10,color:C.textDim,transform:open?'rotate(90deg)':'none',transition:'transform 0.2s'}}>›</span>
+                    </div>
+                  </div>
+                  {open&&(
+                    <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,fontSize:9,color:C.textDim}}>
+                      <div>Arena: <span style={{color:C.white,fontWeight:600}}>{gArena}</span></div>
+                      <div>P/F: <span style={{color:C.white,fontWeight:600}}>{gProfitFactor>0?gProfitFactor.toFixed(2):'—'}</span></div>
+                      <div>Training: <span style={{color:C.blue,fontWeight:600}}>{gTrainingProgress}%</span></div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── LIVE POSITIONS PANEL (NEW) ── */}
+      {diag?.positions&&diag.positions.open>0&&(
+        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Open Positions</span>
+            <span style={{fontSize:9,color:C.blue,fontWeight:700}}>{diag.positions.open} active</span>
+          </div>
+          <div style={{padding:'6px 12px',fontSize:9,color:C.textDim}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,textAlign:'center'}}>
+              <div>Total: <span style={{color:C.white,fontWeight:700}}>{diag.positions.total}</span></div>
+              <div>Open: <span style={{color:C.green,fontWeight:700}}>{diag.positions.open}</span></div>
+              <div>Closed: <span style={{color:C.mutedLight,fontWeight:700}}>{diag.positions.closed}</span></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SYNDICATE AUDIT HISTORY (NEW — complements existing Last Syndicate Decision) ── */}
+      {bot?.syndicateAudits&&bot.syndicateAudits.length>1&&(
+        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`}}>
+            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Syndicate Audit Trail ({bot.syndicateAudits.length})</span>
+          </div>
+          <div style={{maxHeight:300,overflowY:'auto',padding:'6px 12px'}}>
+            {bot.syndicateAudits.slice(0,10).map((audit:{symbol:string;decision:string;confidence:number;timestamp:string;architect:{direction:string;confidence:number;reasoning:string};oracle:{direction:string;confidence:number;reasoning:string};nodes?:Array<{seat:string;direction:string;confidence:number;reasoning:string}>},i:number)=>{
+              const open=expandedAudits.has(i);
+              const dirCol=audit.decision==='BUY'?C.green:audit.decision==='SELL'?C.red:C.yellow;
+              return(
+                <div key={i} onClick={()=>toggleAudit(i)} style={{background:C.surfaceAlt,border:`1px solid ${open?dirCol:C.border}`,borderRadius:8,padding:'8px 10px',marginBottom:6,cursor:'pointer',transition:'all 0.2s'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:11,fontWeight:700,color:C.white}}>{audit.symbol}</span>
+                      <span style={{fontSize:9,fontWeight:700,color:dirCol,padding:'1px 6px',borderRadius:3,background:`${dirCol}14`}}>{audit.decision}</span>
+                      <span style={{fontSize:9,color:C.blue}}>{Math.round(audit.confidence*100)}%</span>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{fontSize:8,color:C.mutedLight}}>{ft(audit.timestamp)}</span>
+                      <span style={{fontSize:10,color:C.textDim,transform:open?'rotate(90deg)':'none',transition:'transform 0.2s'}}>›</span>
+                    </div>
+                  </div>
+                  {open&&(
+                    <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column',gap:6}}>
+                      {[{name:'ARCHITECT',d:audit.architect},{name:'ORACLE',d:audit.oracle}].map(n=>(
+                        <div key={n.name} style={{background:C.bg,borderRadius:6,padding:'6px 8px',border:`1px solid ${C.border}`}}>
+                          <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:2}}>{n.name}</div>
+                          <div style={{fontSize:10,fontWeight:700,color:n.d.direction==='BUY'?C.green:n.d.direction==='SELL'?C.red:C.yellow}}>{n.d.direction} · {Math.round(n.d.confidence*100)}%</div>
+                          <div style={{fontSize:9,color:C.textDim,marginTop:3,lineHeight:1.4}}>{n.d.reasoning}</div>
+                        </div>
+                      ))}
+                      {audit.nodes&&audit.nodes.map((nd,ni)=>(
+                        <div key={ni} style={{background:C.bg,borderRadius:6,padding:'6px 8px',border:`1px solid ${C.border}`}}>
+                          <div style={{fontSize:8,fontWeight:700,color:C.mutedLight}}>{nd.seat}</div>
+                          <div style={{fontSize:10,color:nd.direction==='BUY'?C.green:nd.direction==='SELL'?C.red:C.yellow}}>{nd.direction} · {Math.round(nd.confidence*100)}%</div>
+                          <div style={{fontSize:9,color:C.textDim,marginTop:2}}>{nd.reasoning}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── EQUITY & PERFORMANCE DEEP DIVE (NEW) ── */}
+      {diag?.equity&&(
+        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`}}>
+            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Equity Deep Dive</span>
+          </div>
+          <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8}}>
+            {[
+              {label:'Current',val:`$${diag.equity.currentBalance.toFixed(0)}`,col:C.white},
+              {label:'Peak',val:`$${diag.equity.peakBalance.toFixed(0)}`,col:C.green},
+              {label:'Max DD',val:`${diag.equity.maxDrawdownPercent.toFixed(1)}%`,col:diag.equity.maxDrawdownPercent>10?C.red:C.yellow},
+              {label:'Win Rate',val:`${diag.equity.winRatePercent.toFixed(1)}%`,col:diag.equity.winRatePercent>=50?C.green:C.red},
+              {label:'Wins',val:String(diag.equity.wins),col:C.green},
+              {label:'Losses',val:String(diag.equity.losses),col:C.red},
+              {label:'Mode',val:diag.equity.mode,col:C.blue},
+              {label:'Total Trades',val:String(diag.equity.totalTrades),col:C.white},
+            ].map(m=>(
+              <div key={m.label} style={{background:C.surfaceAlt,borderRadius:6,padding:'8px',textAlign:'center',border:`1px solid ${C.border}`}}>
+                <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:3}}>{m.label}</div>
+                <div style={{fontSize:13,fontWeight:700,color:m.col}}>{m.val}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{height:16}}/>
       <BottomNav/>
     </div>
   );
