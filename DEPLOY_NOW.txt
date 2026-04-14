@@ -1,0 +1,89 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    TRADE AI PRODUCTION DEPLOYMENT
+                         Tier 1 Fixes Ready
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ ALL TIER 1 FIXES IMPLEMENTED AND COMMITTED (commit: 5b8f748)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1: APPLY SUPABASE MIGRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option A: Supabase Dashboard (EASIEST)
+  1. Open: https://app.supabase.com → Your Project
+  2. SQL Editor → Create New Query
+  3. Copy/paste: supabase/migrations/20260414_llm_cache.sql
+  4. Click RUN
+
+Option B: CLI
+  supabase db push
+
+✓ Verify: Check Supabase Dashboard → Tables → llm_cache exists
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2: DEPLOY TO CLOUD RUN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+cd /path/to/TRADE\ AI
+chmod +x DEPLOY_PRODUCTION.sh
+./DEPLOY_PRODUCTION.sh
+
+Or manually:
+  gcloud builds submit --config=cloudbuild.yaml --region=europe-west1
+
+⏱️  Build time: 5-8 minutes
+📊 Logs: gcloud builds log --stream [BUILD_ID]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3: VERIFY DEPLOYMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TRADE_AI_URL=$(gcloud run services describe trade-ai \
+  --region=europe-west1 --format='value(status.url)')
+
+echo "Service: $TRADE_AI_URL"
+
+# Health check (expected: {"clob":true,"gamma":true})
+curl "$TRADE_AI_URL/api/v2/health"
+
+# Check logs
+gcloud run logs read trade-ai --region=europe-west1 --limit=50
+
+✓ Health check passes
+✓ No FATAL errors in logs
+✓ llm_cache table populated
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 4: MANUAL VALIDATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Navigate to: https://trade-ai-PROJECT.run.app/polymarket
+2. Select division, pick market
+3. Try to place trade that would exceed -$50 daily loss → REJECTED ✓
+4. Check LLM Analyst View appears in ~3s ✓
+5. View Cloud Run logs for "PolyState initialized" ✓
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🎯 TIER 1 FIXES NOW ACTIVE:
+
+  ✅ Daily Loss Limits       (-$50/day cap, -$25 position cap)
+  ✅ Wallet Type Guard       (PAPER-only enforcement, FATAL if violated)
+  ✅ Cron Routes             (No 404s, autonomous scanning ready)
+  ✅ LLM Optimization        (Timeout 8s→3s, parallel, 24h cache)
+
+⏱️  TOTAL DEPLOYMENT TIME: 15-20 minutes
+
+📝 DOCUMENTATION:
+  - TIER_1_DEPLOYMENT_SUMMARY.md (overview, what changed)
+  - PRODUCTION_DEPLOYMENT_GUIDE.md (detailed steps, troubleshooting)
+  - PHASE_5_DEPLOY_CHECKLIST.md (pre-deployment verification)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Next: After successful deployment, TIER 2 fixes will improve:
+  - Agent voting (Week 1)
+  - Volume baseline validation
+  - Liquidity checks
+
+═══════════════════════════════════════════════════════════════════════════════

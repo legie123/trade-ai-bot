@@ -53,18 +53,41 @@ async function checkPolymarket(): Promise<SystemStatus> {
 async function checkSupabase(): Promise<SystemStatus> {
   const start = Date.now();
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    );
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+    // Diagnostic logging
+    console.log('[SUPABASE_DIAG] URL exists:', !!url, 'URL length:', url.length);
+    console.log('[SUPABASE_DIAG] Key exists:', !!key, 'Key length:', key.length);
+    console.log('[SUPABASE_DIAG] URL starts with https:', url.startsWith('https://'));
+
+    if (!url || !key) {
+      const latency = Date.now() - start;
+      return {
+        name: 'Supabase (json_store)',
+        status: 'ERROR',
+        latency_ms: latency,
+        error: `Missing env vars: url=${!!url}, key=${!!key}`,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    const supabase = createClient(url, key);
+    console.log('[SUPABASE_DIAG] Client created, querying json_store...');
+
     const { data, error } = await supabase.from('json_store').select('id').limit(1);
     const latency = Date.now() - start;
+
     if (error) {
+      console.log('[SUPABASE_DIAG] Query error:', error.message);
       return { name: 'Supabase (json_store)', status: 'ERROR', latency_ms: latency, error: error.message, timestamp: new Date().toISOString() };
     }
+
+    console.log('[SUPABASE_DIAG] Query success!');
     return { name: 'Supabase (json_store)', status: 'OK', latency_ms: latency, timestamp: new Date().toISOString() };
   } catch (err) {
     const latency = Date.now() - start;
+    console.log('[SUPABASE_DIAG] Exception:', (err as Error).message);
     return { name: 'Supabase (json_store)', status: 'ERROR', latency_ms: latency, error: (err as Error).message, timestamp: new Date().toISOString() };
   }
 }
