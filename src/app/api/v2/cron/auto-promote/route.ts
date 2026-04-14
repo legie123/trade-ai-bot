@@ -50,6 +50,13 @@ export async function GET() {
 
     // 2. Get all gladiators
     const gladiators = getGladiatorsFromDb();
+    if (!gladiators || !Array.isArray(gladiators)) {
+      return NextResponse.json({
+        status: 'ERROR',
+        reason: 'Failed to load gladiators from DB — returned null or invalid',
+        timestamp: new Date().toISOString(),
+      }, { status: 500 });
+    }
     const liveCount = gladiators.filter(g => g.isLive).length;
 
     if (liveCount >= PROMO_CRITERIA.maxLiveGladiators) {
@@ -179,7 +186,17 @@ export async function GET() {
 
     // 5. Save if any promotions happened
     if (promoted > 0) {
-      saveGladiatorsToDb(gladiators);
+      try {
+        await saveGladiatorsToDb(gladiators);
+      } catch (saveErr) {
+        return NextResponse.json({
+          status: 'SAVE_FAILED',
+          error: `Promotions applied in-memory but DB save failed: ${(saveErr as Error).message}`,
+          promoted,
+          results,
+          timestamp: new Date().toISOString(),
+        }, { status: 500 });
+      }
     }
 
     return NextResponse.json({

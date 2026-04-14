@@ -57,8 +57,11 @@ function deserializeWallet(data: Record<string, unknown>): PolyWallet {
 // ── Initialize state from cloud ──
 async function initPolyState(): Promise<void> {
   if (initialized) return;
-  initialized = true;
-
+  if (initPromise) return initPromise;
+  initPromise = _doInit();
+  return initPromise;
+}
+async function _doInit(): Promise<void> {
   try {
     // Ensure Supabase is ready
     await initDB();
@@ -91,11 +94,13 @@ async function initPolyState(): Promise<void> {
       await persistWallet();
     }
 
+    initialized = true;
     log.info('PolyState initialized', {
       gladiatorCount: polyGladiators.length,
       walletBalance: polyWallet.totalBalance,
     });
   } catch (err) {
+    initPromise = null; // Allow retry on failure
     log.error('PolyState initialization failed', { error: String(err) });
     throw err;
   }

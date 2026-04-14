@@ -62,14 +62,17 @@ export async function GET(request: Request) {
           // Place phantom bet if direction is clear
           if (evaluation.direction !== 'SKIP' && evaluation.confidence >= 50) {
             // Create phantom bet on gladiator
+            const resolvedOutcomeId = opportunity.market.outcomes.find(
+                o => (evaluation.direction === 'BUY_YES' && o.name.toUpperCase() === 'YES') ||
+                     (evaluation.direction === 'BUY_NO' && o.name.toUpperCase() === 'NO'),
+              )?.id;
+            if (!resolvedOutcomeId) continue; // Skip if outcome not found — prevents phantom/live bets with invalid ID
+
             const bet = {
               id: `bet-${opportunity.marketId}-${Date.now()}`,
               marketId: opportunity.marketId,
               direction: evaluation.direction,
-              outcomeId: opportunity.market.outcomes.find(
-                o => (evaluation.direction === 'BUY_YES' && o.name.toUpperCase() === 'YES') ||
-                     (evaluation.direction === 'BUY_NO' && o.name.toUpperCase() === 'NO'),
-              )?.id || '',
+              outcomeId: resolvedOutcomeId,
               entryPrice: opportunity.market.outcomes[0]?.price || 0.5,
               shares: 0,
               confidence: evaluation.confidence,
@@ -80,7 +83,7 @@ export async function GET(request: Request) {
             gladiator.phantomBets.push(bet);
 
             // If gladiator is live, actually open position on wallet
-            if (gladiator.isLive) {
+            if (gladiator.isLive && bet.outcomeId) {
               const position = openPosition(
                 wallet,
                 opportunity.marketId,

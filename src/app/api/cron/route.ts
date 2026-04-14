@@ -15,11 +15,13 @@ let loopStarted = false;
 export async function GET(request: NextRequest) {
   // Auth: require CRON_SECRET header (Railway/Vercel cron must send it)
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = request.headers.get('authorization') || request.headers.get('x-cron-secret') || request.nextUrl.searchParams.get('secret');
-    if (auth !== cronSecret && auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized. Set x-cron-secret header.' }, { status: 401 });
-    }
+  if (!cronSecret) {
+    log.error('CRON_SECRET env var not set — blocking all cron requests');
+    return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 });
+  }
+  const auth = request.headers.get('authorization') || request.headers.get('x-cron-secret') || request.nextUrl.searchParams.get('secret');
+  if (auth !== cronSecret && auth !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized. Set x-cron-secret header.' }, { status: 401 });
   }
   try {
     // Ensure heartbeat is running

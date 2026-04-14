@@ -6,6 +6,11 @@ import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('Heartbeat');
 
+// Initialize process start time on module load so uptime is accurate
+if (!(globalThis as any).__processStartTime) {
+  (globalThis as any).__processStartTime = Date.now();
+}
+
 export interface HealthSnapshot {
   timestamp: string;
   uptime: number;             // seconds

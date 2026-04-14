@@ -53,7 +53,7 @@ async function mexcRequest(
     params.recvWindow = 5000;
   }
 
-  const qs = Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&');
+  const qs = Object.entries(params).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
   let url = `${MEXC_BASE_URL}${endpoint}`;
 
   if (signed) {

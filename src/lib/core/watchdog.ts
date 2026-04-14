@@ -139,19 +139,21 @@ export function stopWatchdog(): void {
 
 // ─── Get status (serverless-aware) ──────────────────
 export function getWatchdogState(): WatchdogState {
-  // On serverless, dynamically compute status from lastPing age
+  // Compute derived status without mutating canonical state
+  let derivedStatus = state.status;
+  let derivedAlive = state.alive;
   if (state.lastPing) {
     const elapsed = Date.now() - new Date(state.lastPing).getTime();
     if (elapsed > WATCHDOG_TIMEOUT_MS) {
-      state.status = 'DEAD';
-      state.alive = false;
+      derivedStatus = 'DEAD';
+      derivedAlive = false;
     } else if (elapsed > WATCHDOG_TIMEOUT_MS / 2) {
-      state.status = 'WARNING';
-      state.alive = true;
+      derivedStatus = 'WARNING';
+      derivedAlive = true;
     } else {
-      state.status = 'HEALTHY';
-      state.alive = true;
+      derivedStatus = 'HEALTHY';
+      derivedAlive = true;
     }
   }
-  return { ...state };
+  return { ...state, status: derivedStatus, alive: derivedAlive };
 }

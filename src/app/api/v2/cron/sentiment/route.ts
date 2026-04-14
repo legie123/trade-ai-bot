@@ -143,11 +143,11 @@ export async function GET(request: Request) {
 
     // Store to Supabase if available
     try {
+      const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!sbUrl || !sbKey) throw new Error('Supabase credentials not configured');
       const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-        process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
-      );
+      const supabase = createClient(sbUrl, sbKey);
 
       for (const score of symbolScores) {
         await supabase.from('sentiment_heartbeat').upsert({

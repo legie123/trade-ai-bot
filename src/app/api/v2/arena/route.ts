@@ -11,7 +11,7 @@ export async function GET() {
     const omega = gladiatorStore.getGladiators().find(g => g.isOmega);
     
     // AUDIT FIX CRITIC-7: Progress based on WINS only, not all battles
-    const dnaBank = getGladiatorDna();
+    const dnaBank = getGladiatorDna() || [];
     const actualWins = dnaBank.filter(d => d.isWin === true).length;
     const targetWins = 100; // Genesis target for Omega to awaken
     const realProgress = Math.min(100, Math.round((actualWins / targetWins) * 100));

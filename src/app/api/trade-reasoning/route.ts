@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       
       // Calculate Kelly fraction
       const avgWin = perf?.avgPnlPercent || 1.5;
-      const avgLoss = Math.abs(perf?.worstTrade || -1.0);
+      const avgLoss = Math.abs(perf?.worstTrade || -1.0) || 1.0;
       const kellyFraction = Math.max(0, (winRate / 100 - (1 - winRate / 100) / (avgWin / avgLoss)));
       
       // Calculate risk position

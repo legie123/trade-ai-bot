@@ -336,14 +336,16 @@ export function saveGladiatorsToDb(gladiators: Gladiator[]): void {
         const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiators').single();
         if (data?.data) {
           const remoteGladiators = data.data as Gladiator[];
-          // Safely merge based on totalTrades (assuming higher = more evolved)
+          // Safely merge: prefer whichever copy was updated more recently, with totalTrades as tiebreak
           for (const remote of remoteGladiators) {
              const localIndex = gladiators.findIndex(g => g.id === remote.id);
              if (localIndex === -1) {
                  gladiators.push(remote); // Pick up Gladiators created by other instances
              } else {
                  const local = gladiators[localIndex];
-                 if ((remote.stats?.totalTrades || 0) > (local.stats?.totalTrades || 0)) {
+                 const remoteTime = remote.lastUpdated || 0;
+                 const localTime = local.lastUpdated || 0;
+                 if (remoteTime > localTime || (remoteTime === localTime && (remote.stats?.totalTrades || 0) > (local.stats?.totalTrades || 0))) {
                      gladiators[localIndex] = remote;
                  }
              }

@@ -503,8 +503,8 @@ export default function StatusPage(){
               {name:'OpenAI GPT',data:credits.openai,color:C.green},
               {name:'DeepSeek',data:credits.deepseek,color:C.purple},
             ].map(p=>{
-              const available=p.data?.is_available;
-              const bal=p.data?.balance||0;
+              const available=p.data?.is_available||p.data?.status==='ok';
+              const bal=parseFloat(String(p.data?.balance||'0'))||0;
               const pct=Math.min(100,Math.max(0,bal>0?(bal/20)*100:available?80:0));
               return(
                 <div key={p.name}>
