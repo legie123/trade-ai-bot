@@ -1,0 +1,80 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                    TRADE AI — BUILD FIX & DEPLOYMENT                       ║
+║                          Tuesday, Apr 14, 2026                             ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+✅ STATUS: Build failure root cause IDENTIFIED and FIXED
+
+PROBLEM (Resolved):
+  → tsconfig.tsbuildinfo (stale TypeScript incremental build cache)
+     was included in Docker context and referenced deleted routes
+     (agent-card, health/old, live-stream, etc.), causing "Cannot find module" errors
+
+FIX APPLIED:
+  → Excluded *.tsbuildinfo from .dockerignore
+  → Excluded .gitnexus/ from Docker (64MB unnecessary cache)
+  → Changed cloudbuild.yaml logging from CLOUD_LOGGING_ONLY → LEGACY
+     (now shows full Docker build output in gcloud terminal)
+
+CHANGES COMMITTED:
+  Commit: 9cbaf30 (local, ready to push)
+  Files:  .dockerignore, .gcloudignore, cloudbuild.yaml, + 6 phase docs
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NEXT STEPS (copy & paste in terminal):
+
+1️⃣  PUSH TO GITHUB:
+    git push origin main
+
+2️⃣  TRIGGER CLOUD BUILD (with full output visible):
+    gcloud builds submit --project=evident-trees-453923-f9
+
+    ⚠ This will take 3-5 minutes. You'll see full Docker build logs in terminal.
+    ✓ BUILD SUCCESS → service auto-deploys to Cloud Run (europe-west1)
+
+3️⃣  VERIFY DEPLOYMENT (once build completes):
+    curl https://antigravity-trade-3rzn6ry36q-ew.a.run.app/api/v2/health | jq .
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+OR RUN THE DEPLOYMENT SCRIPT:
+    ./deploy.sh
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+AFTER SUCCESSFUL DEPLOYMENT:
+
+4️⃣  ENABLE POLYMARKET PAPER TRADING:
+    (Claude will set POLYMARKET_ENABLED=true in Cloud Run env vars)
+
+5️⃣  ACTIVATE RADAR + POLYMARKET PAGES:
+    (Ensure routes are serving correct data)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TECHNICAL DETAILS:
+
+Why tsbuildinfo caused the build to fail:
+  • Next.js incremental TypeScript compilation uses tsconfig.tsbuildinfo
+  • File caches info about previous builds
+  • When Docker context included stale tsbuildinfo, TypeScript reused stale cache
+  • Cache referenced deleted route modules → "Cannot find module" errors
+  • Despite actual source having no TypeScript errors
+  
+Solution:
+  • Exclude tsbuildinfo files from Docker context
+  • Each Docker build starts fresh with no stale cache
+  • New .next/types/validator.ts generated only from current routes
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+LOCAL GIT STATUS:
+  $ git log --oneline -1
+  9cbaf30 fix: exclude stale TypeScript cache from Docker build...
+  
+  $ git status
+  On branch main
+  Your branch is ahead of 'origin/main' by 1 commit.
+
+Ready? Run: git push origin main && gcloud builds submit

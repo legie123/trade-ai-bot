@@ -27,23 +27,31 @@ function serializeWallet(w: PolyWallet): Record<string, unknown> {
   return {
     id: w.id,
     createdAt: w.createdAt,
+    type: w.type,
     totalBalance: w.totalBalance,
     totalInvested: w.totalInvested,
     totalRealizedPnL: w.totalRealizedPnL,
     allPositions: w.allPositions,
     divisionBalances: Object.fromEntries(w.divisionBalances),
+    dailyLossTrackingDate: w.dailyLossTrackingDate,
+    dailyRealizedPnL: w.dailyRealizedPnL,
+    tradingDisabledReason: w.tradingDisabledReason,
   };
 }
 
 // ── Deserialize plain object → PolyWallet with Map ──
 function deserializeWallet(data: Record<string, unknown>): PolyWallet {
-  const wallet = createPolyWallet();
+  const type = (data.type as 'PAPER' | 'LIVE') ?? 'PAPER';
+  const wallet = createPolyWallet(type);
   wallet.id = data.id as string;
   wallet.createdAt = data.createdAt as string;
   wallet.totalBalance = (data.totalBalance as number) ?? wallet.totalBalance;
   wallet.totalInvested = (data.totalInvested as number) ?? 0;
   wallet.totalRealizedPnL = (data.totalRealizedPnL as number) ?? 0;
   wallet.allPositions = (data.allPositions as PolyPosition[]) ?? [];
+  wallet.dailyLossTrackingDate = (data.dailyLossTrackingDate as string) ?? wallet.dailyLossTrackingDate;
+  wallet.dailyRealizedPnL = (data.dailyRealizedPnL as number) ?? 0;
+  wallet.tradingDisabledReason = (data.tradingDisabledReason as string) ?? undefined;
 
   const divBalances = data.divisionBalances as Record<string, DivisionBalance> | null;
   if (divBalances) {

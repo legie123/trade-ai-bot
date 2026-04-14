@@ -13,6 +13,8 @@ const POLYMARKET_FEE = 0.02; // 2% on winning bets
 const MAX_POSITIONS_PER_DIVISION = 5;
 const MAX_BET_PCT_OF_DIVISION_BALANCE = 0.1; // 10%
 const KELLY_FRACTION = 0.25; // Fractional Kelly (25% of full Kelly)
+const DAILY_LOSS_LIMIT = -50; // Stop trading if down $50/day
+const POSITION_LOSS_LIMIT = -25; // Stop trading if open positions down $25
 
 export interface DivisionBalance {
   division: PolyDivision;
@@ -43,23 +45,32 @@ export interface PolyPosition {
 export interface PolyWallet {
   id: string;
   createdAt: string;
+  type: 'PAPER' | 'LIVE'; // CRITICAL: Paper trading only, no live execution
   totalBalance: number;
   totalInvested: number;
   totalRealizedPnL: number;
   divisionBalances: Map<PolyDivision, DivisionBalance>;
   allPositions: PolyPosition[];
+  dailyLossTrackingDate?: string; // Date of last reset (YYYY-MM-DD)
+  dailyRealizedPnL?: number; // Today's realized P&L (resets at midnight UTC)
+  tradingDisabledReason?: string; // If set, reason why trading is paused
 }
 
 // ─── Create wallet ────────────────────────────────────
-export function createPolyWallet(): PolyWallet {
+export function createPolyWallet(type: 'PAPER' | 'LIVE' = 'PAPER'): PolyWallet {
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
   const wallet: PolyWallet = {
     id: `wallet-${Date.now()}`,
     createdAt: new Date().toISOString(),
+    type, // Default to PAPER
     totalBalance: Object.keys(PolyDivision).length * INITIAL_BALANCE,
     totalInvested: 0,
     totalRealizedPnL: 0,
     divisionBalances: new Map(),
     allPositions: [],
+    dailyLossTrackingDate: today,
+    dailyRealizedPnL: 0,
+    tradingDisabledReason: undefined,
   };
 
   // Initialize each division
@@ -77,6 +88,71 @@ export function createPolyWallet(): PolyWallet {
   });
 
   return wallet;
+}
+
+// ─── Validate paper trading only ──────────────────────
+/**
+ * CRITICAL VALIDATION: This system is PAPER TRADING ONLY
+ *
+ * No real trades are executed. No real money is at risk.
+ *
+ * If you intend to add live trading in the future:
+ * 1. Create a separate wallet type 'LIVE' with different validation
+ * 2. Create a separate execution layer (do NOT reuse phantom bet logic)
+ * 3. Add 2FA + API key management
+ * 4. Add transaction signing
+ * 5. Add real-time position monitoring
+ * 6. Add kill switches at exchange API level
+ *
+ * DO NOT modify this function or wallet.type validation.
+ */
+export function validatePaperTrading(wallet: PolyWallet): void {
+  if (wallet.type !== 'PAPER') {
+    const error = 'FATAL: Attempted to trade against NON-PAPER wallet. ' +
+      'This system is PAPER TRADING ONLY. No real money trades allowed.';
+    log.error(error, { walletId: wallet.id, type: wallet.type });
+    throw new Error(error);
+  }
+}
+
+// ─── Check daily loss limits ──────────────────────────
+export function checkAndResetDailyLimits(wallet: PolyWallet): void {
+  const today = new Date().toISOString().split('T')[0];
+
+  // Reset daily P&L if date changed
+  if (wallet.dailyLossTrackingDate !== today) {
+    wallet.dailyLossTrackingDate = today;
+    wallet.dailyRealizedPnL = 0;
+    wallet.tradingDisabledReason = undefined; // Re-enable trading
+    log.info('Daily loss limit reset', { date: today });
+  }
+}
+
+export function checkLossLimits(wallet: PolyWallet): { canTrade: boolean; reason?: string } {
+  // Check if trading is already disabled
+  if (wallet.tradingDisabledReason) {
+    return { canTrade: false, reason: wallet.tradingDisabledReason };
+  }
+
+  // Check daily loss limit
+  const dailyPnL = wallet.dailyRealizedPnL || 0;
+  if (dailyPnL < DAILY_LOSS_LIMIT) {
+    const reason = `Daily loss limit breached: $${dailyPnL.toFixed(2)} (limit: $${DAILY_LOSS_LIMIT})`;
+    wallet.tradingDisabledReason = reason;
+    log.warn('Trading disabled due to daily loss limit', { dailyPnL });
+    return { canTrade: false, reason };
+  }
+
+  // Check total unrealized loss across open positions
+  const totalUnrealized = calculateUnrealizedPnL(wallet);
+  if (totalUnrealized < POSITION_LOSS_LIMIT) {
+    const reason = `Position loss limit breached: $${totalUnrealized.toFixed(2)} (limit: $${POSITION_LOSS_LIMIT})`;
+    wallet.tradingDisabledReason = reason;
+    log.warn('Trading disabled due to position loss limit', { totalUnrealized });
+    return { canTrade: false, reason };
+  }
+
+  return { canTrade: true };
 }
 
 // ─── Calculate Kelly criterion bet size ────────────────
@@ -118,6 +194,19 @@ export function openPosition(
   confidence: number,
   edgeScore: number, // NEW: from scanner, 0-100
 ): PolyPosition | null {
+  // CRITICAL: Validate paper trading only
+  validatePaperTrading(wallet);
+
+  // Check and reset daily limits
+  checkAndResetDailyLimits(wallet);
+
+  // Check if trading is allowed
+  const limits = checkLossLimits(wallet);
+  if (!limits.canTrade) {
+    log.warn('Position rejected due to loss limits', { reason: limits.reason });
+    return null;
+  }
+
   const divBalance = wallet.divisionBalances.get(division);
   if (!divBalance) {
     log.warn('Division not found', { division });
@@ -241,12 +330,16 @@ export function closePosition(
   wallet.totalInvested = calculateTotalInvested(wallet);
   wallet.totalRealizedPnL += netPnL;
 
+  // Track daily P&L separately
+  wallet.dailyRealizedPnL = (wallet.dailyRealizedPnL || 0) + netPnL;
+
   log.info('Closed position', {
     marketId: position.marketId,
     division: position.division,
     pnl: netPnL.toFixed(2),
     fee: fee.toFixed(2),
     proceeds: proceeds.toFixed(2),
+    dailyPnL: wallet.dailyRealizedPnL?.toFixed(2),
   });
 
   return netPnL;

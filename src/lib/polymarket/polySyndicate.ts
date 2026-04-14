@@ -6,8 +6,13 @@
 
 import { PolyMarket, PolyDivision } from './polyTypes';
 import { createLogger } from '@/lib/core/logger';
+import { supabase } from '@/lib/store/db';
 
 const log = createLogger('PolySyndicate');
+
+// LLM configuration
+const LLM_TIMEOUT_MS = 3000; // Reduced from 8s to 3s (fail faster)
+const LLM_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // Cache for 24h
 
 // API keys from environment
 const DEEPSEEK_KEY = () => process.env.DEEPSEEK_API_KEY || '';
@@ -246,27 +251,86 @@ Respond with valid JSON:
 }`;
 }
 
-// ─── Call LLM with fallback cascade ───────────────────
+// ─── Cache layer: get/save/validate ───────────────────
+async function getCachedLLMResponse(prompt: string, role: string): Promise<string | null> {
+  try {
+    const hash = await hashPrompt(prompt, role);
+    const { data, error } = await supabase
+      .from('llm_cache')
+      .select('response, created_at')
+      .eq('hash', hash)
+      .single();
+
+    if (error || !data) return null;
+
+    const age = Date.now() - new Date(data.created_at).getTime();
+    if (age > LLM_CACHE_TTL_MS) return null; // Expired
+
+    log.debug('LLM cache hit', { role, age });
+    return data.response;
+  } catch {
+    return null; // Cache lookup failed, continue to live calls
+  }
+}
+
+async function saveCachedLLMResponse(
+  prompt: string,
+  role: string,
+  response: string,
+): Promise<void> {
+  try {
+    const hash = await hashPrompt(prompt, role);
+    await supabase.from('llm_cache').upsert(
+      {
+        hash,
+        role,
+        response,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: 'hash' },
+    );
+  } catch (err) {
+    log.debug('Failed to cache LLM response', { error: String(err) });
+  }
+}
+
+async function hashPrompt(prompt: string, role: string): Promise<string> {
+  // Simple hash for cache key: role + first 100 chars of prompt
+  return `${role}:${prompt.substring(0, 100)}`.replace(/\s+/g, '_');
+}
+
+// ─── Call LLM with parallel providers + cache ─────────
 async function callLLM(prompt: string, role: string): Promise<string | null> {
-  // Try DeepSeek first
-  if (DEEPSEEK_KEY()) {
-    const res = await callDeepSeek(prompt, role);
-    if (res) return res;
+  // 1. Try cache first
+  const cached = await getCachedLLMResponse(prompt, role);
+  if (cached) return cached;
+
+  // 2. Run DeepSeek and OpenAI in parallel
+  const results = await Promise.allSettled([
+    DEEPSEEK_KEY() ? callDeepSeek(prompt, role) : Promise.resolve(null),
+    OPENAI_KEY() ? callOpenAI(prompt, role) : Promise.resolve(null),
+  ]);
+
+  const deepseekRes = results[0]?.status === 'fulfilled' ? results[0].value : null;
+  const openaiRes = results[1]?.status === 'fulfilled' ? results[1].value : null;
+
+  const response = deepseekRes || openaiRes;
+  if (response) {
+    // Cache successful response
+    await saveCachedLLMResponse(prompt, role, response);
+    return response;
   }
 
-  // Fall back to OpenAI
-  if (OPENAI_KEY()) {
-    const res = await callOpenAI(prompt, role);
-    if (res) return res;
-  }
-
-  // Last resort: Gemini (if configured)
+  // 3. Fall back to Gemini if both providers failed
   if (GEMINI_KEY()) {
-    const res = await callGemini(prompt, role);
-    if (res) return res;
+    const geminiRes = await callGemini(prompt, role);
+    if (geminiRes) {
+      await saveCachedLLMResponse(prompt, role, geminiRes);
+      return geminiRes;
+    }
   }
 
-  log.warn('No LLM available, using fallback', { role });
+  log.warn('All LLM providers failed, using fallback', { role });
   return null;
 }
 
@@ -292,7 +356,7 @@ async function callDeepSeek(prompt: string, role: string): Promise<string | null
         max_tokens: 300,
         response_format: { type: 'json_object' },
       }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
 
     if (!res.ok) {
@@ -330,7 +394,7 @@ async function callOpenAI(prompt: string, role: string): Promise<string | null> 
         max_tokens: 300,
         response_format: { type: 'json_object' },
       }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
 
     if (!res.ok) {
@@ -365,7 +429,7 @@ async function callGemini(prompt: string, role: string): Promise<string | null> 
             },
           ],
         }),
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
       },
     );
 

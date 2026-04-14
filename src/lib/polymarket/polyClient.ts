@@ -1,5 +1,20 @@
 // ============================================================
 // Polymarket API Client — CLOB + Gamma with rate limiting
+//
+// ⚠️ PAPER TRADING ONLY ⚠️
+//
+// This module is configured for PAPER TRADING (phantom bets only).
+// No real trades are executed. No real money is at risk.
+//
+// If you intend to add live trading in the future:
+// 1. Create a separate execution layer (do NOT reuse this phantom logic)
+// 2. Add transaction signing and authentication
+// 3. Add real-time position monitoring
+// 4. Add kill switches at the exchange API level
+// 5. Create separate wallet & position management
+// 6. Add audit logging and compliance tracking
+//
+// DO NOT modify this module to support live trading.
 // ============================================================
 
 import { PolyMarket, PolyOutcome, PolyDivision, DIVISION_SLUGS } from './polyTypes';
