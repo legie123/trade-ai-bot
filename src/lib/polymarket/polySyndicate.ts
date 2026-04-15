@@ -7,6 +7,7 @@
 import { PolyMarket, PolyDivision } from './polyTypes';
 import { createLogger } from '@/lib/core/logger';
 import { supabase } from '@/lib/store/db';
+import { sentimentAgent } from '@/lib/v2/intelligence/agents/sentimentAgent';
 
 const log = createLogger('PolySyndicate');
 
@@ -80,10 +81,45 @@ export async function analyzeMarket(
     architectOpinion.direction === oracleOpinion.direction ? 100 : 0,
   );
 
+  // ── ADDITIVE (Phase 2 Batch 6): sentiment bias — never flips direction,
+  // only adjusts confidence when sentiment agrees or disagrees. Bounded ±15.
+  // Controlled by SYNDICATE_SENTIMENT_BIAS (default ON). Safe no-op if no sentiment.
+  let sentimentAdjustment = 0;
+  let sentimentNote = '';
+  try {
+    const biasEnabled = (process.env.SYNDICATE_SENTIMENT_BIAS ?? 'true').toLowerCase() !== 'false';
+    if (biasEnabled) {
+      const snap = await sentimentAgent.getSnapshot();
+      // Try to match on title symbols first, then fall back to overall
+      const title = (market.title || market.question || '').toUpperCase();
+      const matched = snap.bySymbol.find((s) => title.includes(s.symbol));
+      const overall = snap.overall;
+      if (matched && matched.count >= 2) {
+        // Align score with direction: YES/BUY benefits from bullish, NO/SELL from bearish
+        const dir = consensusDirection;
+        if (dir === 'BUY_YES' || dir === 'BUY' || dir === 'YES') {
+          sentimentAdjustment = Math.round(matched.aggScore * 15);
+        } else if (dir === 'BUY_NO' || dir === 'SELL' || dir === 'NO') {
+          sentimentAdjustment = Math.round(-matched.aggScore * 15);
+        }
+        sentimentNote = `sentiment(${matched.symbol}=${matched.aggScore.toFixed(2)}, n=${matched.count}) Δ=${sentimentAdjustment}`;
+      } else if (overall.count >= 5 && Math.abs(overall.aggScore) > 0.2) {
+        // Weak fallback: overall market sentiment, smaller magnitude
+        sentimentAdjustment = Math.round(overall.aggScore * 5);
+        sentimentNote = `sentiment(overall=${overall.aggScore.toFixed(2)}, n=${overall.count}) Δ=${sentimentAdjustment}`;
+      }
+    }
+  } catch (e) {
+    // Sentiment failure never blocks syndicate decision
+    log.warn('syndicate sentiment bias skipped', { error: String(e) });
+  }
+
+  const adjustedConfidence = Math.max(0, Math.min(100, consensusConfidence + sentimentAdjustment));
+
   return {
     direction: consensusDirection,
-    confidence: consensusConfidence,
-    reasoning: `Architect (${architectOpinion.confidence}%) + Oracle (${oracleOpinion.confidence}%) consensus`,
+    confidence: adjustedConfidence,
+    reasoning: `Architect (${architectOpinion.confidence}%) + Oracle (${oracleOpinion.confidence}%) consensus${sentimentNote ? ' | ' + sentimentNote : ''}`,
     architectView: architectOpinion.reasoning,
     oracleView: oracleOpinion.reasoning,
     consensusScore: agreementScore,
