@@ -155,8 +155,11 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryCountRef = useRef(0);
   const fallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const sseRecoveryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const connectRef = useRef<() => void>(() => {});
   const maxRetries = 5;
+  // ADDITIVE (Phase 2 Batch 5): probe SSE every 2 minutes while in polling
+  const SSE_RECOVERY_PROBE_MS = 120_000;
 
   // Polling fallback
   const startPolling = useCallback(() => {
@@ -190,6 +193,17 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
 
     poll(); // immediate
     fallbackTimerRef.current = setInterval(poll, fallbackIntervalMs);
+
+    // ADDITIVE: periodic SSE recovery probe. If /api/live-stream comes back up,
+    // switch from polling back to SSE without needing a page reload.
+    if (sseRecoveryTimerRef.current) clearInterval(sseRecoveryTimerRef.current);
+    sseRecoveryTimerRef.current = setInterval(() => {
+      // reset retry counter so connectRef attempts a full SSE cycle again
+      retryCountRef.current = 0;
+      try {
+        connectRef.current();
+      } catch { /* noop */ }
+    }, SSE_RECOVERY_PROBE_MS);
   }, [fallbackIntervalMs]);
 
   // SSE connection — uses ref to allow self-referencing without declaration order issues
@@ -214,6 +228,19 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
       es.addEventListener('connected', () => {
         setConnectionStatus('connected');
         retryCountRef.current = 0;
+        // ADDITIVE: tear down polling + recovery probe once SSE is up again
+        if (fallbackTimerRef.current) {
+          clearInterval(fallbackTimerRef.current);
+          fallbackTimerRef.current = null;
+        }
+        if (sseRecoveryTimerRef.current) {
+          clearInterval(sseRecoveryTimerRef.current);
+          sseRecoveryTimerRef.current = null;
+        }
+        if (sseRecoveryTimerRef.current) {
+          clearInterval(sseRecoveryTimerRef.current);
+          sseRecoveryTimerRef.current = null;
+        }
       });
 
       es.addEventListener('update', (event) => {
@@ -395,6 +422,10 @@ export function useRealtimeData(options: UseRealtimeOptions = {}) {
         if (fallbackTimerRef.current) {
           clearInterval(fallbackTimerRef.current);
           fallbackTimerRef.current = null;
+        }
+        if (sseRecoveryTimerRef.current) {
+          clearInterval(sseRecoveryTimerRef.current);
+          sseRecoveryTimerRef.current = null;
         }
       };
     }

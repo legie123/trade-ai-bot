@@ -9,6 +9,7 @@ import { useRealtimeData } from '@/hooks/useRealtimeData';
 import BottomNav from '@/components/BottomNav';
 import DeepSeekStatus from '@/app/components/DeepSeekStatus';
 import IntelligencePanel from '@/components/IntelligencePanel';
+import FreshnessBadge from '@/components/FreshnessBadge';
 
 const C = {
   bg:'#07080d', surface:'#0d1018', surfaceAlt:'#111520', border:'#1a2133', borderAlt:'#242d40',
@@ -183,6 +184,7 @@ export default function StatusPage(){
         </div>
         
         <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
+          <FreshnessBadge timestamp={lastUpdate?lastUpdate.getTime():null} label="feed" />
           <div style={{display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:5,border:`1px solid ${(connColor[connectionStatus]||C.muted)}30`,background:hBg(connectionStatus==='connected'?'OK':connectionStatus==='error'?'ERROR':'WARN')}}>
             <div style={{width:6,height:6,borderRadius:'50%',background:connColor[connectionStatus]||C.mutedLight,animation:connectionStatus==='connected'?'pulse 2s infinite':'none'}}/>
             <span style={{fontSize:9,fontWeight:700,color:connColor[connectionStatus]||C.mutedLight}}>{connLabel[connectionStatus]||connectionStatus.toUpperCase()}</span>

@@ -7,6 +7,7 @@ import { PolyMarket, PolyDivision, PolyOpportunity, PolyScanResult } from './pol
 import { getMarketsByCategory, getOrderBook } from './polyClient';
 import { createLogger } from '@/lib/core/logger';
 import { supabase } from '@/lib/store/db';
+import { computeOrderbookIntel, BookLevel } from '@/lib/v2/intelligence/agents/orderbookIntel';
 
 const log = createLogger('MarketScanner');
 
@@ -301,6 +302,29 @@ async function scoreOrderBookSpread(market: PolyMarket): Promise<number> {
     // Best bid and ask
     const bestBid = orderBook.bids[0]?.[0] || 0;
     const bestAsk = orderBook.asks[0]?.[0] || 1;
+
+    // ── ADDITIVE (Phase 2 Batch 5): populate orderbookIntel cache ──
+    // Pure side-effect. Never throws. Feeds opportunityRanker + IntelligencePanel.
+    try {
+      const bids: BookLevel[] = (orderBook.bids || []).slice(0, 10).map((b: number[]) => ({
+        price: Number(b?.[0] || 0),
+        size: Number(b?.[1] || 0),
+      })).filter((l) => l.price > 0 && l.size > 0);
+      const asks: BookLevel[] = (orderBook.asks || []).slice(0, 10).map((a: number[]) => ({
+        price: Number(a?.[0] || 0),
+        size: Number(a?.[1] || 0),
+      })).filter((l) => l.price > 0 && l.size > 0);
+      if (bids.length > 0 && asks.length > 0) {
+        computeOrderbookIntel({
+          symbol: market.id,
+          bids: bids.sort((x, y) => y.price - x.price),
+          asks: asks.sort((x, y) => x.price - y.price),
+          at: Date.now(),
+        });
+      }
+    } catch (intelErr) {
+      log.warn('orderbookIntel cache update failed', { marketId: market.id, error: String(intelErr) });
+    }
 
     // Spread as % of mid-price
     const spread = bestAsk - bestBid;
