@@ -91,15 +91,15 @@ export async function analyzeMarket(
     if (biasEnabled) {
       const snap = await sentimentAgent.getSnapshot();
       // Try to match on title symbols first, then fall back to overall
-      const title = (market.title || market.question || '').toUpperCase();
+      const title = (market.title || '').toUpperCase();
       const matched = snap.bySymbol.find((s) => title.includes(s.symbol));
       const overall = snap.overall;
       if (matched && matched.count >= 2) {
-        // Align score with direction: YES/BUY benefits from bullish, NO/SELL from bearish
+        // Align score with direction: YES benefits from bullish, NO from bearish, SKIP no bias
         const dir = consensusDirection;
-        if (dir === 'BUY_YES' || dir === 'BUY' || dir === 'YES') {
+        if (dir === 'YES') {
           sentimentAdjustment = Math.round(matched.aggScore * 15);
-        } else if (dir === 'BUY_NO' || dir === 'SELL' || dir === 'NO') {
+        } else if (dir === 'NO') {
           sentimentAdjustment = Math.round(-matched.aggScore * 15);
         }
         sentimentNote = `sentiment(${matched.symbol}=${matched.aggScore.toFixed(2)}, n=${matched.count}) Δ=${sentimentAdjustment}`;
