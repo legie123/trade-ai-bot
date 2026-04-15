@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import BottomNav from '@/components/BottomNav';
+import IntelligencePanel from '@/components/IntelligencePanel';
 
 /* ── Types ──────────────────────────────────────── */
 interface DivisionStat {
@@ -822,6 +823,9 @@ export default function PolymarketPage() {
             </div>
           </>
         )}
+
+        {/* ─── ADDITIVE: Intelligence Panel (Phase 2 Batch 4) ─── */}
+        <IntelligencePanel defaultSector="POLYMARKET" title="Polymarket Intelligence" />
 
       </div>
 

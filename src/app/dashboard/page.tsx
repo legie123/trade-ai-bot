@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
 import BottomNav from '@/components/BottomNav';
 import DeepSeekStatus from '@/app/components/DeepSeekStatus';
+import IntelligencePanel from '@/components/IntelligencePanel';
 
 const C = {
   bg:'#07080d', surface:'#0d1018', surfaceAlt:'#111520', border:'#1a2133', borderAlt:'#242d40',
@@ -655,6 +656,11 @@ export default function StatusPage(){
           </div>
         </div>
       )}
+
+      {/* ─── ADDITIVE: Intelligence Panel (Phase 2 Batch 4) ─── */}
+      <div style={{padding:'0 12px'}}>
+        <IntelligencePanel defaultSector="ALL" title="Market Intelligence" />
+      </div>
 
       <div style={{height:16}}/>
       <BottomNav/>
