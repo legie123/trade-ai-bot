@@ -113,8 +113,14 @@ export class ManagerVizionar {
 
     // ═══ CONFIDENCE CAP: Limit max confidence based on rolling win rate ═══
     const wr = intelligence.overallWinRate || 0;
+    const totalBattles = intelligence.totalBattles ?? 0;
     let confidenceCap = 1.0;
-    if (wr < 0.30) {
+
+    // BOOTSTRAP PERIOD: New gladiators (< 20 trades) get full confidence to collect training data
+    if (totalBattles < 20) {
+      confidenceCap = 1.0;
+      log.info(`[RL BOOTSTRAP] ${intelligence.gladiatorId} in warm-up (${totalBattles}/20 trades) → no confidence cap`);
+    } else if (wr < 0.30) {
       confidenceCap = 0.40; // WR < 30% → hard cap at 40% confidence
       log.warn(`[RL CAP] ${intelligence.gladiatorId} WR=${(wr*100).toFixed(0)}% → confidence capped at 40%`);
     } else if (wr < 0.50) {

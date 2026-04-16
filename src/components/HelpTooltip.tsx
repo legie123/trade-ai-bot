@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 export interface HelpSection {
   title: string;
   description: string;
-  details?: string[];
+  details?: readonly string[] | string[];
   tip?: string;
 }
 
