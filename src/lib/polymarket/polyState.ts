@@ -166,9 +166,16 @@ export async function persistBoth(): Promise<void> {
 }
 
 // ── Wait for initialization ──
-export async function waitForInit(): Promise<void> {
+export async function waitForInit(timeoutMs = 10_000): Promise<void> {
   ensureInitialized();
   if (initPromise) {
-    await initPromise;
+    await Promise.race([
+      initPromise,
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('PolyState init timeout')), timeoutMs),
+      ),
+    ]).catch(() => {
+      // Timeout or init failure — proceed with defaults rather than blocking
+    });
   }
 }

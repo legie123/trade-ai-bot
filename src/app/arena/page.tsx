@@ -73,7 +73,8 @@ export default function ArenaPage() {
       try {
         const res = await fetch('/api/v2/arena');
         const json = await res.json();
-        setData(json);
+        // API wraps in { success, data } via successResponse
+        setData(json.data || json);
         setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       } catch { /* silent */ } finally {
         setLoading(false);

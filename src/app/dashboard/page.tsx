@@ -109,8 +109,36 @@ export default function StatusPage(){
         fetch('/api/v2/health').then(r=>r.ok?r.json():null),
         fetch('/api/exchanges').then(r=>r.ok?r.json():null),
       ]);
-      if(hR.status==='fulfilled'&&hR.value)setHealth(hR.value);
-      if(eR.status==='fulfilled'&&eR.value)setExchanges(eR.value);
+      if(hR.status==='fulfilled'&&hR.value){
+        const raw=hR.value.data||hR.value;
+        // Map v2 health shape → legacy HealthData interface
+        const sys=raw.systems||{};
+        const tm=raw.trading_mode||{};
+        setHealth({
+          status:raw.overall_status||'UNKNOWN',
+          version:tm.version||'—',
+          systemMode:tm.mode||'PAPER',
+          uptimeSecs:raw.summary?.uptime||0,
+          coreMonitor:{
+            heartbeat:sys.heartbeat?.status||'UNKNOWN',
+            watchdog:sys.watchdog?.status||'UNKNOWN',
+            killSwitch:tm.killSwitchEngaged?'ENGAGED':'SAFE',
+          },
+          trading:{
+            autoSelectEnabled:!!tm.autoSelectEnabled,
+            totalGladiators:tm.totalGladiators||0,
+            decisionsToday:tm.decisionsToday||0,
+            forgeProgress:tm.forgeProgress||0,
+          },
+          api:{
+            binance:{ok:sys.mexc?.status==='OK'||sys.binance?.status==='OK',mode:tm.mode||'PAPER',latencyMs:sys.mexc?.latency_ms||sys.binance?.latency_ms||0},
+            dexScreener:{ok:sys.dexscreener?.status==='OK'},
+            coinGecko:{ok:sys.coingecko?.status==='OK'},
+          },
+          timestamp:raw.timestamp||new Date().toISOString(),
+        });
+      }
+      if(eR.status==='fulfilled'&&eR.value)setExchanges(eR.value.data||eR.value);
       setLastLight(new Date());
     }catch{}
   },[]);
@@ -122,7 +150,7 @@ export default function StatusPage(){
         fetch('/api/diagnostics/master').then(r=>r.ok?r.json():null),
         fetch('/api/diagnostics/credits').then(r=>r.ok?r.json():null),
       ]);
-      if(dR.status==='fulfilled'&&dR.value)setDiag(dR.value);
+      if(dR.status==='fulfilled'&&dR.value)setDiag(dR.value.data||dR.value);
       if(cR.status==='fulfilled'&&cR.value)setCredits(cR.value);
       setLastDiag(new Date());
     }catch{}finally{setDiagLoading(false);setLoading(false);}

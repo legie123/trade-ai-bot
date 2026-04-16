@@ -131,18 +131,22 @@ export default function PolymarketPage() {
         fetch('/api/v2/polymarket?action=wallet'),
         fetch('/api/v2/polymarket?action=gladiators'),
       ]);
+      // API wraps responses in { success, data } via successResponse
       if (statusRes.ok) {
         const s = await statusRes.json();
-        setStatus(s);
-        setConnHealth(s.connection || null);
+        const sd = s.data || s;
+        setStatus(sd);
+        setConnHealth(sd.connection || null);
       }
       if (walletRes.ok) {
         const w = await walletRes.json();
-        setWallet(w.wallet);
+        const wd = w.data || w;
+        setWallet(wd.wallet || null);
       }
       if (gladRes.ok) {
         const g = await gladRes.json();
-        setGladiators(g.gladiators || []);
+        const gd = g.data || g;
+        setGladiators(gd.gladiators || []);
       }
       setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       setError(null);
@@ -172,7 +176,8 @@ export default function PolymarketPage() {
         : '/api/v2/polymarket?action=scan';
       const res = await fetch(url);
       if (res.ok) {
-        const data = await res.json();
+        const raw = await res.json();
+        const data = raw.data || raw;
         const newScans = data.scans || (data.scan ? [data.scan] : []);
         setScans(prev => {
           const merged = [...prev];
@@ -201,7 +206,8 @@ export default function PolymarketPage() {
     try {
       const res = await fetch(`/api/v2/polymarket?action=markets&division=${div}`);
       if (res.ok) {
-        const data = await res.json();
+        const raw = await res.json();
+        const data = raw.data || raw;
         setMarkets(data.markets || []);
         addLog('success', `Loaded ${data.markets?.length || 0} markets from ${div}`);
       }
@@ -217,8 +223,9 @@ export default function PolymarketPage() {
     try {
       const res = await fetch('/api/v2/polymarket?action=health');
       if (res.ok) {
-        const data = await res.json();
-        setConnHealth(data.polymarket);
+        const raw = await res.json();
+        const data = raw.data || raw;
+        setConnHealth(data.polymarket || null);
         addLog('success', `Health: CLOB=${data.polymarket?.clob ? 'OK' : 'FAIL'} Gamma=${data.polymarket?.gamma ? 'OK' : 'FAIL'}`);
       }
     } catch (err) {
