@@ -15,6 +15,7 @@ import BacktestTrendPanel from '@/components/BacktestTrendPanel';
 import DivisionTunerPanel from '@/components/DivisionTunerPanel';
 import SentinelCouplingPanel from '@/components/SentinelCouplingPanel';
 import DivisionSparklineGrid from '@/components/DivisionSparklineGrid';
+import GladiatorAttributionPanel from '@/components/GladiatorAttributionPanel';
 
 const C = {
   bg:'#07080d', surface:'#0d1018', surfaceAlt:'#111520', border:'#1a2133', borderAlt:'#242d40',
@@ -702,6 +703,9 @@ export default function StatusPage(){
 
       {/* ─── ADDITIVE: Per-Division Sparkline Grid (Phase 2 Batch 13) ─── */}
       <DivisionSparklineGrid onSelectDivision={setSelectedDivision} />
+
+      {/* ─── ADDITIVE: Gladiator Attribution (Phase 2 Batch 16) ─── */}
+      <GladiatorAttributionPanel />
 
       {/* ─── ADDITIVE: Intelligence Panel (Phase 2 Batch 4) ─── */}
       <div style={{padding:'0 12px'}}>
