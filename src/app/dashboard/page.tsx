@@ -788,6 +788,32 @@ export default function StatusPage(){
             <div style={{fontSize:18,fontWeight:700,color:C.green}}>{uptime(diag?.system?.uptimeSeconds||0)}</div>
             <div style={{fontSize:8,color:C.mutedLight,marginTop:2}}>{updateCount} SSE updates</div>
           </div>
+          {/* Feed Freshness */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>FEED FRESHNESS</div>
+            {apiSources.length>0?(
+              <BarChart data={apiSources.slice(0,5).map(s=>s.status==='OK'?100:s.status==='DOWN'?0:50)} labels={apiSources.slice(0,5).map(s=>s.name.slice(0,6))} colors={apiSources.slice(0,5).map(s=>s.status==='OK'?C.green:s.status==='DOWN'?C.red:C.yellow)} height={50}/>
+            ):<div style={{color:C.mutedLight,fontSize:9}}>No data</div>}
+          </div>
+          {/* Signal Attribution */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>SIGNAL SOURCE</div>
+            {strategies.length>0?(
+              <BarChart data={strategies.slice(0,5).map((s:{totalTrades:number})=>s.totalTrades)} labels={strategies.slice(0,5).map((s:{source:string})=>(s.source||'?').slice(0,6))} colors={[C.blue,C.purple,C.green,C.orange,C.yellow]} height={50}/>
+            ):<div style={{color:C.mutedLight,fontSize:9}}>No data</div>}
+          </div>
+          {/* Coupling */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>COUPLING</div>
+            {diag?.sentinel?(
+              <>
+                <div style={{fontSize:16,fontWeight:700,color:(diag.sentinel.dailyLossPercent??0)>5?C.red:(diag.sentinel.dailyLossPercent??0)>2?C.yellow:C.green}}>
+                  {pct(diag.sentinel.dailyLossPercent)}
+                </div>
+                <div style={{fontSize:8,color:C.mutedLight,marginTop:2}}>Daily Loss · {diag.sentinel.triggered?<span style={{color:C.red,fontWeight:700}}>TRIGGERED</span>:'OK'}</div>
+              </>
+            ):<div style={{color:C.mutedLight,fontSize:9}}>No sentinel data</div>}
+          </div>
         </div>
       </Section>
 
@@ -1106,7 +1132,28 @@ export default function StatusPage(){
               document.body.appendChild(a);a.click();document.body.removeChild(a);
             }
             URL.revokeObjectURL(url);
-          }}>EXPORT</button>
+          }}>JSON</button>
+          <button className="tab-btn" onClick={async(e)=>{
+            e.stopPropagation();
+            // CSV export: decisions table
+            const decisions=(bot?.decisions||[]).filter((d:{timestamp:string})=>{
+              const t=new Date(d.timestamp).getTime();
+              return t>=Date.now()-historyHours*3600000;
+            }) as {id:string;symbol:string;direction:string;confidence:number;price:number;timestamp:string;outcome:string;pnlPercent:number|null}[];
+            const header='timestamp,symbol,direction,confidence,outcome,pnl_percent';
+            const rows=decisions.map(d=>`${d.timestamp},${d.symbol},${d.direction},${(d.confidence*100).toFixed(1)},${d.outcome},${d.pnlPercent?.toFixed(2)??''}`);
+            const csv=[header,...rows].join('\n');
+            const blob=new Blob([csv],{type:'text/csv'});
+            const url=URL.createObjectURL(blob);
+            const fname=`trade-ai-decisions-${new Date().toISOString().slice(0,16)}.csv`;
+            if(typeof navigator!=='undefined'&&navigator.share&&navigator.canShare?.({files:[new File([blob],fname,{type:'text/csv'})]})){
+              try{await navigator.share({files:[new File([blob],fname,{type:'text/csv'})],title:'Trade AI Decisions'});}catch{}
+            }else{
+              const a=document.createElement('a');a.href=url;a.download=fname;
+              document.body.appendChild(a);a.click();document.body.removeChild(a);
+            }
+            URL.revokeObjectURL(url);
+          }}>CSV</button>
         </div>
       }>
         <div style={{padding:'10px 12px'}}>
