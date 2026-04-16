@@ -33,18 +33,14 @@ git add -A
 echo ""
 echo "⟳ Commit..."
 TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
-git commit -m "feat: audit fix — crypto-radar BTC timeout + polymarket auto-scan + BottomNav cockpit + deploy scripts
+git commit -m "fix: Sidebar + CommandPalette missing Cockpit entry
 
-- FIX: crypto-radar BTC timeout 8s→20s (BTC panel was disappearing on load)
-- FIX: crypto-radar tokens timeout 12s→20s
-- FIX: crypto-radar BTC LOADING... placeholder when btcData null
-- FIX: polymarket auto-scan TRENDING on startup (scanner starts populated)
-- FIX: BottomNav — added /cockpit entry
-- NEW: open_trade_ai.command — desktop button to open all pages in browser
-- NEW: push_and_deploy.command — opens browser after deploy
+- Sidebar.tsx: added Cockpit 🚀 (shortcut C) between Arena and Status
+- CommandPalette.tsx: added nav-cockpit + nav-polymarket entries
+- Both nav systems now have all 5 pages: Radar Poly Arena Cockpit Status
 - Deploy: $TIMESTAMP
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>" 2>/dev/null || echo "⚠️  Nothing new to commit (already up to date)"
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>" 2>/dev/null || echo "⚠️  Nothing new to commit"
 
 echo ""
 echo "⟳ Push to origin main..."

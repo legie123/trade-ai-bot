@@ -22,7 +22,9 @@ export default function CommandPalette() {
   const commands: CommandItem[] = [
     // Navigation
     { id: 'nav-radar', icon: '🛰️', label: 'Go to Radar', description: 'Crypto Radar discovery', category: 'nav', action: () => router.push('/crypto-radar') },
+    { id: 'nav-polymarket', icon: '🎯', label: 'Go to Polymarket', description: 'Prediction market trading', category: 'nav', action: () => router.push('/polymarket') },
     { id: 'nav-arena', icon: '🏆', label: 'Go to Arena', description: 'Gladiator battle arena', category: 'nav', action: () => router.push('/arena') },
+    { id: 'nav-cockpit', icon: '🚀', label: 'Go to Cockpit', description: 'Orbital command dashboard', category: 'nav', action: () => router.push('/cockpit') },
     { id: 'nav-status', icon: '📊', label: 'Go to Status', description: 'System health dashboard', category: 'nav', action: () => router.push('/dashboard') },
     // Actions
     { id: 'act-evaluate', icon: '▶', label: 'Evaluate Arena', description: 'Run trade evaluator', category: 'action', action: () => { fetch('/api/bot', { method: 'POST', body: JSON.stringify({ action: 'evaluate' }), headers: { 'Content-Type': 'application/json' } }); } },

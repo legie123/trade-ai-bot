@@ -7,7 +7,8 @@ import { useState } from 'react';
 const NAV_ITEMS = [
   { href: '/crypto-radar', icon: '🛰️', label: 'Radar', shortcut: 'R' },
   { href: '/polymarket',   icon: '🎯', label: 'Polymarket', shortcut: 'P' },
-  { href: '/arena',         icon: '🏆', label: 'Arena', shortcut: 'A' },
+  { href: '/arena',        icon: '🏆', label: 'Arena', shortcut: 'A' },
+  { href: '/cockpit',      icon: '🚀', label: 'Cockpit', shortcut: 'C' },
   { href: '/dashboard',    icon: '📊', label: 'Status', shortcut: 'S' },
 ];
 
