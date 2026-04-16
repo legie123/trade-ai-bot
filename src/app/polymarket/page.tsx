@@ -166,6 +166,36 @@ export default function PolymarketPage() {
     return () => clearInterval(t);
   }, [fetchCore, autoRefresh]);
 
+  // Auto-scan TRENDING + CRYPTO on first mount to populate scanner data
+  const autoScannedRef = useRef(false);
+  useEffect(() => {
+    if (autoScannedRef.current) return;
+    autoScannedRef.current = true;
+    // Delay to let fetchCore settle first
+    const timer = setTimeout(async () => {
+      try {
+        addLog('scan', 'Auto-scanning TRENDING + CRYPTO on startup...');
+        const res = await fetch('/api/v2/polymarket?action=scan&division=TRENDING');
+        if (res.ok) {
+          const raw = await res.json();
+          const data = raw.data || raw;
+          const newScans = data.scans || (data.scan ? [data.scan] : []);
+          setScans(prev => {
+            const merged = [...prev];
+            for (const ns of newScans) {
+              const idx = merged.findIndex(s => s.division === ns.division);
+              if (idx >= 0) merged[idx] = ns; else merged.push(ns);
+            }
+            return merged;
+          });
+          const oppCount = newScans.reduce((a: number, s: ScanResult) => a + (s.opportunities?.length || 0), 0);
+          addLog('success', `Auto-scan complete: ${oppCount} opportunities in TRENDING`);
+        }
+      } catch { /* non-blocking */ }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [addLog]);
+
   const runScan = async (division?: string) => {
     const div = division || selectedDivision;
     if (division) setScanningDiv(division); else setScanning(true);

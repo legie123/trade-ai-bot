@@ -104,9 +104,9 @@ export default function CryptoRadarPage() {
   const fetchMain = useCallback(async () => {
     try {
       const [signalsRes, btcRes, botRes] = await Promise.all([
-        fetch('/api/tradingview', { signal: AbortSignal.timeout(8000) }).catch(() => null),
-        fetch('/api/btc-signals', { signal: AbortSignal.timeout(8000) }).catch(() => null),
-        fetch('/api/bot', { signal: AbortSignal.timeout(8000) }).catch(() => null),
+        fetch('/api/tradingview', { signal: AbortSignal.timeout(10000) }).catch(() => null),
+        fetch('/api/btc-signals', { signal: AbortSignal.timeout(20000) }).catch(() => null),
+        fetch('/api/bot', { signal: AbortSignal.timeout(10000) }).catch(() => null),
       ]);
       if (signalsRes?.ok) {
         const d = await signalsRes.json();
@@ -125,7 +125,7 @@ export default function CryptoRadarPage() {
 
   const fetchTokens = useCallback(async () => {
     try {
-      const res = await fetch('/api/tokens', { signal: AbortSignal.timeout(12000) }).catch(() => null);
+      const res = await fetch('/api/tokens', { signal: AbortSignal.timeout(20000) }).catch(() => null);
       if (res?.ok) {
         const d = await res.json();
         setTokens((d.tokens || []).map((t: Record<string, unknown>) => ({
@@ -227,7 +227,7 @@ export default function CryptoRadarPage() {
           RADAR<span style={{ color: C.blue }}>.AI</span>
         </span>
 
-        {btcData && (
+        {btcData ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(255,255,255,0.03)', padding: '6px 16px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.05)' }}>
             <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700 }}>
               BTC <span style={{ color: btcData.price >= btcData.dailyOpen ? C.green : C.red, textShadow: `0 0 10px ${btcData.price >= btcData.dailyOpen ? C.green : C.red}80` }}>${formatNum(btcData.price)}</span>
@@ -245,6 +245,11 @@ export default function CryptoRadarPage() {
             <span style={{ fontSize: 11, color: btcData.price >= btcData.ema200 ? C.green : C.red, fontWeight: 600 }}>
                {btcData.price >= btcData.ema200 ? '▲ > EMA200' : '▼ < EMA200'}
             </span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.03)', padding: '6px 14px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.yellow, animation: 'pulseGlow 1.5s infinite' }} />
+            <span style={{ fontFamily: 'monospace', fontSize: 12, color: C.muted, fontWeight: 600 }}>BTC LOADING...</span>
           </div>
         )}
 
