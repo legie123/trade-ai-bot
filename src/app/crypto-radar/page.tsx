@@ -100,16 +100,16 @@ interface CombatAudit {
 }
 
 const C = {
-  text: '#e8ecf4',
-  muted: '#6b7891',
-  mutedLight: '#9aa5be',
+  text: '#eae6f0',
+  muted: '#5e576e',
+  mutedLight: '#9a93a8',
   green: '#00e676',
-  red: '#ff3d57',
-  blue: '#29b6f6',
-  yellow: '#ffd740',
-  purple: '#c084fc',
-  borderLight: '#242d44',
-  border: '#1a2035',
+  red: '#DC143C',
+  blue: '#DAA520',
+  yellow: '#FFD700',
+  purple: '#B8860B',
+  borderLight: '#1e1828',
+  border: '#140e20',
 };
 
 function directionColor(d: string) {
@@ -122,12 +122,12 @@ function directionColor(d: string) {
 }
 
 function directionBg(d: string) {
-  if (!d) return 'rgba(41,182,246,0.15)';
+  if (!d) return 'rgba(218,165,32,0.15)';
   const up = ['BUY', 'LONG'];
   const down = ['SELL', 'SHORT'];
   if (up.includes(d.toUpperCase())) return 'rgba(0,230,118,0.15)';
   if (down.includes(d.toUpperCase())) return 'rgba(255,61,87,0.15)';
-  return 'rgba(41,182,246,0.15)';
+  return 'rgba(218,165,32,0.15)';
 }
 
 function formatNum(n: number): string {
@@ -236,7 +236,7 @@ export default function CryptoRadarPage() {
     });
 
   return (
-    <div style={{ minHeight: '100vh', background: 'radial-gradient(circle at 50% 0%, #151a2d, #050609)', color: C.text, paddingBottom: 80,
+    <div style={{ minHeight: '100vh', background: 'radial-gradient(circle at 50% 0%, #0d0a14, #06040a)', color: C.text, paddingBottom: 80,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Outfit", "Inter", sans-serif' }}>
       
       <style>{`
@@ -247,7 +247,7 @@ export default function CryptoRadarPage() {
         @keyframes radarScan { 0% { transform: rotate(0deg); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: rotate(360deg); opacity: 0; } }
         
         .glass-card {
-          background: rgba(18, 22, 38, 0.55);
+          background: rgba(12, 8, 18, 0.6);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
           border: 1px solid rgba(255,255,255,0.04);
@@ -261,7 +261,7 @@ export default function CryptoRadarPage() {
         }
         
         .token-card {
-          background: rgba(12, 15, 26, 0.45);
+          background: rgba(10, 6, 16, 0.45);
           backdrop-filter: blur(8px);
           border: 1px solid rgba(255,255,255,0.03);
           border-radius: 12px;
@@ -270,7 +270,7 @@ export default function CryptoRadarPage() {
         }
         .token-card:hover {
           transform: translateY(-3px);
-          border-color: rgba(41,182,246,0.3);
+          border-color: rgba(218,165,32,0.3);
           background: rgba(15, 18, 32, 0.7);
         }
         
@@ -279,7 +279,7 @@ export default function CryptoRadarPage() {
       `}</style>
 
       {/* ── TOP HEADER ──────────────────────────────── */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(5, 6, 9, 0.8)',
+      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(6, 4, 10, 0.8)',
         backdropFilter: 'blur(20px)', borderBottom: `1px solid rgba(255,255,255,0.05)`, padding: '12px 16px',
         display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
 
@@ -327,13 +327,13 @@ export default function CryptoRadarPage() {
             }} />
           </div>
           <button onClick={() => fetchMain()} style={{
-            padding: '8px 16px', background: 'rgba(41,182,246,0.1)',
-            border: `1px solid rgba(41,182,246,0.3)`, borderRadius: 8,
+            padding: '8px 16px', background: 'rgba(218,165,32,0.1)',
+            border: `1px solid rgba(218,165,32,0.3)`, borderRadius: 8,
             color: C.blue, cursor: 'pointer', fontSize: 12, fontWeight: 700,
             transition: 'all 0.2s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(41,182,246,0.2)'; e.currentTarget.style.boxShadow = '0 0 15px rgba(41,182,246,0.4)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(41,182,246,0.1)'; e.currentTarget.style.boxShadow = 'none'; }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(218,165,32,0.2)'; e.currentTarget.style.boxShadow = '0 0 15px rgba(218,165,32,0.4)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(218,165,32,0.1)'; e.currentTarget.style.boxShadow = 'none'; }}
           >↻ SYNC</button>
         </div>
       </div>
@@ -392,7 +392,7 @@ export default function CryptoRadarPage() {
                     <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `conic-gradient(from 0deg, transparent 70%, ${directionColor(latestAudit.finalDirection || '')}60 100%)`, animation: 'radarScan 4s linear infinite' }} />
                     
                     {/* Center Core */}
-                    <div style={{ zIndex: 2, background: 'rgba(12, 15, 26, 0.8)', backdropFilter: 'blur(10px)', borderRadius: '50%', width: 100, height: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: `2px solid ${directionColor(latestAudit.finalDirection || '')}`, boxShadow: `0 0 20px ${directionColor(latestAudit.finalDirection || '')}50` }}>
+                    <div style={{ zIndex: 2, background: 'rgba(10, 6, 16, 0.8)', backdropFilter: 'blur(10px)', borderRadius: '50%', width: 100, height: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: `2px solid ${directionColor(latestAudit.finalDirection || '')}`, boxShadow: `0 0 20px ${directionColor(latestAudit.finalDirection || '')}50` }}>
                         <div style={{ fontSize: 18, fontWeight: 800, color: directionColor(latestAudit.finalDirection || ''), letterSpacing: '0.05em' }}>
                           {latestAudit.finalDirection || 'IDLE'}
                         </div>
@@ -409,7 +409,7 @@ export default function CryptoRadarPage() {
                       return (
                       <div key={op.seat} onClick={(e) => { e.stopPropagation(); setExpandedAudit(isOpExpanded ? null : opIdx); }}
                         style={{ display: 'flex', flexDirection: 'column', gap: 0, paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer',
-                          background: isOpExpanded ? 'rgba(41,182,246,0.05)' : 'transparent', borderRadius: isOpExpanded ? 8 : 0, padding: isOpExpanded ? 8 : '0 0 8px 0', transition: 'all 0.2s ease' }}>
+                          background: isOpExpanded ? 'rgba(218,165,32,0.05)' : 'transparent', borderRadius: isOpExpanded ? 8 : 0, padding: isOpExpanded ? 8 : '0 0 8px 0', transition: 'all 0.2s ease' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{op.seat}</div>
@@ -572,8 +572,8 @@ export default function CryptoRadarPage() {
                   return (
                     <div key={i} className="token-card" onClick={() => setExpandedToken(isTkExpanded ? null : i)}
                       style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: `slideUpFade 0.3s ease ${i * 15}ms both`, cursor: 'pointer',
-                        border: isTkExpanded ? '1px solid rgba(41,182,246,0.4)' : undefined,
-                        boxShadow: isTkExpanded ? '0 0 20px rgba(41,182,246,0.15)' : undefined }}>
+                        border: isTkExpanded ? '1px solid rgba(218,165,32,0.4)' : undefined,
+                        boxShadow: isTkExpanded ? '0 0 20px rgba(218,165,32,0.15)' : undefined }}>
                       {/* Token Header */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>

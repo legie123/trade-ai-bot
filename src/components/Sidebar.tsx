@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
+import DragonLogo from './DragonLogo';
 
 const NAV_ITEMS = [
   { href: '/crypto-radar', icon: '🛰️', label: 'Radar', shortcut: 'R' },
@@ -25,7 +26,7 @@ export default function Sidebar() {
     >
       {/* Logo */}
       <div className="sidebar-logo">
-        <span className="sidebar-logo-icon">🐉</span>
+        <span className="sidebar-logo-icon"><DragonLogo size={expanded ? 32 : 26} /></span>
         {expanded && <span className="sidebar-logo-text">TRADE AI</span>}
       </div>
 

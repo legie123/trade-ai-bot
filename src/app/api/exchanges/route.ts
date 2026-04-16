@@ -162,12 +162,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // ─── Binance (Removed) ───
-    if (exchange === 'binance') {
-      return errorResponse('BINANCE_BLOCKED', 'Binance blocked by HTTP 451. Use MEXC.', 400);
-    }
-
-    return errorResponse('INVALID_ACTION', 'Invalid action. Use: price, balance, order', 400);
+    return errorResponse('INVALID_ACTION', `Invalid exchange "${exchange}" or action "${action}". Supported exchanges: mexc, binance, okx, bybit. Actions: price, balance, order`, 400);
   } catch (err) {
     return errorResponse('EXCHANGE_ERROR', (err as Error).message, 500);
   }

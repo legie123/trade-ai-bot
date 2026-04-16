@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import DragonLogo from '@/components/DragonLogo';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
@@ -95,23 +96,10 @@ export default function LoginPage() {
           {/* Logo & Brand */}
           <div className="login-brand">
             <div className="login-logo">
-              <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                <rect width="48" height="48" rx="12" fill="url(#logo-gradient)" />
-                <path d="M14 28L20 22L26 26L34 18" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M28 18H34V24" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx="14" cy="28" r="2" fill="white" opacity="0.8" />
-                <circle cx="20" cy="22" r="2" fill="white" opacity="0.8" />
-                <circle cx="26" cy="26" r="2" fill="white" opacity="0.8" />
-                <defs>
-                  <linearGradient id="logo-gradient" x1="0" y1="0" x2="48" y2="48">
-                    <stop stopColor="#8B5CF6" />
-                    <stop offset="1" stopColor="#3B82F6" />
-                  </linearGradient>
-                </defs>
-              </svg>
+              <DragonLogo size={64} />
             </div>
-            <h1 className="login-title">Trading AI</h1>
-            <p className="login-subtitle">Intelligent Crypto Trading Platform</p>
+            <h1 className="login-title">TRADE AI</h1>
+            <p className="login-subtitle">Dragon-Class Crypto Trading Platform</p>
           </div>
 
           {/* Form */}
@@ -193,17 +181,20 @@ export default function LoginPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: #0a0e17;
+          background: #06040a;
+          background-image:
+            radial-gradient(ellipse 70% 50% at 30% 20%, rgba(139,0,0,0.08) 0%, transparent 60%),
+            radial-gradient(ellipse 50% 40% at 75% 80%, rgba(218,165,32,0.04) 0%, transparent 50%);
           position: relative;
           overflow: hidden;
           font-family: 'Inter', -apple-system, sans-serif;
         }
 
-        /* Animated particles */
+        /* Animated particles — gold */
         .particles { position: absolute; inset: 0; z-index: 0; }
         .particle {
           position: absolute;
-          background: #8B5CF6;
+          background: #DAA520;
           border-radius: 50%;
           animation: float linear infinite;
         }
@@ -215,7 +206,7 @@ export default function LoginPage() {
           100% { transform: translateY(0) translateX(0); }
         }
 
-        /* Gradient orbs */
+        /* Gradient orbs — dragon red + gold */
         .orb {
           position: absolute;
           border-radius: 50%;
@@ -224,19 +215,19 @@ export default function LoginPage() {
         }
         .orb-1 {
           width: 400px; height: 400px;
-          background: rgba(139, 92, 246, 0.15);
+          background: rgba(139, 0, 0, 0.12);
           top: -100px; right: -100px;
           animation: pulse 8s ease-in-out infinite;
         }
         .orb-2 {
           width: 300px; height: 300px;
-          background: rgba(59, 130, 246, 0.12);
+          background: rgba(218, 165, 32, 0.08);
           bottom: -50px; left: -50px;
           animation: pulse 10s ease-in-out infinite reverse;
         }
         .orb-3 {
           width: 200px; height: 200px;
-          background: rgba(6, 182, 212, 0.1);
+          background: rgba(139, 0, 0, 0.06);
           top: 50%; left: 50%;
           transform: translate(-50%, -50%);
           animation: pulse 6s ease-in-out infinite;
@@ -259,16 +250,16 @@ export default function LoginPage() {
           padding: 20px;
         }
 
-        /* Card */
+        /* Card — dark glass with gold border */
         .login-card {
           width: 100%;
-          background: rgba(21, 28, 44, 0.7);
+          background: rgba(12, 8, 18, 0.75);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
-          border: 1px solid rgba(139, 92, 246, 0.15);
+          border: 1px solid rgba(218, 165, 32, 0.15);
           border-radius: 20px;
           padding: 40px 32px;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(139, 92, 246, 0.05);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(218, 165, 32, 0.04);
           animation: cardAppear 0.6s ease-out;
         }
         @keyframes cardAppear {
@@ -284,24 +275,20 @@ export default function LoginPage() {
         .login-logo {
           display: inline-flex;
           margin-bottom: 16px;
-          animation: logoGlow 3s ease-in-out infinite;
-        }
-        @keyframes logoGlow {
-          0%, 100% { filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.3)); }
-          50% { filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.6)); }
         }
         .login-title {
           font-size: 28px;
-          font-weight: 700;
-          background: linear-gradient(135deg, #e2e8f0, #8B5CF6);
+          font-weight: 800;
+          background: linear-gradient(135deg, #FFD700, #DAA520, #B8860B);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
           margin-bottom: 4px;
+          letter-spacing: 0.06em;
         }
         .login-subtitle {
           font-size: 13px;
-          color: #64748b;
+          color: #5e576e;
           letter-spacing: 0.5px;
         }
 
@@ -311,7 +298,7 @@ export default function LoginPage() {
         .input-label {
           font-size: 11px;
           font-weight: 600;
-          color: #94a3b8;
+          color: #9a93a8;
           text-transform: uppercase;
           letter-spacing: 1px;
         }
@@ -323,26 +310,26 @@ export default function LoginPage() {
         .input-icon {
           position: absolute;
           left: 14px;
-          color: #64748b;
+          color: #5e576e;
           pointer-events: none;
         }
         .login-input {
           width: 100%;
           padding: 14px 14px 14px 44px;
-          background: rgba(13, 19, 33, 0.8);
-          border: 1px solid #1e293b;
+          background: rgba(6, 4, 10, 0.8);
+          border: 1px solid rgba(218, 165, 32, 0.12);
           border-radius: 12px;
-          color: #e2e8f0;
+          color: #eae6f0;
           font-size: 15px;
           font-family: inherit;
           outline: none;
           transition: all 0.3s ease;
         }
         .login-input:focus {
-          border-color: #8B5CF6;
-          box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15), 0 0 20px rgba(139, 92, 246, 0.1);
+          border-color: #DAA520;
+          box-shadow: 0 0 0 3px rgba(218, 165, 32, 0.1), 0 0 20px rgba(218, 165, 32, 0.06);
         }
-        .login-input::placeholder { color: #475569; }
+        .login-input::placeholder { color: #3d3650; }
 
         /* Error */
         .login-error {
@@ -350,10 +337,10 @@ export default function LoginPage() {
           align-items: center;
           gap: 8px;
           padding: 10px 14px;
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid rgba(239, 68, 68, 0.2);
+          background: rgba(220, 20, 60, 0.1);
+          border: 1px solid rgba(220, 20, 60, 0.2);
           border-radius: 10px;
-          color: #ef4444;
+          color: #DC143C;
           font-size: 13px;
           animation: shake 0.4s ease-in-out;
         }
@@ -363,27 +350,28 @@ export default function LoginPage() {
           75% { transform: translateX(5px); }
         }
 
-        /* Button */
+        /* Button — gold gradient */
         .login-button {
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 10px;
           padding: 14px 24px;
-          background: linear-gradient(135deg, #8B5CF6, #6366F1);
+          background: linear-gradient(135deg, #DAA520, #B8860B);
           border: none;
           border-radius: 12px;
-          color: white;
+          color: #06040a;
           font-size: 15px;
-          font-weight: 600;
+          font-weight: 700;
           font-family: inherit;
           cursor: pointer;
           transition: all 0.3s ease;
           margin-top: 4px;
+          letter-spacing: 0.02em;
         }
         .login-button:hover:not(:disabled) {
-          background: linear-gradient(135deg, #7C3AED, #4F46E5);
-          box-shadow: 0 8px 30px rgba(139, 92, 246, 0.3);
+          background: linear-gradient(135deg, #FFD700, #DAA520);
+          box-shadow: 0 8px 30px rgba(218, 165, 32, 0.25);
           transform: translateY(-1px);
         }
         .login-button:active:not(:disabled) { transform: translateY(0); }
@@ -396,8 +384,8 @@ export default function LoginPage() {
         .login-spinner {
           width: 20px;
           height: 20px;
-          border: 2px solid rgba(255, 255, 255, 0.3);
-          border-top-color: white;
+          border: 2px solid rgba(6, 4, 10, 0.3);
+          border-top-color: #06040a;
           border-radius: 50%;
           animation: spin 0.6s linear infinite;
         }
@@ -410,14 +398,14 @@ export default function LoginPage() {
           gap: 20px;
           margin-top: 28px;
           padding-top: 20px;
-          border-top: 1px solid rgba(30, 41, 59, 0.5);
+          border-top: 1px solid rgba(218, 165, 32, 0.08);
         }
         .login-stat {
           display: flex;
           align-items: center;
           gap: 6px;
           font-size: 11px;
-          color: #64748b;
+          color: #5e576e;
         }
         .stat-dot {
           width: 6px;
@@ -426,8 +414,8 @@ export default function LoginPage() {
           animation: blink 2s ease-in-out infinite;
         }
         .stat-dot-green { background: #10b981; }
-        .stat-dot-blue { background: #3b82f6; }
-        .stat-dot-purple { background: #8b5cf6; }
+        .stat-dot-blue { background: #DAA520; }
+        .stat-dot-purple { background: #DC143C; }
         @keyframes blink {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
@@ -436,7 +424,7 @@ export default function LoginPage() {
         /* Footer */
         .login-footer {
           font-size: 11px;
-          color: #475569;
+          color: #3d3650;
           letter-spacing: 0.5px;
         }
 

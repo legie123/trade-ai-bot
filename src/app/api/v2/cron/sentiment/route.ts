@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
 import { analyzeSentimentLLM } from '@/lib/v2/superai/llmSentiment';
+import { requireCronAuth } from '@/lib/core/cronAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,18 +58,9 @@ function classifyPost(text: string): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
   return 'NEUTRAL';
 }
 
-// Authorize cron calls
-function verifyCron(request: Request): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return true; // Dev mode
-  const authHeader = request.headers.get('authorization');
-  return authHeader === `Bearer ${cronSecret}`;
-}
-
 export async function GET(request: Request) {
-  if (!verifyCron(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
 
   log.info('[Sentiment Heartbeat] Starting 30-min pulse...');
 

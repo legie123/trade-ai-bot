@@ -70,14 +70,14 @@ interface ArenaData {
 type SortKey = 'winRate' | 'totalTrades' | 'profitFactor' | 'maxDrawdown' | 'sharpeRatio';
 
 const C = {
-  text: '#e8ecf4',
-  muted: '#6b7891',
-  mutedLight: '#9aa5be',
+  text: '#eae6f0',
+  muted: '#5e576e',
+  mutedLight: '#9a93a8',
   green: '#00e676',
-  red: '#ff3d57',
-  blue: '#29b6f6',
-  yellow: '#ffd740',
-  purple: '#c084fc',
+  red: '#DC143C',
+  blue: '#DAA520',
+  yellow: '#FFD700',
+  purple: '#B8860B',
 };
 
 function winColor(wr: string) {
@@ -90,7 +90,7 @@ function winColor(wr: string) {
 function statusStyle(status: string) {
   switch (status) {
     case 'LIVE':      return { color: C.green,      bg: 'rgba(0,230,118,0.15)',  border: `${C.green}50` };
-    case 'SHADOW':    return { color: C.blue,       bg: 'rgba(41,182,246,0.15)',   border: `${C.blue}50` };
+    case 'SHADOW':    return { color: C.blue,       bg: 'rgba(218,165,32,0.15)',   border: `${C.blue}50` };
     case 'STANDBY':   return { color: C.mutedLight, bg: 'rgba(155,165,190,0.1)', border: 'rgba(155,165,190,0.3)' };
     case 'ELIMINATED':return { color: C.red,        bg: 'rgba(255,61,87,0.15)',    border: `${C.red}50` };
     default:          return { color: C.mutedLight, bg: 'transparent', border: 'rgba(255,255,255,0.1)' };
@@ -159,7 +159,7 @@ export default function ArenaPage() {
   const omega = data.superAiOmega;
 
   return (
-    <div style={{ minHeight: '100vh', background: 'radial-gradient(circle at 50% 0%, #151a2d, #050609)', color: C.text, paddingBottom: 80,
+    <div style={{ minHeight: '100vh', background: 'radial-gradient(circle at 50% 0%, #0d0a14, #06040a)', color: C.text, paddingBottom: 80,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Outfit", "Inter", sans-serif' }}>
 
       <style>{`
@@ -170,7 +170,7 @@ export default function ArenaPage() {
         @keyframes stripeScroll { 0% { background-position: 0 0; } 100% { background-position: 40px 0; } }
 
         .glass-card {
-          background: rgba(18, 22, 38, 0.55);
+          background: rgba(12, 8, 18, 0.6);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
           border: 1px solid rgba(255,255,255,0.04);
@@ -179,7 +179,7 @@ export default function ArenaPage() {
         }
         
         .fighter-plate {
-           background: rgba(12, 15, 26, 0.4);
+           background: rgba(10, 6, 16, 0.4);
            border: 1px solid rgba(255,255,255,0.03);
            border-radius: 12px;
            padding: 16px 20px;
@@ -187,9 +187,9 @@ export default function ArenaPage() {
         }
         .fighter-plate:hover {
            background: rgba(25, 30, 45, 0.6);
-           border-color: rgba(41,182,246,0.4);
+           border-color: rgba(218,165,32,0.4);
            transform: translateX(6px);
-           box-shadow: -4px 0 15px rgba(41,182,246,0.15);
+           box-shadow: -4px 0 15px rgba(218,165,32,0.15);
         }
 
         .stripe-bg {
@@ -207,7 +207,7 @@ export default function ArenaPage() {
 
       {/* ── TOP NAV ───────────────────────────────── */}
       <div style={{ 
-        position: 'sticky', top: 0, zIndex: 50, background: 'rgba(5, 6, 9, 0.8)',
+        position: 'sticky', top: 0, zIndex: 50, background: 'rgba(6, 4, 10, 0.8)',
         backdropFilter: 'blur(20px)', borderBottom: `1px solid rgba(255,255,255,0.05)`, padding: '12px 16px',
         display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap'
       }}>
@@ -260,7 +260,7 @@ export default function ArenaPage() {
                     style={{
                     position: 'relative', padding: isFirst ? '28px' : '20px',
                     margin: isFirst ? '-8px 0 0 0' : '0',
-                    background: isFirst ? 'rgba(25, 30, 45, 0.6)' : 'rgba(12, 15, 26, 0.4)',
+                    background: isFirst ? 'rgba(25, 30, 45, 0.6)' : 'rgba(10, 6, 16, 0.4)',
                     border: `1px solid ${isPodExpanded ? rankColor : isFirst ? rankColor + '80' : 'rgba(255,255,255,0.05)'}`,
                     borderRadius: 16, display: 'flex', flexDirection: 'column', gap: 12,
                     boxShadow: isPodExpanded ? `0 10px 40px ${rankColor}40` : isFirst ? `0 10px 40px ${rankColor}20` : 'none',
@@ -268,7 +268,7 @@ export default function ArenaPage() {
                     cursor: 'pointer', transition: 'all 0.2s ease'
                   }}>
                     {/* Rank Badge */}
-                    <div style={{ position: 'absolute', top: -14, left: 20, background: 'rgba(5, 6, 9, 0.9)', border: `1px solid ${rankColor}`, padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 800, color: rankColor, boxShadow: `0 0 15px ${rankColor}60` }}>
+                    <div style={{ position: 'absolute', top: -14, left: 20, background: 'rgba(6, 4, 10, 0.9)', border: `1px solid ${rankColor}`, padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 800, color: rankColor, boxShadow: `0 0 15px ${rankColor}60` }}>
                       RANK {i + 1}
                     </div>
 
@@ -388,7 +388,7 @@ export default function ArenaPage() {
                   { label: 'MAX DD', key: 'maxDrawdown' as SortKey }
                ].map(s => (
                  <button key={s.label} onClick={() => toggleSort(s.key)} style={{
-                   background: sortKey === s.key ? 'rgba(41,182,246,0.15)' : 'transparent',
+                   background: sortKey === s.key ? 'rgba(218,165,32,0.15)' : 'transparent',
                    border: 'none', color: sortKey === s.key ? C.blue : C.mutedLight,
                    padding: '6px 12px', fontSize: 10, fontWeight: 800, borderRadius: 6, cursor: 'pointer', transition: 'all 0.2s'
                  }}>
