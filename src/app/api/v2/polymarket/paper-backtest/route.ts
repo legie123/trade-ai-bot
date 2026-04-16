@@ -26,12 +26,14 @@ export async function GET(req: NextRequest) {
     const notional = Math.max(1, num(searchParams.get('notional'), 100));
     const fee = Math.max(0, Math.min(0.1, num(searchParams.get('fee'), 0.006)));
     const minEdge = Math.max(0, Math.min(100, num(searchParams.get('minEdge'), 50)));
+    const division = searchParams.get('division') || undefined;
 
     const summary = await runPaperBacktest({
       limit,
       notionalPerSignal: notional,
       feePctRoundTrip: fee,
       minEdgeScore: minEdge,
+      division,
     });
 
     return successResponse({

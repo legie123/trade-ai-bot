@@ -91,6 +91,7 @@ export default function StatusPage(){
   const [credits,setCredits]=useState<CreditsData|null>(null);
   const [exchanges,setExchanges]=useState<ExchangeData|null>(null);
   const [loading,setLoading]=useState(true);
+  const [selectedDivision,setSelectedDivision]=useState<string|null>(null);
   const [diagLoading,setDiagLoading]=useState(false);
   const [lastDiag,setLastDiag]=useState<Date|null>(null);
   const [lastLight,setLastLight]=useState<Date|null>(null);
@@ -688,7 +689,7 @@ export default function StatusPage(){
       )}
 
       {/* ─── ADDITIVE: Paper Backtest Panel (Phase 2 Batch 8) ─── */}
-      <PaperBacktestPanel />
+      <PaperBacktestPanel division={selectedDivision ?? undefined} />
 
       {/* ─── ADDITIVE: Backtest Trend + Tuner (Phase 2 Batch 9) ─── */}
       <BacktestTrendPanel />
@@ -700,7 +701,7 @@ export default function StatusPage(){
       <SentinelCouplingPanel />
 
       {/* ─── ADDITIVE: Per-Division Sparkline Grid (Phase 2 Batch 13) ─── */}
-      <DivisionSparklineGrid />
+      <DivisionSparklineGrid onSelectDivision={setSelectedDivision} />
 
       {/* ─── ADDITIVE: Intelligence Panel (Phase 2 Batch 4) ─── */}
       <div style={{padding:'0 12px'}}>

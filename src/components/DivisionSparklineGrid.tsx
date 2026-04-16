@@ -46,7 +46,8 @@ function Sparkline({ values: rawValues, stroke, width = 140, height = 28 }: { va
   );
 }
 
-export default function DivisionSparklineGrid() {
+export default function DivisionSparklineGrid({ onSelectDivision }: { onSelectDivision?: (div: string | null) => void } = {}) {
+  const [selectedDiv, setSelectedDiv] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -129,7 +130,7 @@ export default function DivisionSparklineGrid() {
       {ranked.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 1, background: C.border }}>
           {ranked.map(d => (
-            <div key={d.division} style={{ background: C.surface, padding: '8px 10px' }}>
+            <div key={d.division} onClick={() => { const next = selectedDiv === d.division ? null : d.division; setSelectedDiv(next); onSelectDivision?.(next); }} style={{ background: selectedDiv === d.division ? C.surfaceAlt : C.surface, padding: '8px 10px', cursor: 'pointer', outline: selectedDiv === d.division ? `1px solid ${C.blue}` : 'none', borderRadius: selectedDiv === d.division ? 4 : 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>{d.division}</span>
                 <span style={{ fontSize: 9, color: C.mutedLight }}>n={d.n} · {d.series.length}pt</span>

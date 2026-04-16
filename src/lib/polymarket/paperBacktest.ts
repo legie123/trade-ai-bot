@@ -58,6 +58,7 @@ export interface BacktestOptions {
   notionalPerSignal?: number;    // USD per signal (default 100)
   feePctRoundTrip?: number;      // 0..1 (default 0.006)
   minEdgeScore?: number;         // filter (default 50)
+  division?: string;             // filter by division (Batch 15)
 }
 
 export async function runPaperBacktest(opts: BacktestOptions = {}): Promise<BacktestSummary> {
@@ -66,8 +67,10 @@ export async function runPaperBacktest(opts: BacktestOptions = {}): Promise<Back
   const fee = opts.feePctRoundTrip ?? 0.006;
   const minEdge = opts.minEdgeScore ?? 50;
 
+  const divisionFilter = opts.division?.toUpperCase();
   const signals: PaperSignal[] = recentPaperSignals(limit).filter(
-    s => s.recommendation !== 'SKIP' && s.edgeScore >= minEdge,
+    s => s.recommendation !== 'SKIP' && s.edgeScore >= minEdge
+      && (!divisionFilter || s.division?.toUpperCase() === divisionFilter),
   );
 
   const rows: BacktestRow[] = [];

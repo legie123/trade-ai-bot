@@ -49,7 +49,7 @@ const C = {
   mutedLight: '#5a6a85', text: '#c8d4e8', textDim: '#8899b0',
 };
 
-export default function PaperBacktestPanel() {
+export default function PaperBacktestPanel({ division }: { division?: string } = {}) {
   const [data, setData] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -64,6 +64,7 @@ export default function PaperBacktestPanel() {
         limit: '100',
         minEdge: String(minEdge),
         notional: String(notional),
+        ...(division ? { division } : {}),
       });
       const r = await fetch(`/api/v2/polymarket/paper-backtest?${qs}`);
       const j = await r.json();
@@ -73,7 +74,7 @@ export default function PaperBacktestPanel() {
     } catch (e) {
       setErr((e as Error).message);
     } finally { setLoading(false); }
-  }, [minEdge, notional]);
+  }, [minEdge, notional, division]);
 
   useEffect(() => { void run(); }, [run]);
 

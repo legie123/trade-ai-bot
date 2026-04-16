@@ -121,6 +121,10 @@ export interface DecisionSnapshot {
   price: number;
   timestamp: string;
   source: string;
+  /** Explicit gladiator ID — Batch 15 attribution */
+  gladiatorId?: string;
+  /** Polymarket market ID — Batch 15 attribution */
+  marketId?: string;
   // Market context when signal fired
   ema50: number;
   ema200: number;
