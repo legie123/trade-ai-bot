@@ -10,6 +10,11 @@ import BottomNav from '@/components/BottomNav';
 import DeepSeekStatus from '@/app/components/DeepSeekStatus';
 import IntelligencePanel from '@/components/IntelligencePanel';
 import FreshnessBadge from '@/components/FreshnessBadge';
+import PaperBacktestPanel from '@/components/PaperBacktestPanel';
+import BacktestTrendPanel from '@/components/BacktestTrendPanel';
+import DivisionTunerPanel from '@/components/DivisionTunerPanel';
+import SentinelCouplingPanel from '@/components/SentinelCouplingPanel';
+import DivisionSparklineGrid from '@/components/DivisionSparklineGrid';
 
 const C = {
   bg:'#07080d', surface:'#0d1018', surfaceAlt:'#111520', border:'#1a2133', borderAlt:'#242d40',
@@ -88,6 +93,7 @@ export default function StatusPage(){
   const [loading,setLoading]=useState(true);
   const [diagLoading,setDiagLoading]=useState(false);
   const [lastDiag,setLastDiag]=useState<Date|null>(null);
+  const [lastLight,setLastLight]=useState<Date|null>(null);
   const [activeLog,setActiveLog]=useState<'all'|'error'|'warn'>('all');
   const [expandedGlad,setExpandedGlad]=useState<Set<string>>(new Set());
   const [expandedAudits,setExpandedAudits]=useState<Set<number>>(new Set());
@@ -103,6 +109,7 @@ export default function StatusPage(){
       ]);
       if(hR.status==='fulfilled'&&hR.value)setHealth(hR.value);
       if(eR.status==='fulfilled'&&eR.value)setExchanges(eR.value);
+      setLastLight(new Date());
     }catch{}
   },[]);
 
@@ -232,7 +239,10 @@ export default function StatusPage(){
       <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
         <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Exchange Connectivity</span>
-          {exchanges?.activeExchange&&<span style={{fontSize:9,color:C.blue,fontWeight:600}}>ACTIVE: {exchanges.activeExchange.toUpperCase()}</span>}
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <FreshnessBadge timestamp={lastLight?.getTime()} label="conn" />
+            {exchanges?.activeExchange&&<span style={{fontSize:9,color:C.blue,fontWeight:600}}>ACTIVE: {exchanges.activeExchange.toUpperCase()}</span>}
+          </div>
         </div>
         {health?.api&&[
           {name:'Binance',ok:health.api.binance?.ok,latency:health.api.binance?.latencyMs,mode:health.api.binance?.mode},
@@ -266,8 +276,11 @@ export default function StatusPage(){
       <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
         <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>AI Providers & Database</span>
-          {diagLoading&&<span style={{fontSize:9,color:C.yellow}}>◌ checking…</span>}
-          {lastDiag&&!diagLoading&&<span style={{fontSize:9,color:C.mutedLight}}>checked {ft(lastDiag.toISOString())}</span>}
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <FreshnessBadge timestamp={lastDiag?.getTime()} label="diag" freshMs={120000} staleMs={300000} />
+            {diagLoading&&<span style={{fontSize:9,color:C.yellow}}>◌ checking…</span>}
+            {lastDiag&&!diagLoading&&<span style={{fontSize:9,color:C.mutedLight}}>checked {ft(lastDiag.toISOString())}</span>}
+          </div>
         </div>
         <div className="grid-2" style={{background:C.border, gap:'1px'}}>
           <div style={{background:C.surface,padding:'10px 12px'}}>
@@ -299,7 +312,10 @@ export default function StatusPage(){
       <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
         <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Trading Operations</span>
-          <span style={{fontSize:9,color:health?.systemMode==='AUTO_TRADE'?C.yellow:C.blue,fontWeight:700}}>{health?.systemMode||bot?.stats?.mode||'PAPER'}</span>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <FreshnessBadge timestamp={lastUpdate?.getTime()} label="ops" />
+            <span style={{fontSize:9,color:health?.systemMode==='AUTO_TRADE'?C.yellow:C.blue,fontWeight:700}}>{health?.systemMode||bot?.stats?.mode||'PAPER'}</span>
+          </div>
         </div>
         <div className="grid-4" style={{background:C.border, gap:'1px'}}>
           {card('Decisions Today',(health?.trading?.decisionsToday??dash?.trading?.totalSignals??'—').toString(),C.blue)}
@@ -364,7 +380,10 @@ export default function StatusPage(){
       <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
         <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>System Resources</span>
-          {diag?.system&&<span style={{fontSize:9,color:C.mutedLight}}>diag in {diag.system.diagnosticDurationMs}ms</span>}
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <FreshnessBadge timestamp={lastDiag?.getTime()} label="sys" freshMs={120000} staleMs={300000} />
+            {diag?.system&&<span style={{fontSize:9,color:C.mutedLight}}>diag in {diag.system.diagnosticDurationMs}ms</span>}
+          </div>
         </div>
         <div className="grid-3" style={{background:C.border, gap:'1px'}}>
           {card('RSS Memory',diag?.system?`${diag.system.memoryUsageMB.rss} MB`:(dash?.system?.memoryUsageRssMB?`${dash.system.memoryUsageRssMB} MB`:'—'),diag?.system&&diag.system.memoryUsageMB.rss>400?C.yellow:C.text)}
@@ -440,7 +459,10 @@ export default function StatusPage(){
           <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
             <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
               <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Last Syndicate Decision</span>
-              <span style={{fontSize:9,color:C.mutedLight}}>{ft(last.timestamp)}</span>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <FreshnessBadge timestamp={last.timestamp?new Date(last.timestamp).getTime():null} label="synd" freshMs={300000} staleMs={900000} />
+                <span style={{fontSize:9,color:C.mutedLight}}>{ft(last.timestamp)}</span>
+              </div>
             </div>
             <div style={{padding:'10px 12px'}}>
               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
@@ -464,8 +486,9 @@ export default function StatusPage(){
 
       {/* ── DEEP SYSTEM HEALTH GRID (NEW) ── */}
       <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`}}>
+        <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Deep System Health</span>
+          <FreshnessBadge timestamp={lastDiag?.getTime()} label="health" freshMs={120000} staleMs={300000} />
         </div>
         <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:8}}>
           {[
@@ -498,8 +521,9 @@ export default function StatusPage(){
       {/* ── API CREDITS VISUALIZER (NEW) ── */}
       {credits&&(
         <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`}}>
+          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
             <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>API Credit Reserves</span>
+            <FreshnessBadge timestamp={lastDiag?.getTime()} label="creds" freshMs={120000} staleMs={300000} />
           </div>
           <div style={{padding:'10px 12px',display:'flex',flexDirection:'column',gap:10}}>
             {[
@@ -573,7 +597,10 @@ export default function StatusPage(){
         <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
           <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Open Positions</span>
-            <span style={{fontSize:9,color:C.blue,fontWeight:700}}>{diag.positions.open} active</span>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <FreshnessBadge timestamp={lastDiag?.getTime()} label="pos" freshMs={120000} staleMs={300000} />
+              <span style={{fontSize:9,color:C.blue,fontWeight:700}}>{diag.positions.open} active</span>
+            </div>
           </div>
           <div style={{padding:'6px 12px',fontSize:9,color:C.textDim}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,textAlign:'center'}}>
@@ -636,8 +663,9 @@ export default function StatusPage(){
       {/* ── EQUITY & PERFORMANCE DEEP DIVE (NEW) ── */}
       {diag?.equity&&(
         <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`}}>
+          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
             <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Equity Deep Dive</span>
+            <FreshnessBadge timestamp={lastDiag?.getTime()} label="equity" freshMs={120000} staleMs={300000} />
           </div>
           <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8}}>
             {[
@@ -658,6 +686,21 @@ export default function StatusPage(){
           </div>
         </div>
       )}
+
+      {/* ─── ADDITIVE: Paper Backtest Panel (Phase 2 Batch 8) ─── */}
+      <PaperBacktestPanel />
+
+      {/* ─── ADDITIVE: Backtest Trend + Tuner (Phase 2 Batch 9) ─── */}
+      <BacktestTrendPanel />
+
+      {/* ─── ADDITIVE: Per-Division Tuner (Phase 2 Batch 11) ─── */}
+      <DivisionTunerPanel />
+
+      {/* ─── ADDITIVE: Sentinel → Ranker Coupling (Phase 2 Batch 13) ─── */}
+      <SentinelCouplingPanel />
+
+      {/* ─── ADDITIVE: Per-Division Sparkline Grid (Phase 2 Batch 13) ─── */}
+      <DivisionSparklineGrid />
 
       {/* ─── ADDITIVE: Intelligence Panel (Phase 2 Batch 4) ─── */}
       <div style={{padding:'0 12px'}}>

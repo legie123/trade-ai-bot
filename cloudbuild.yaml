@@ -38,6 +38,9 @@ steps:
       - '--cpu-throttling'
       - '--allow-unauthenticated'
       - '--set-env-vars=NODE_ENV=production'
+      # Faza 6 Batch 6: clear orphan secret mappings from previous revisions.
+      # Remove this flag after Secret Manager is populated with the required keys.
+      - '--clear-secrets'
 
 images:
   - 'gcr.io/$PROJECT_ID/trade-ai:latest'

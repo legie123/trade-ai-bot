@@ -8,10 +8,45 @@ import { getMarketsByCategory, getOrderBook } from './polyClient';
 import { createLogger } from '@/lib/core/logger';
 import { supabase } from '@/lib/store/db';
 import { computeOrderbookIntel, BookLevel } from '@/lib/v2/intelligence/agents/orderbookIntel';
+import { feedOpportunities } from './paperSignalFeeder';
+import { getActiveConfigSync, maybeRefresh } from './rankerConfig';
 
 const log = createLogger('MarketScanner');
 
-const EDGE_THRESHOLD = 40; // Minimum composite score to flag opportunity
+const EDGE_THRESHOLD_DEFAULT = 40; // Minimum composite score to flag opportunity
+// Phase 2 Batch 10: env-driven floor + per-division override.
+// POLY_EDGE_THRESHOLD=N         → global floor (else 40)
+// POLY_EDGE_THRESHOLD_<DIV>=N   → per-division override (e.g. POLY_EDGE_THRESHOLD_CRYPTO=55)
+function getEdgeFloor(division?: string): number {
+  // 1. env hard overrides
+  if (division) {
+    const perDiv = process.env[`POLY_EDGE_THRESHOLD_${division.toUpperCase()}`];
+    if (perDiv) {
+      const n = Number(perDiv);
+      if (Number.isFinite(n) && n >= 0 && n <= 100) return n;
+    }
+  }
+  const global = process.env.POLY_EDGE_THRESHOLD;
+  if (global) {
+    const n = Number(global);
+    if (Number.isFinite(n) && n >= 0 && n <= 100) return n;
+  }
+  // 2. runtime active config (Supabase-backed, promoted via auto-tuner)
+  maybeRefresh();
+  const active = getActiveConfigSync();
+  if (active) {
+    if (division) {
+      const perDiv = active.perDivision[division.toUpperCase()];
+      if (typeof perDiv === 'number' && perDiv >= 0 && perDiv <= 100) return perDiv;
+    }
+    if (typeof active.global === 'number' && active.global >= 0 && active.global <= 100) {
+      return active.global;
+    }
+  }
+  return EDGE_THRESHOLD_DEFAULT;
+}
+// Back-compat alias for any external import (kept as default constant value)
+const EDGE_THRESHOLD = EDGE_THRESHOLD_DEFAULT;
 const MAX_PRICE_HISTORY = 100; // Max snapshots per market
 const PRICE_HISTORY_KEY_PREFIX = 'poly_ph_'; // Supabase json_store key prefix
 
@@ -21,6 +56,7 @@ export async function scanDivision(
   limit = 20,
 ): Promise<PolyScanResult> {
   const markets = await getMarketsByCategory(division, limit);
+  const floor = getEdgeFloor(division);
 
   const opportunities: PolyOpportunity[] = [];
 
@@ -29,13 +65,16 @@ export async function scanDivision(
     if (!market.outcomes || market.outcomes.length < 2) continue;
 
     const opp = await evaluateOpportunity(market, division);
-    if (opp.edgeScore >= EDGE_THRESHOLD) {
+    if (opp.edgeScore >= floor) {
       opportunities.push(opp);
     }
   }
 
   // Sort by edge score descending
   opportunities.sort((a, b) => b.edgeScore - a.edgeScore);
+
+  // Phase 2 Batch 6: paper signal feeder (opt-in via env, no-op otherwise)
+  try { feedOpportunities(opportunities); } catch { /* never blocks scan */ }
 
   return {
     division,
@@ -266,7 +305,9 @@ function determineRecommendation(
   edgeScore: number,
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH',
 ): 'BUY_YES' | 'BUY_NO' | 'SKIP' {
-  if (edgeScore < EDGE_THRESHOLD || riskLevel === 'HIGH') return 'SKIP';
+  // Phase 2 Batch 10: env-driven floor (global only at this call site; per-division
+  // override applies at scan filter level since this fn lacks division context).
+  if (edgeScore < getEdgeFloor() || riskLevel === 'HIGH') return 'SKIP';
 
   const yesPrice = market.outcomes[0]?.price || 0.5;
 
