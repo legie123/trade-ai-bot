@@ -15,10 +15,14 @@ if [ ! -f ".env" ]; then
 fi
 
 echo "🔐 Se încarcă .env..."
-# Căutăm direct în fișier și creăm exporturi valabile ignorând complet hashtag-urile și liniile goale
-set -a
-source <(grep -v '^#' .env | sed -e '/^$/d')
-set +a
+# Load variables from .env if it exists
+while IFS='=' read -r key value; do
+  # Skip comments and empty lines
+  [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
+  # Remove possible quotes from value and export
+  value=$(echo "$value" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+  export "$key"="$value"
+done < .env
 
 SECRETS=(
   "NEXT_PUBLIC_SUPABASE_URL"
