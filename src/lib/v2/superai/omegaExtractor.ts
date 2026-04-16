@@ -15,6 +15,9 @@
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { getGladiatorDna } from '@/lib/store/db';
 import { saveGladiatorsToDb } from '@/lib/store/db';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('OmegaExtractor');
 
 interface OmegaSynthesis {
   /** Weighted win rate across top-3 gladiators */
@@ -71,7 +74,7 @@ export class OmegaExtractor {
       .slice(0, 3); // Top 3 only
 
     if (scored.length === 0) {
-      console.log('[OmegaExtractor] No gladiators with sufficient data for synthesis. Omega stays dormant.');
+      log.info('No gladiators with sufficient data for synthesis. Omega stays dormant.');
       return null;
     }
 
@@ -158,12 +161,7 @@ export class OmegaExtractor {
     // Update cache
     cachedSynthesis = synthesis;
 
-    console.log(
-      `[OmegaExtractor] Synthesis complete: WR=${synthesis.aggregatedWR}% PF=${synthesis.aggregatedPF} ` +
-      `modifier=${globalModifier}x bias=${directionBias} ` +
-      `strong=[${strongSymbols.join(',')}] weak=[${weakSymbols.join(',')}] ` +
-      `from ${scored.length} gladiators`
-    );
+    log.info(`Synthesis complete: WR=${synthesis.aggregatedWR}% PF=${synthesis.aggregatedPF} modifier=${globalModifier}x bias=${directionBias} strong=[${strongSymbols.join(',')}] weak=[${weakSymbols.join(',')}] from ${scored.length} gladiators`);
 
     return synthesis;
   }

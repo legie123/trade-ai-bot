@@ -94,7 +94,7 @@ export class ManagerVizionar {
     if (consensus.finalDirection !== 'FLAT') {
       await this.routeSignal(gladiator, payload, consensus);
     } else {
-      console.log(`[SYNDICATE VETO] Masters did not approve the move for ${gladiator.id}. Reason: Low Confidence.`);
+      log.info(`[SYNDICATE VETO] Masters did not approve the move for ${gladiator.id}. Reason: Low Confidence.`);
       this.broadcastSyndicateVeto(payload, consensus).catch((e) => log.warn('broadcastSyndicateVeto failed', { error: String(e) }));
     }
   }
@@ -227,7 +227,7 @@ export class ManagerVizionar {
       // Mapped to MEXC - ACTIVATED FOR LIVE CAPITAL
       const result = await executeMexcTrade(payload.symbol, side, undefined, false);
       if (result.executed) {
-        console.log(`[EXECUTION SUCCESS] Trade placed on MEXC for ${payload.symbol} @ ${result.price}`);
+        log.info(`[EXECUTION SUCCESS] Trade placed on MEXC for ${payload.symbol} @ ${result.price}`);
         
         // Register LivePosition for Asymmetric Trailing TP/SL Engine
         addLivePosition({
@@ -247,7 +247,7 @@ export class ManagerVizionar {
         // 🔗 [MOLTBOOK BROADCAST] Phoenix V2 Live Positioning
         this.broadcastTradeToMoltbook('ENTRY', result.symbol, consensus.finalDirection, result.price, consensus).catch((e) => log.warn('broadcastTradeToMoltbook failed', { error: String(e) }));
 
-        console.log(`[POSITION MANAGER] LivePosition registered for ${result.symbol} — Trailing Engine armed.`);
+        log.info(`[POSITION MANAGER] LivePosition registered for ${result.symbol} — Trailing Engine armed.`);
       } else {
         console.error(`[EXECUTION FAILED] ${result.error}`);
         snapshot.outcome = 'NEUTRAL'; // Treat execution fail as neutral skip
@@ -276,7 +276,7 @@ export class ManagerVizionar {
         `#Antigravity #TradingAI #AlgorithmicTrading`;
 
       await postActivity(message, undefined, 'crypto');
-      console.log(`[SOCIAL] Broadcast finalizat pe Moltbook: $${symbol} ${side}`);
+      log.info(`[SOCIAL] Broadcast finalizat pe Moltbook: $${symbol} ${side}`);
     } catch {
       // Non-critical
     }
@@ -315,8 +315,8 @@ export class ManagerVizionar {
   }
 
   private async executeShadowMode(id: string, payload: Signal, consensus: DualConsensus) {
-    console.log(`[PAPER TRADING] Gladiator ${id} is in shadow mode. Tracking virtual performance for ${payload.symbol}.`);
-    console.log(`[PAPER TRADING CONSENSUS] ${consensus.finalDirection} with ${consensus.weightedConfidence}`);
+    log.info(`[PAPER TRADING] Gladiator ${id} is in shadow mode. Tracking virtual performance for ${payload.symbol}.`);
+    log.info(`[PAPER TRADING CONSENSUS] ${consensus.finalDirection} with ${consensus.weightedConfidence}`);
     
     // Logs fake execution for leaderboard updates
     const snapshot: DecisionSnapshot = {

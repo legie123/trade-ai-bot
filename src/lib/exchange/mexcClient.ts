@@ -270,7 +270,7 @@ export async function sellAllAssetsToUsdt(): Promise<void> {
   const nonUsdt = balances.filter(b => b.asset !== 'USDT' && b.asset !== 'MX' && b.free > 0);
 
   if (nonUsdt.length === 0) {
-    console.log('[Kill Switch] No non-USDT assets to sell.');
+    log.info('[Kill Switch] No non-USDT assets to sell.');
     return;
   }
 
@@ -295,14 +295,14 @@ export async function sellAllAssetsToUsdt(): Promise<void> {
         quantity = roundToStep(quantity, filters.stepSize);
 
         if (quantity < filters.minQty) {
-          console.log(`[Kill Switch] Skipping ${b.asset}: qty ${quantity} below minQty ${filters.minQty} (dust)`);
+          log.info(`[Kill Switch] Skipping ${b.asset}: qty ${quantity} below minQty ${filters.minQty} (dust)`);
           continue;
         }
 
         try {
           const price = await getMexcPrice(symbol);
           if (price > 0 && quantity * price < filters.minNotional) {
-            console.log(`[Kill Switch] Skipping ${b.asset}: notional $${(quantity * price).toFixed(2)} below min $${filters.minNotional}`);
+            log.info(`[Kill Switch] Skipping ${b.asset}: notional $${(quantity * price).toFixed(2)} below min $${filters.minNotional}`);
             continue;
           }
         } catch {
@@ -311,7 +311,7 @@ export async function sellAllAssetsToUsdt(): Promise<void> {
       }
 
       await placeMexcMarketOrder(symbol, 'SELL', quantity);
-      console.log(`[Kill Switch] Sold ${quantity} ${b.asset} for USDT`);
+      log.info(`[Kill Switch] Sold ${quantity} ${b.asset} for USDT`);
     } catch (err) {
       console.error(`[Kill Switch] Failed to sell ${b.asset}:`, err);
     }

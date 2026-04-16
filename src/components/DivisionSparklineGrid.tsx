@@ -22,7 +22,14 @@ const C = {
   blue: '#29b6f6', mutedLight: '#5a6a85', text: '#c8d4e8', textDim: '#8899b0',
 };
 
-function Sparkline({ values, stroke, width = 140, height = 28 }: { values: number[]; stroke: string; width?: number; height?: number }) {
+function downsample(arr: number[], max = 200): number[] {
+  if (arr.length <= max) return arr;
+  const step = (arr.length - 1) / (max - 1);
+  return Array.from({ length: max }, (_, i) => arr[Math.round(i * step)]);
+}
+
+function Sparkline({ values: rawValues, stroke, width = 140, height = 28 }: { values: number[]; stroke: string; width?: number; height?: number }) {
+  const values = downsample(rawValues);
   if (values.length < 2) return <svg width={width} height={height} />;
   const min = Math.min(...values, 0);
   const max = Math.max(...values, 0);

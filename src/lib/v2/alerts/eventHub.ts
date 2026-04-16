@@ -3,6 +3,9 @@
 // Routes system events to Telegram + Supabase audit log
 // ============================================================
 import { sendMessage } from '@/lib/alerts/telegram';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('EventHub');
 
 export type EventSeverity = 'INFO' | 'WARNING' | 'CRITICAL' | 'SUCCESS';
 export type EventCategory =
@@ -63,7 +66,7 @@ export async function emitEvent(event: SystemEvent): Promise<void> {
 
   // Console log always
   const prefix = `[EventHub][${event.severity}][${event.category}]`;
-  console.log(`${prefix} ${event.title}`, JSON.stringify(event.details));
+  log.info(`${prefix} ${event.title}`, event.details as Record<string, unknown>);
 
   // Telegram for non-INFO events
   if (event.severity !== 'INFO') {
