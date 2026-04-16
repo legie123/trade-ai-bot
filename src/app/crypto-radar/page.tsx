@@ -3,6 +3,66 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useBotStats } from '@/hooks/useBotStats';
 import BottomNav from '@/components/BottomNav';
+import HelpTooltip from '@/components/HelpTooltip';
+
+const HELP = {
+  kpi: {
+    title: 'KPI Dashboard',
+    description: 'Indicatorii cheie de performanță ai botului în timp real.',
+    details: [
+      'Total Equity — capitalul total gestionat de bot (USDT)',
+      'Daily Alpha (PnL) — profitul/pierderea din ziua curentă în procente',
+      'Global Win Rate — procentul tranzacțiilor câștigătoare din toate timpurile',
+      'Max Stress (DD) — drawdown-ul maxim istoric (risc maxim atins)',
+    ],
+    tip: 'Win Rate >55% + Profit Factor >1.3 = strategie profitabilă pe termen lung.',
+  },
+  syndicateRadar: {
+    title: 'Syndicate Radar',
+    description: 'Consensul AI al Sindicatului — mai mulți agenți analizează piața independent și votează direcția.',
+    details: [
+      'Fiecare "nod" este un agent AI cu specializare diferită (TA, sentiment, on-chain)',
+      'Săgeata centrală = direcția majoritară (BUY/SELL/NEUTRAL)',
+      'Procentul = nivelul de încredere agregat al consensului',
+      'Animația radar se rotește continuu = sistem activ',
+    ],
+    tip: 'Confidence >75% + toți nodurile în aceeași direcție = semnal puternic.',
+  },
+  activeTargets: {
+    title: 'Active Targets',
+    description: 'Semnalele active primite de la TradingView sau generate intern prin analiza tehnică.',
+    details: [
+      'BULLISH/BEARISH = direcția semnalului detectat',
+      'Confidence = încrederea algoritmului în semnal (0-100%)',
+      'Click pe un target = detalii complete + raționamentul AI',
+      'Semnalele sunt filtrate automat — duplicatele sunt eliminate',
+    ],
+    tip: 'Semnalele cu confidence 100% provin din pattern-uri clare (breakout, EMA cross). Verifică întotdeauna contextul pieței.',
+  },
+  heatgrid: {
+    title: 'Token Heatgrid',
+    description: 'Grid cu tokenii meme și DeFi cei mai activi în timp real, agregați din DexScreener, Pump.fun și alte surse.',
+    details: [
+      '1H MOVE — variația prețului în ultima oră (%)',
+      'VOL 24H — volumul de tranzacționare din ultimele 24h',
+      'PRICE — prețul curent în USDT',
+      'Tokenii sunt sortați după schimbare de preț descrescătoare',
+      'CHAIN indică rețeaua blockchain (Solana, ETH, BSC)',
+    ],
+    tip: 'Volum mare + mișcare mare 1H = momentum puternic. Verifică lichiditatea înainte de intrare.',
+  },
+  btcPanel: {
+    title: 'BTC Analysis Panel',
+    description: 'Analiza tehnică BTC în timp real: preț live, EMA-uri, semnale și niveluri cheie.',
+    details: [
+      'EMA 50/200/800 — medii mobile exponențiale pentru trend scurt/mediu/lung',
+      '▲ > EMA200 = BTC în uptrend pe termen mediu',
+      'NEUTRAL/BULLISH/BEARISH = concluzia analizei tehnice agregate',
+      'Date preluate din MEXC + CryptoCompare (redundanță automată)',
+    ],
+    tip: 'Când BTC este BEARISH, riscul pentru alți tokeni crește semnificativ. Reduceți expunerea.',
+  },
+} as const;
 
 interface Signal {
   symbol: string;
@@ -245,6 +305,7 @@ export default function CryptoRadarPage() {
             <span style={{ fontSize: 11, color: btcData.price >= btcData.ema200 ? C.green : C.red, fontWeight: 600 }}>
                {btcData.price >= btcData.ema200 ? '▲ > EMA200' : '▼ < EMA200'}
             </span>
+            <HelpTooltip section={HELP.btcPanel} position="left" size={12} />
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.03)', padding: '6px 14px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -280,6 +341,10 @@ export default function CryptoRadarPage() {
       <div style={{ padding: '24px', maxWidth: 1600, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
         {/* ── KPI ROW ─────────────────────────────────── */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: -8 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: C.mutedLight }}>PERFORMANCE METRICS</span>
+          <HelpTooltip section={HELP.kpi} position="left" />
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
           {[
             { label: 'TOTAL EQUITY', value: `$${formatNum(botStats.equity || 0)}`, color: '#fff', glow: 'none' },
@@ -310,9 +375,12 @@ export default function CryptoRadarPage() {
             <div style={{ position: 'absolute', top: -50, right: -50, width: 200, height: 200, background: `radial-gradient(circle, ${C.blue}20, transparent 70%)`, filter: 'blur(30px)', zIndex: 0 }} />
             
             <div style={{ position: 'relative', zIndex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ width: 4, height: 14, background: C.blue, borderRadius: 2 }} />
-                SYNDICATE RADAR
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ width: 4, height: 14, background: C.blue, borderRadius: 2 }} />
+                  SYNDICATE RADAR
+                </div>
+                <HelpTooltip section={HELP.syndicateRadar} position="left" />
               </div>
               
               {latestAudit ? (
@@ -394,6 +462,7 @@ export default function CryptoRadarPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ width: 4, height: 14, background: C.green, borderRadius: 2 }} />
                 ACTIVE TARGETS
+                <HelpTooltip section={HELP.activeTargets} />
               </div>
               <span style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: 12, fontSize: 11, color: C.mutedLight }}>
                 {signals.length} SPOTTED
@@ -477,6 +546,7 @@ export default function CryptoRadarPage() {
               <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text }}>
                 MARKET HEATGRID
               </div>
+              <HelpTooltip section={HELP.heatgrid} />
             </div>
 
             <div style={{ display: 'flex', gap: 12 }}>

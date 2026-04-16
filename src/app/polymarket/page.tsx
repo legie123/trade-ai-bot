@@ -3,6 +3,69 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import BottomNav from '@/components/BottomNav';
 import IntelligencePanel from '@/components/IntelligencePanel';
+import HelpTooltip from '@/components/HelpTooltip';
+
+const POLY_HELP = {
+  command: {
+    title: 'Command Center',
+    description: 'Centrul de comandă Polymarket — vizualizare globală a sectorului de predicție AI.',
+    details: [
+      'CLOB — conexiunea la bursa de ordine Polymarket (clob.polymarket.com)',
+      'GAMMA — conexiunea la API-ul de piețe Polymarket (gamma-api.polymarket.com)',
+      'Verde = conexiune activă | Roșu = conexiune întreruptă',
+      'Gladiators LIVE = agenți activi care plasează pariuri pe bani reali (paper mode: virtual)',
+      'PAPER MODE = toate tranzacțiile sunt simulate, fără risc real',
+    ],
+    tip: 'Dacă CLOB sau GAMMA arată roșu, scanarea de piețe nu va funcționa. Verifică secretele din GCP.',
+  },
+  scanner: {
+    title: 'Market Scanner',
+    description: 'Scanează piețele de predicție după oportunități — edge scoring, mispricing și momentum.',
+    details: [
+      'Edge Score — cât de mult deviază prețul față de probabilitatea reală estimată (0-100)',
+      'Mispricing Score — eroarea de preț detectată față de valoarea așteptată',
+      'Momentum Score — intensitatea mișcării recente a prețului',
+      'Risk Level — evaluarea riscului: LOW / MEDIUM / HIGH',
+      'Recommendation — STRONG BUY / BUY / PASS bazat pe scorul agregat',
+    ],
+    tip: 'Edge Score >60 + Risk LOW = oportunitate de calitate. Scanează TRENDING zilnic pentru cele mai bune setup-uri.',
+  },
+  gladiators: {
+    title: 'Poly Gladiators',
+    description: 'Agenții AI specializați pe fiecare divizie Polymarket, antrenați prin phantom bets.',
+    details: [
+      'Readiness Score — pregătirea gladiatorului (0-100) bazat pe training',
+      'Division Expertise — specializarea pe un anumit tip de piață',
+      'Win Rate — procentul pariurilor câștigate din toate phantom bets',
+      'IN_TRAINING = acumulează date | READY = poate paria | LIVE = plasează pariuri reale',
+      'Phantom Bets = pariuri simulate pentru antrenament, fără bani reali',
+    ],
+    tip: 'Un gladiator devine LIVE când are Win Rate >55% + Readiness >70 + minim 20 phantom bets.',
+  },
+  markets: {
+    title: 'Markets Browser',
+    description: 'Browsing direct al piețelor active pe Polymarket, grupate pe divizii.',
+    details: [
+      'Volume 24H — valoarea totală tranzacționată în ultimele 24 ore (USDT)',
+      'Liquidity USD — lichiditatea disponibilă în order book',
+      'Outcomes — variantele posibile de câștig + probabilitățile curente',
+      'End Date — data la care piața se închide și se stabilesc câștigătorii',
+    ],
+    tip: 'Piețele cu Volume 24H mare au spread mai mic și execuție mai bună. Evită piețele cu lichiditate sub $1,000.',
+  },
+  wallet: {
+    title: 'Paper Wallet',
+    description: 'Portofelul virtual pentru simularea tranzacțiilor Polymarket în modul Paper Trading.',
+    details: [
+      'Total Balance — suma disponibilă pentru noi pariuri (pornește cu $16,000 virtual)',
+      'Total Invested — suma blocată în pariuri active deschise',
+      'Realized PnL — profitul/pierderea din pariurile deja închise',
+      'Unrealized PnL — profitul/pierderea curentă pe pozițiile deschise',
+      'Per Division — breakdown pe fiecare categorie (Crypto, Politics, Sports etc)',
+    ],
+    tip: 'PAPER MODE complet — zero risc real. Sistemul simulează execuția exactă ca în live trading.',
+  },
+} as const;
 
 /* ── Types ──────────────────────────────────────── */
 interface DivisionStat {
@@ -356,7 +419,7 @@ export default function PolymarketPage() {
           POLY<span style={{ color: C.purpleDark }}>.SECTOR</span>
         </span>
 
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span style={{ padding: '3px 10px', borderRadius: 10, fontSize: 10, fontWeight: 800,
             background: connHealth?.clob ? 'rgba(0,230,118,0.12)' : 'rgba(255,61,87,0.12)',
             color: connHealth?.clob ? C.green : C.red, border: `1px solid ${connHealth?.clob ? C.green : C.red}30` }}>
@@ -367,6 +430,7 @@ export default function PolymarketPage() {
             color: connHealth?.gamma ? C.green : C.red, border: `1px solid ${connHealth?.gamma ? C.green : C.red}30` }}>
             GAMMA {connHealth?.gamma ? '●' : '○'}
           </span>
+          <HelpTooltip section={POLY_HELP.command} size={12} />
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -530,6 +594,11 @@ export default function PolymarketPage() {
         {/* ════════════════ SCANNER TAB ════════════════ */}
         {activeTab === 'scanner' && (
           <>
+            {/* Scanner Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.mutedLight, letterSpacing: '0.12em' }}>MARKET SCANNER</span>
+              <HelpTooltip section={POLY_HELP.scanner} position="left" />
+            </div>
             {/* Division Selector */}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {DIVISIONS.map(div => (
@@ -631,6 +700,10 @@ export default function PolymarketPage() {
         {/* ════════════════ GLADIATORS TAB ════════════════ */}
         {activeTab === 'gladiators' && (
           <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.mutedLight, letterSpacing: '0.12em' }}>POLY GLADIATORS</span>
+              <HelpTooltip section={POLY_HELP.gladiators} position="left" />
+            </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {(['all', 'live', 'training'] as const).map(f => (
                 <button key={f} className={`division-chip ${gladFilter === f ? 'active' : ''}`}
@@ -730,6 +803,10 @@ export default function PolymarketPage() {
         {/* ════════════════ MARKETS TAB ════════════════ */}
         {activeTab === 'markets' && (
           <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.mutedLight, letterSpacing: '0.12em' }}>MARKETS BROWSER</span>
+              <HelpTooltip section={POLY_HELP.markets} position="left" />
+            </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               {['TRENDING', 'CRYPTO', 'POLITICS', 'SPORTS', 'FINANCE', 'TECH', 'ELECTIONS', 'GEOPOLITICS'].map(div => (
                 <button key={div} className={`division-chip ${selectedDivision === div ? 'active' : ''}`}
@@ -807,6 +884,10 @@ export default function PolymarketPage() {
         {/* ════════════════ WALLET TAB ════════════════ */}
         {activeTab === 'wallet' && wallet && (
           <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.mutedLight, letterSpacing: '0.12em' }}>PAPER WALLET</span>
+              <HelpTooltip section={POLY_HELP.wallet} position="left" />
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
               {[
                 { label: 'TOTAL BALANCE', value: `$${wallet.totalBalance.toLocaleString()}`, color: C.purple },

@@ -21,6 +21,55 @@ import DecisionMatrix from '@/components/DecisionMatrix';
 import MoltbookSwarmFeed from '@/components/MoltbookSwarmFeed';
 import TerminalOverlay from '@/components/TerminalOverlay';
 import BottomNav from '@/components/BottomNav';
+import HelpTooltip from '@/components/HelpTooltip';
+
+/* ═══ COCKPIT HELP ═══ */
+const COCKPIT_HELP = {
+  hero: {
+    title: 'Agent Status Hero',
+    description: 'Visualizes the AI agent brain in real time — cortex state, memory usage, active positions, and synapse pulse animation reflecting live activity.',
+    details: [
+      'IDLE: no open trades, waiting for signals',
+      'PROCESSING: AI is evaluating signals or building decisions',
+      'ACTIVE: live positions open, agent managing trades',
+      'HALTED: kill switch engaged — no new actions until disengaged',
+    ],
+    tip: 'Synapse pulse frequency increases with activity. A flat line means the agent is truly idle or the data feed is disconnected.',
+  },
+  matrix: {
+    title: 'Decision Matrix',
+    description: 'Live feed of AI decisions — confidence scores, signal sources, syndicate audit results, and reasoning chain for each trade evaluated.',
+    details: [
+      'Confidence % shows how certain the AI is about the signal',
+      'Syndicate audit shows votes from individual AI agents',
+      'Win Rate tracks accuracy of the full decision pipeline',
+      'Decisions with <60% confidence are usually rejected',
+    ],
+    tip: 'High daily PnL with low signal count = quality over quantity. That\'s the ideal pattern.',
+  },
+  swarm: {
+    title: 'Moltbook Swarm Feed',
+    description: 'Social intelligence layer — aggregated sentiment from monitored accounts, swarm direction, and broadcast messages from the intelligence network.',
+    details: [
+      'BULLISH / BEARISH / NEUTRAL shows consensus swarm direction',
+      'Score 0–1 shows strength of the sentiment signal',
+      'Posts are filtered for crypto-relevant content before scoring',
+      'Broadcast messages are high-priority alerts from the swarm',
+    ],
+    tip: 'Swarm sentiment alone does not trigger trades — it\'s one input into the multi-agent decision pipeline.',
+  },
+  killSwitch: {
+    title: 'PANIC / Kill Switch',
+    description: 'Emergency stop button. Halts all trading operations instantly — no new positions opened, existing positions can still close naturally.',
+    details: [
+      'First click: arms the button (turns red, 4-second window)',
+      'Second click within 4s: confirms and engages kill switch',
+      'HALT state shown when already engaged',
+      'Disengage via Control Room → Command Center → Disengage Kill Switch',
+    ],
+    tip: 'Use during extreme market events, API errors, or if you see abnormal trading behavior. Disengage only after verifying the root cause.',
+  },
+} as const;
 
 const C = {
   bgDeep: '#05020d',
@@ -172,7 +221,7 @@ export default function CockpitPage() {
       `}</style>
 
       {/* ── KILL SWITCH — Panic Button (repositioned, armed-on-hover pattern) ── */}
-      <div className="kill-cover">
+      <div className="kill-cover" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
         <button
           onClick={killSwitch}
           disabled={killing || killEngaged}
@@ -181,6 +230,9 @@ export default function CockpitPage() {
         >
           {killing ? '...' : killEngaged ? 'HALT' : killArmed ? 'CONFIRM' : 'PANIC'}
         </button>
+        <div style={{ opacity: 0.7 }}>
+          <HelpTooltip section={COCKPIT_HELP.killSwitch} position="left" size={12} />
+        </div>
       </div>
 
       {/* ── Cockpit title strip ── */}
@@ -203,6 +255,10 @@ export default function CockpitPage() {
       <div className="cockpit-grid" style={{ maxWidth: 1600, margin: '0 auto' }}>
         {/* ── HERO: AgentStatusHero (canvas synapse + cortex state) ── */}
         <div className="glass accent area-hero section-wrap">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 9, letterSpacing: '0.18em', color: C.cyan, fontWeight: 700, textTransform: 'uppercase' }}>Agent Cortex</span>
+            <HelpTooltip section={COCKPIT_HELP.hero} position="left" />
+          </div>
           <AgentStatusHero
             agentState={agentState}
             memoryMB={systemMem}
@@ -218,6 +274,10 @@ export default function CockpitPage() {
 
         {/* ── CENTER: DecisionMatrix (live confidence + reasoning) ── */}
         <div className="glass area-matrix section-wrap">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 9, letterSpacing: '0.18em', color: C.violet, fontWeight: 700, textTransform: 'uppercase' }}>Decision Matrix</span>
+            <HelpTooltip section={COCKPIT_HELP.matrix} position="left" />
+          </div>
           <DecisionMatrix
             decisions={decisions as Parameters<typeof DecisionMatrix>[0]['decisions']}
             syndicateAudits={syndicateAudits as Parameters<typeof DecisionMatrix>[0]['syndicateAudits']}
@@ -229,6 +289,10 @@ export default function CockpitPage() {
 
         {/* ── LATERAL: MoltbookSwarmFeed (swarm intelligence) ── */}
         <div className="glass area-swarm section-wrap">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 9, letterSpacing: '0.18em', color: C.mutedLight, fontWeight: 700, textTransform: 'uppercase' }}>Swarm Intelligence</span>
+            <HelpTooltip section={COCKPIT_HELP.swarm} position="left" />
+          </div>
           <MoltbookSwarmFeed
             posts={moltbook?.posts}
             swarmSentiment={moltbook?.swarmSentiment}

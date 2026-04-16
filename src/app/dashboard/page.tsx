@@ -1,10 +1,11 @@
 'use client';
 /**
- * STATUS — Command Center
- * Operational truth dashboard: health, exchanges, AI credits,
- * logs, gladiator, trading ops, system resources.
+ * STATUS — CONTROL ROOM
+ * Full operational dashboard: observability, control, debug,
+ * agent orchestration, API monitoring, manual commands, charts.
+ * 100% responsive (desktop + phone).
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
 import BottomNav from '@/components/BottomNav';
 import DeepSeekStatus from '@/app/components/DeepSeekStatus';
@@ -16,16 +17,78 @@ import DivisionTunerPanel from '@/components/DivisionTunerPanel';
 import SentinelCouplingPanel from '@/components/SentinelCouplingPanel';
 import DivisionSparklineGrid from '@/components/DivisionSparklineGrid';
 import GladiatorAttributionPanel from '@/components/GladiatorAttributionPanel';
+import HelpTooltip from '@/components/HelpTooltip';
 
+/* ═══ DASHBOARD HELP ═══ */
+const DASHBOARD_HELP = {
+  terminal: {
+    title: 'Live Terminal',
+    description: 'Real-time log stream from the trading engine via SSE (Server-Sent Events). Shows commands, results, errors, and system events as they happen.',
+    details: [
+      'Filter by type: ALL / CMD (commands) / ERROR / LOG',
+      'CMD entries (yellow $) are manual commands you triggered',
+      'ERROR lines turn red — investigate these first',
+      'CLR button clears the view but does not delete server logs',
+    ],
+    tip: 'If the terminal shows no activity for 30+ seconds, the SSE connection may have dropped — press Refresh.',
+  },
+  commands: {
+    title: 'Command Center',
+    description: 'Direct control panel for the trading engine. Execute kill switch toggles, agent orchestration, data collection, and system maintenance commands.',
+    details: [
+      'Kill Switch ENGAGE halts all new trades immediately — use in emergency',
+      'Disengage resumes trading after manual review',
+      'Agents:orchestrate sends a specific symbol to the full AI pipeline',
+      'Reset Daily Triggers clears rate-limit counters for a fresh start',
+    ],
+    tip: 'Always check system status before disengaging the kill switch — make sure the underlying issue is resolved.',
+  },
+  strategy: {
+    title: 'Strategy Performance',
+    description: 'Win rate and PnL breakdown per signal type and source. Shows which strategies are profitable and which need tuning.',
+    details: [
+      'Win Rate bar: green ≥60%, yellow ≥45%, red <45%',
+      'Avg PnL shows average profit/loss per trade for that signal type',
+      'Best/Worst track the extremes for risk sizing reference',
+      'Source column shows which data provider generated the signal',
+    ],
+    tip: 'Focus on strategies with both high win rate AND positive avg PnL — high WR with negative PnL means the losses are too big.',
+  },
+  trading: {
+    title: 'Trading Operations',
+    description: 'Live snapshot of the trading engine state — open positions, win rate, equity, and drawdown. All numbers update in real time.',
+    details: [
+      'Mode shows PAPER (simulation) or AUTO_TRADE (live)',
+      'MaxDD is maximum drawdown from peak — above 15% triggers risk controls',
+      'Streak indicator shows consecutive wins (▲) or losses (▼)',
+      'Decisions Today counts signal evaluations, not just executed trades',
+    ],
+    tip: 'Monitor MaxDD closely. A spike above 15% usually means a strategy is misbehaving and needs the kill switch.',
+  },
+  apiHealth: {
+    title: 'API & Source Health',
+    description: 'Live connectivity status for every external data source: exchanges, databases, AI providers, and market data feeds.',
+    details: [
+      'Green pulse = OK, static red = DOWN, grey = OFF/disabled',
+      'Latency shown in ms — MEXC >500ms means API issues',
+      'Grade (A/B/C/F) is a composite health score per source',
+      'DOWN sources may silently degrade signal quality — check immediately',
+    ],
+    tip: 'If Supabase or MEXC shows DOWN, stop trading manually until resolved — both are critical path dependencies.',
+  },
+} as const;
+
+/* ═══ COLOR SYSTEM ═══ */
 const C = {
   bg:'#07080d', surface:'#0d1018', surfaceAlt:'#111520', border:'#1a2133', borderAlt:'#242d40',
   green:'#00e676', greenBg:'#00e67614', red:'#ff3d57', redBg:'#ff3d5714',
   yellow:'#ffd600', yellowBg:'#ffd60014', blue:'#29b6f6', blueBg:'#29b6f614',
   purple:'#b39ddb', purpleBg:'#b39ddb14', muted:'#3a4558', mutedLight:'#5a6a85',
-  text:'#c8d4e8', textDim:'#8899b0', white:'#edf2fb',
+  text:'#c8d4e8', textDim:'#8899b0', white:'#edf2fb', orange:'#ff9100',
   font:'system-ui,-apple-system,"Segoe UI",sans-serif',
 };
 
+/* ═══ INTERFACES ═══ */
 interface HealthData {
   status:string; version:string; systemMode:string; uptimeSecs:number;
   coreMonitor:{heartbeat:string;watchdog:string;killSwitch:string};
@@ -48,29 +111,33 @@ interface CreditsData {
 }
 interface ExchangeRow { name:string;enabled:boolean;mode:string;connected:boolean;error?:string; }
 interface ExchangeData { activeExchange:string; exchanges:ExchangeRow[]; }
+interface CmdResult { ok:boolean; command:string; message:string; data?:unknown; durationMs:number; }
+interface TerminalLine { ts:string; type:'cmd'|'result'|'error'|'log'; text:string; }
 
+/* ═══ HELPERS ═══ */
 function hColor(s:string|boolean|undefined):string{
   if(s===undefined||s===null)return C.mutedLight;
   const v=String(s).toUpperCase();
-  if(s===true||['OK','HEALTHY','GREEN','ACTIVE','SAFE','CONNECTED'].includes(v))return C.green;
-  if(s===false||['ERROR','DEGRADED','CRITICAL','RED','INVALID_KEY','MISSING_KEY','NETWORK_ERROR'].includes(v))return C.red;
-  if(['WARNING','YELLOW','INACTIVE','QUOTA_EXCEEDED'].includes(v))return C.yellow;
+  if(s===true||['OK','HEALTHY','GREEN','ACTIVE','SAFE','CONNECTED','LIVE','ONLINE'].includes(v))return C.green;
+  if(s===false||['ERROR','DEGRADED','CRITICAL','RED','INVALID_KEY','MISSING_KEY','NETWORK_ERROR','DOWN','OFFLINE'].includes(v))return C.red;
+  if(['WARNING','YELLOW','INACTIVE','QUOTA_EXCEEDED','OBSERVATION'].includes(v))return C.yellow;
   return C.mutedLight;
 }
 function hBg(s:string|boolean|undefined):string{
-  const c=hColor(s);
-  if(c===C.green)return C.greenBg;
-  if(c===C.red)return C.redBg;
-  if(c===C.yellow)return C.yellowBg;
-  return 'transparent';
+  const c=hColor(s);return c===C.green?C.greenBg:c===C.red?C.redBg:c===C.yellow?C.yellowBg:'transparent';
 }
 function uptime(s:number):string{
   if(!s||s<=0)return'—';
   const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);
   return d>0?`${d}d ${h}h`:`${h}h ${m}m`;
 }
-function ft(ts:string):string{
+function ft(ts:string|undefined):string{
+  if(!ts)return'—';
   try{return new Date(ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}catch{return'—';}
+}
+function fdt(ts:string|undefined):string{
+  if(!ts)return'—';
+  try{return new Date(ts).toLocaleString('en-GB',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}catch{return'—';}
 }
 function lColor(l:string):string{
   const u=l?.toUpperCase();
@@ -84,7 +151,73 @@ function gColor(g:string|undefined):string{
   const u=g.toUpperCase();
   return u==='A'?C.green:u==='B'?C.yellow:u==='C'?C.red:C.mutedLight;
 }
+function pct(v:number|undefined,d=1):string{return v!=null?`${v.toFixed(d)}%`:'—';}
+function usd(v:number|undefined):string{return v!=null?`$${v.toFixed(2)}`:'—';}
 
+/* ═══ MINI CHART (SVG sparkline) ═══ */
+function Sparkline({data,color,width=120,height=32}:{data:number[];color:string;width?:number;height?:number}){
+  if(!data||data.length<2)return <div style={{width,height,background:C.surfaceAlt,borderRadius:4}}/>;
+  const min=Math.min(...data),max=Math.max(...data);
+  const range=max-min||1;
+  const pts=data.map((v,i)=>`${(i/(data.length-1))*width},${height-((v-min)/range)*height}`).join(' ');
+  return(
+    <svg width={width} height={height} style={{display:'block'}}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+/* ═══ MINI BAR CHART ═══ */
+function BarChart({data,labels,colors,height=60}:{data:number[];labels:string[];colors:string[];height?:number}){
+  const max=Math.max(...data,1);
+  return(
+    <div style={{display:'flex',alignItems:'flex-end',gap:3,height}}>
+      {data.map((v,i)=>(
+        <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+          <div style={{fontSize:8,color:C.white,fontWeight:700}}>{v}</div>
+          <div style={{width:'100%',height:`${(v/max)*100}%`,minHeight:2,background:colors[i%colors.length],borderRadius:2}}/>
+          <div style={{fontSize:7,color:C.mutedLight,whiteSpace:'nowrap'}}>{labels[i]}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ═══ SECTION COMPONENT ═══ */
+function Section({title,badge,right,children,defaultOpen=true}:{title:string;badge?:string;right?:React.ReactNode;children:React.ReactNode;defaultOpen?:boolean}){
+  const[open,setOpen]=useState(defaultOpen);
+  return(
+    <div style={{margin:'10px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+      <div onClick={()=>setOpen(!open)} style={{padding:'8px 12px',borderBottom:open?`1px solid ${C.border}`:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',userSelect:'none'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>{title}</span>
+          {badge&&<span style={{fontSize:8,fontWeight:700,padding:'1px 5px',borderRadius:3,color:hColor(badge),background:hBg(badge)}}>{badge}</span>}
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          {right}
+          <span style={{fontSize:10,color:C.mutedLight,transform:open?'rotate(90deg)':'none',transition:'transform 0.2s'}}>›</span>
+        </div>
+      </div>
+      {open&&children}
+    </div>
+  );
+}
+
+/* ═══ COMMAND BUTTON ═══ */
+function CmdBtn({label,cmd,params,onRun,running,variant='default'}:{label:string;cmd:string;params?:Record<string,unknown>;onRun:(cmd:string,params?:Record<string,unknown>)=>void;running:string|null;variant?:'default'|'danger'|'success'}){
+  const isRunning=running===cmd;
+  const colors={default:{bg:C.surfaceAlt,border:C.borderAlt,text:C.text},danger:{bg:C.redBg,border:`${C.red}40`,text:C.red},success:{bg:C.greenBg,border:`${C.green}40`,text:C.green}};
+  const s=colors[variant];
+  return(
+    <button onClick={()=>!isRunning&&onRun(cmd,params)} disabled={isRunning} style={{padding:'6px 10px',background:s.bg,border:`1px solid ${s.border}`,color:s.text,borderRadius:6,fontSize:10,fontWeight:600,cursor:isRunning?'wait':'pointer',opacity:isRunning?0.6:1,fontFamily:'inherit',whiteSpace:'nowrap',transition:'all 0.15s'}}>
+      {isRunning?'◌ ...':label}
+    </button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN PAGE
+   ═══════════════════════════════════════════════════════════ */
 export default function StatusPage(){
   const {dashboard:dash,bot,connectionStatus,lastUpdate,updateCount,forceRefresh}=useRealtimeData();
   const [health,setHealth]=useState<HealthData|null>(null);
@@ -103,6 +236,66 @@ export default function StatusPage(){
   const toggleAudit=(i:number)=>setExpandedAudits(s=>{const n=new Set(s);n.has(i)?n.delete(i):n.add(i);return n;});
   const diagRef=useRef<NodeJS.Timeout|null>(null);
 
+  // Terminal state
+  const [terminalLines,setTerminalLines]=useState<TerminalLine[]>([]);
+  const [runningCmd,setRunningCmd]=useState<string|null>(null);
+  const termRef=useRef<HTMLDivElement>(null);
+  const [termFilter,setTermFilter]=useState<'all'|'cmd'|'error'|'log'>('all');
+
+  // History timeframe
+  const [historyHours,setHistoryHours]=useState(12);
+
+  // Append to terminal
+  const termLog=useCallback((type:TerminalLine['type'],text:string)=>{
+    setTerminalLines(prev=>[{ts:new Date().toISOString(),type,text},...prev].slice(0,500));
+  },[]);
+
+  // Execute command
+  const runCommand=useCallback(async(cmd:string,params?:Record<string,unknown>)=>{
+    setRunningCmd(cmd);
+    termLog('cmd',`> ${cmd}${params?' '+JSON.stringify(params):''}`);
+    try{
+      const res=await fetch('/api/v2/command',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        credentials:'include',
+        body:JSON.stringify({command:cmd,params}),
+      });
+      const data:CmdResult=await res.json();
+      if(data.ok){
+        termLog('result',`[${data.durationMs}ms] ${data.message}`);
+        if(data.data&&typeof data.data==='object'){
+          termLog('log',JSON.stringify(data.data,null,2).slice(0,1000));
+        }
+      }else{
+        termLog('error',`FAIL: ${data.message}`);
+      }
+    }catch(err){
+      termLog('error',`ERROR: ${(err as Error).message}`);
+    }finally{
+      setRunningCmd(null);
+    }
+  },[termLog]);
+
+  // Auto-scroll terminal
+  useEffect(()=>{
+    if(termRef.current)termRef.current.scrollTop=0;
+  },[terminalLines]);
+
+  // Pipe live logs into terminal
+  useEffect(()=>{
+    const logs=dash?.logs?.recent||[];
+    if(logs.length>0){
+      const latest=logs[0];
+      if(latest){
+        termLog('log',`[${latest.level?.toUpperCase()}] ${latest.msg}`);
+      }
+    }
+  // Only fire when logs actually change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[dash?.logs?.recent?.length]);
+
+  /* ─── DATA FETCHERS ─── */
   const fetchLight=useCallback(async()=>{
     try{
       const[hR,eR]=await Promise.allSettled([
@@ -111,7 +304,6 @@ export default function StatusPage(){
       ]);
       if(hR.status==='fulfilled'&&hR.value){
         const raw=hR.value.data||hR.value;
-        // Map v2 health shape → legacy HealthData interface
         const sys=raw.systems||{};
         const tm=raw.trading_mode||{};
         setHealth({
@@ -157,8 +349,10 @@ export default function StatusPage(){
   },[]);
 
   const refreshAll=useCallback(async()=>{
+    termLog('cmd','> refresh:all');
     await Promise.all([fetchLight(),fetchDiag(),forceRefresh()]);
-  },[fetchLight,fetchDiag,forceRefresh]);
+    termLog('result','All data refreshed');
+  },[fetchLight,fetchDiag,forceRefresh,termLog]);
 
   useEffect(()=>{
     fetchLight(); fetchDiag();
@@ -167,74 +361,186 @@ export default function StatusPage(){
     return()=>{clearInterval(lt);if(diagRef.current)clearInterval(diagRef.current);};
   },[fetchLight,fetchDiag]);
 
+  /* ─── DERIVED STATE ─── */
   const overallStatus=health?.status||diag?.overallHealth||(loading?'LOADING':'UNKNOWN');
   const statusCol=hColor(overallStatus);
   const gladiators=bot?.gladiators||[];
-  const omega=gladiators.find(g=>g.isOmega)||gladiators[0]||null;
+  const omega=gladiators.find((g:Record<string,unknown>)=>g.isOmega)||gladiators[0]||null;
   const logs=dash?.logs?.recent||[];
-  const filteredLogs=logs.filter(l=>
+  const filteredLogs=logs.filter((l:{level:string})=>
     activeLog==='all'?true:
     activeLog==='error'?['error','fatal'].includes(l.level?.toLowerCase()):
     ['warn','warning'].includes(l.level?.toLowerCase())
   );
-  const errorCount=logs.filter(l=>['error','fatal'].includes(l.level?.toLowerCase())).length;
-  const warnCount=logs.filter(l=>['warn','warning'].includes(l.level?.toLowerCase())).length;
+  const errorCount=logs.filter((l:{level:string})=>['error','fatal'].includes(l.level?.toLowerCase())).length;
+  const warnCount=logs.filter((l:{level:string})=>['warn','warning'].includes(l.level?.toLowerCase())).length;
   const connLabel:Record<string,string>={connected:'SSE LIVE',connecting:'CONNECTING',reconnecting:'RECONNECTING',polling:'POLLING',error:'ERROR'};
   const connColor:Record<string,string>={connected:C.green,connecting:C.yellow,reconnecting:C.yellow,polling:C.blue,error:C.red};
 
+  // Strategy performance from bot.performance
+  const strategies=bot?.performance||[];
+
+  // Equity curve data for sparkline
+  const equityData=useMemo(()=>{
+    const curve=bot?.equityCurve||[];
+    const now=Date.now();
+    const cutoff=now-historyHours*3600000;
+    return curve.filter((p:{timestamp:string})=>new Date(p.timestamp).getTime()>=cutoff).map((p:{balance:number})=>p.balance);
+  },[bot?.equityCurve,historyHours]);
+
+  // PnL data for sparkline
+  const pnlData=useMemo(()=>{
+    const curve=bot?.equityCurve||[];
+    const now=Date.now();
+    const cutoff=now-historyHours*3600000;
+    return curve.filter((p:{timestamp:string})=>new Date(p.timestamp).getTime()>=cutoff).map((p:{pnl:number})=>p.pnl);
+  },[bot?.equityCurve,historyHours]);
+
+  // History data for memory chart
+  const historyMem=useMemo(()=>{
+    return (dash?.history||[]).map((h:{mem:number})=>h.mem);
+  },[dash?.history]);
+
+  const historyErrors=useMemo(()=>{
+    return (dash?.history||[]).map((h:{errors:number})=>h.errors);
+  },[dash?.history]);
+
+  // Terminal filtered
+  const filteredTerminal=terminalLines.filter(l=>termFilter==='all'||l.type===termFilter);
+
+  // Card helper
   const card=(label:string,val:string,col?:string)=>(
-    <div className="stat-card" style={{background:C.surface, padding:'12px'}}>
-      <div className="stat-label" style={{color:C.mutedLight}}>{label}</div>
-      <div className="stat-value" style={{color:col||C.white, fontSize:'1.2rem'}}>{val}</div>
+    <div style={{background:C.surface,padding:'10px 12px'}}>
+      <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,letterSpacing:'0.06em',textTransform:'uppercase'}}>{label}</div>
+      <div style={{color:col||C.white,fontSize:'1.15rem',fontWeight:700,marginTop:2}}>{val}</div>
     </div>
   );
+
+  /* ═══ API HEALTH GRID — all sources ═══ */
+  const apiSources=useMemo(()=>{
+    const sources:{name:string;status:string;latency?:number;grade?:string;detail?:string}[]=[];
+    // Health API systems
+    if(health?.api){
+      sources.push({name:'Binance',status:health.api.binance?.ok?'OK':'DOWN',latency:health.api.binance?.latencyMs,detail:health.api.binance?.mode});
+      sources.push({name:'DexScreener',status:health.api.dexScreener?.ok?'OK':'DOWN'});
+      sources.push({name:'CoinGecko',status:health.api.coinGecko?.ok?'OK':'DOWN'});
+    }
+    // Exchanges
+    if(exchanges?.exchanges){
+      exchanges.exchanges.forEach(ex=>{
+        if(!sources.find(s=>s.name.toLowerCase()===ex.name.toLowerCase())){
+          sources.push({name:ex.name.toUpperCase(),status:ex.connected?'OK':ex.enabled?'DOWN':'OFF',detail:ex.mode});
+        }
+      });
+    }
+    // Diagnostics
+    if(diag?.mexc){
+      const existing=sources.find(s=>s.name==='MEXC');
+      if(existing){existing.latency=diag.mexc.latencyMs;existing.grade=diag.mexc.healthGrade;}
+      else sources.push({name:'MEXC',status:diag.mexc.status,latency:diag.mexc.latencyMs,grade:diag.mexc.healthGrade});
+    }
+    if(diag?.supabase){
+      sources.push({name:'Supabase',status:diag.supabase.status,latency:diag.supabase.roundtripMs,grade:diag.supabase.healthGrade});
+    }
+    // AI
+    if(credits){
+      sources.push({name:'OpenAI',status:credits.openai?.status==='ok'?'OK':'DOWN',detail:credits.openai?.balance});
+      sources.push({name:'DeepSeek',status:credits.deepseek?.status==='ok'?'OK':'DOWN',detail:credits.deepseek?.balance});
+    }
+    // Heartbeat providers
+    if(dash?.heartbeat?.providers){
+      Object.entries(dash.heartbeat.providers).forEach(([name,prov])=>{
+        if(!sources.find(s=>s.name.toLowerCase()===name.toLowerCase())){
+          sources.push({name,status:prov.ok?'OK':'DOWN',latency:prov.lastLatencyMs??undefined});
+        }
+      });
+    }
+    return sources;
+  },[health,exchanges,diag,credits,dash?.heartbeat]);
+
+  // Overall alert level
+  const alertLevel=useMemo(()=>{
+    if(dash?.killSwitch?.engaged)return'RED';
+    const downCount=apiSources.filter(s=>s.status==='DOWN'||s.status==='ERROR').length;
+    if(downCount>=2||overallStatus==='CRITICAL')return'RED';
+    if(downCount>=1||overallStatus==='DEGRADED'||errorCount>3)return'YELLOW';
+    return'GREEN';
+  },[apiSources,overallStatus,errorCount,dash?.killSwitch]);
 
   return(
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:C.font,paddingBottom:80,color:C.text}}>
       <style>{`
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         @keyframes spin{to{transform:rotate(360deg)}}
-        .log-row{border-bottom:1px solid ${C.border};padding:6px 12px;display:flex;gap:8px;align-items:flex-start;}
-        .log-row:last-child{border-bottom:none;}
-        .log-row:hover{background:${C.surfaceAlt};}
+        *{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:${C.borderAlt} transparent;}
+        .scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+        .grid-2{display:grid;grid-template-columns:repeat(2,1fr);}
+        .grid-3{display:grid;grid-template-columns:repeat(3,1fr);}
+        .grid-4{display:grid;grid-template-columns:repeat(4,1fr);}
+        .chip{display:flex;align-items:center;gap:6px;padding:7px 10px;background:${C.surfaceAlt};border:1px solid ${C.border};border-radius:7px;flex-shrink:0;}
         .tab-btn{background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.04em;font-family:inherit;}
         .tab-btn.active{background:${C.borderAlt};color:${C.white};}
         .tab-btn:not(.active){color:${C.mutedLight};}
-        .ex-row{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid ${C.border};}
+        .log-row{border-bottom:1px solid ${C.border};padding:5px 10px;display:flex;gap:6px;align-items:flex-start;font-size:10px;}
+        .log-row:last-child{border-bottom:none;}
+        .log-row:hover{background:${C.surfaceAlt};}
+        .cmd-grid{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;}
+        .ex-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid ${C.border};}
         .ex-row:last-child{border-bottom:none;}
-        .chip{display:flex;align-items:center;gap:6px;padding:7px 10px;background:${C.surfaceAlt};border:1px solid ${C.border};border-radius:7px;flex-shrink:0;}
+        @media(max-width:640px){
+          .grid-4{grid-template-columns:repeat(2,1fr);}
+          .grid-3{grid-template-columns:repeat(2,1fr);}
+          .hide-phone{display:none !important;}
+        }
+        @media(max-width:400px){
+          .grid-2{grid-template-columns:1fr;}
+        }
       `}</style>
 
-      {/* ── HEADER ── */}
-      <header style={{position:'sticky',top:0,zIndex:50,background:C.bg,borderBottom:`1px solid ${C.border}`,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10,flex:1,minWidth:'200px'}}>
+      {/* ══════════════════════════════════════════
+          HEADER — alert bar + overall status
+          ══════════════════════════════════════════ */}
+      {alertLevel!=='GREEN'&&(
+        <div style={{background:alertLevel==='RED'?C.redBg:C.yellowBg,borderBottom:`1px solid ${alertLevel==='RED'?C.red:C.yellow}40`,padding:'6px 14px',display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:8,height:8,borderRadius:'50%',background:alertLevel==='RED'?C.red:C.yellow,animation:'pulse 1s infinite'}}/>
+          <span style={{fontSize:11,fontWeight:700,color:alertLevel==='RED'?C.red:C.yellow}}>
+            {dash?.killSwitch?.engaged?'KILL SWITCH ENGAGED — '+dash.killSwitch.reason:alertLevel==='RED'?'CRITICAL — Multiple systems down':'WARNING — Degraded performance'}
+          </span>
+        </div>
+      )}
+
+      <header style={{position:'sticky',top:0,zIndex:50,background:C.bg,borderBottom:`1px solid ${C.border}`,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:'180px'}}>
           {loading
             ?<div style={{width:10,height:10,borderRadius:'50%',border:`2px solid ${C.yellow}`,borderTopColor:'transparent',animation:'spin .8s linear infinite'}}/>
             :<div style={{width:10,height:10,borderRadius:'50%',background:statusCol,boxShadow:`0 0 8px ${statusCol}`,flexShrink:0}}/>
           }
-          <div className="no-overflow">
-            <div style={{fontSize:13,fontWeight:700,color:C.white,lineHeight:1}}>TRADE AI — STATUS</div>
-            <div style={{fontSize:10,color:C.mutedLight,marginTop:2}} className="no-overflow">
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:C.white,lineHeight:1}}>CONTROL ROOM</div>
+            <div style={{fontSize:9,color:C.mutedLight,marginTop:2}}>
               {overallStatus}{health?.version?` · v${health.version.split(' ')[0]}`:''}{health?.uptimeSecs?` · up ${uptime(health.uptimeSecs)}`:''}
             </div>
           </div>
         </div>
-        
-        <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,marginLeft:'auto',flexWrap:'wrap'}}>
           <FreshnessBadge timestamp={lastUpdate?lastUpdate.getTime():null} label="feed" />
-          <div style={{display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:5,border:`1px solid ${(connColor[connectionStatus]||C.muted)}30`,background:hBg(connectionStatus==='connected'?'OK':connectionStatus==='error'?'ERROR':'WARN')}}>
+          <div style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:5,border:`1px solid ${(connColor[connectionStatus]||C.muted)}30`,background:hBg(connectionStatus==='connected'?'OK':connectionStatus==='error'?'ERROR':'WARN')}}>
             <div style={{width:6,height:6,borderRadius:'50%',background:connColor[connectionStatus]||C.mutedLight,animation:connectionStatus==='connected'?'pulse 2s infinite':'none'}}/>
             <span style={{fontSize:9,fontWeight:700,color:connColor[connectionStatus]||C.mutedLight}}>{connLabel[connectionStatus]||connectionStatus.toUpperCase()}</span>
           </div>
+          {/* Alert indicator */}
+          <div style={{width:8,height:8,borderRadius:'50%',background:alertLevel==='GREEN'?C.green:alertLevel==='YELLOW'?C.yellow:C.red,boxShadow:`0 0 6px ${alertLevel==='GREEN'?C.green:alertLevel==='YELLOW'?C.yellow:C.red}`}}/>
           <button style={{padding:'4px 10px',background:'transparent',border:`1px solid ${C.borderAlt}`,color:C.mutedLight,borderRadius:5,fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4,fontFamily:'inherit'}} onClick={refreshAll}>
             <span style={{animation:loading||diagLoading?'spin .8s linear infinite':'none',display:'inline-block'}}>↺</span>Refresh
           </button>
         </div>
       </header>
 
-      {/* ── CORE SERVICES STRIP ── */}
-      <div style={{margin:'12px 12px 0'}} className="scroll-x">
-        <div style={{display:'flex',gap:7,paddingBottom:2}}>
+      {/* ══════════════════════════════════════════
+          CORE SERVICES STRIP
+          ══════════════════════════════════════════ */}
+      <div style={{margin:'10px 12px 0'}} className="scroll-x">
+        <div style={{display:'flex',gap:6,paddingBottom:2}}>
         {[
           {label:'STREAM',val:connLabel[connectionStatus]||'—',col:connColor[connectionStatus]||C.mutedLight},
           {label:'HEARTBEAT',val:dash?.heartbeat?.status||health?.coreMonitor?.heartbeat||'—',col:hColor(dash?.heartbeat?.status||health?.coreMonitor?.heartbeat)},
@@ -242,6 +548,7 @@ export default function StatusPage(){
           {label:'KILL SW',val:dash?.killSwitch?.engaged?'ENGAGED':(health?.coreMonitor?.killSwitch||'—'),col:dash?.killSwitch?.engaged?C.red:C.green},
           {label:'SUPABASE',val:diag?.supabase?.status||'—',col:hColor(diag?.supabase?.status)},
           {label:'MODE',val:health?.systemMode||bot?.stats?.mode||'—',col:health?.systemMode==='AUTO_TRADE'?C.yellow:C.blue},
+          {label:'ALERT',val:alertLevel,col:alertLevel==='GREEN'?C.green:alertLevel==='YELLOW'?C.yellow:C.red},
         ].map(c=>(
           <div key={c.label} className="chip">
             <div style={{width:7,height:7,borderRadius:'50%',background:c.col,animation:c.col===C.green?'pulse 2.5s infinite':'none',flexShrink:0}}/>
@@ -254,71 +561,282 @@ export default function StatusPage(){
         </div>
       </div>
 
-      {/* ── KILL SWITCH ALERT ── */}
-      {dash?.killSwitch?.engaged&&(
-        <div style={{margin:'12px 12px 0',background:C.redBg,border:`1px solid ${C.red}40`,borderRadius:10,padding:'12px 14px'}}>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-            <div style={{width:8,height:8,borderRadius:'50%',background:C.red,animation:'pulse 1s infinite'}}/>
-            <span style={{fontSize:12,fontWeight:800,color:C.red,letterSpacing:'0.05em'}}>KILL SWITCH ENGAGED</span>
-          </div>
-          <div style={{fontSize:11,color:C.text}}>{dash.killSwitch.reason||'Bot halted by emergency stop'}</div>
+      {/* ══════════════════════════════════════════
+          1. LIVE TERMINAL
+          ══════════════════════════════════════════ */}
+      <Section title="Live Terminal" badge={connectionStatus==='connected'?'LIVE':'WARN'} right={
+        <div style={{display:'flex',gap:3,alignItems:'center'}}>
+          {(['all','cmd','error','log'] as const).map(t=>(
+            <button key={t} className={`tab-btn${termFilter===t?' active':''}`} onClick={(e)=>{e.stopPropagation();setTermFilter(t);}}>{t.toUpperCase()}</button>
+          ))}
+          <button className="tab-btn" onClick={(e)=>{e.stopPropagation();setTerminalLines([]);}}>CLR</button>
+          <HelpTooltip section={DASHBOARD_HELP.terminal} position="left" />
         </div>
-      )}
+      }>
+        <div ref={termRef} style={{maxHeight:280,overflowY:'auto',background:'#050709',fontFamily:'monospace',fontSize:10,lineHeight:1.6}}>
+          {filteredTerminal.length===0
+            ?<div style={{padding:'20px 12px',textAlign:'center',color:C.mutedLight}}>Terminal empty — execute commands or wait for logs</div>
+            :filteredTerminal.slice(0,200).map((l,i)=>(
+              <div key={i} style={{padding:'2px 10px',borderBottom:`1px solid ${C.bg}`,color:l.type==='cmd'?C.blue:l.type==='error'?C.red:l.type==='result'?C.green:C.textDim,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+                <span style={{color:C.muted,marginRight:6}}>{ft(l.ts)}</span>
+                {l.type==='cmd'&&<span style={{color:C.yellow,marginRight:4}}>$</span>}
+                {l.text}
+              </div>
+            ))
+          }
+        </div>
+        <div style={{padding:'6px 10px',borderTop:`1px solid ${C.border}`,fontSize:9,color:C.mutedLight,display:'flex',justifyContent:'space-between'}}>
+          <span>{terminalLines.length} lines</span>
+          <span>Updated {lastUpdate?ft(lastUpdate.toISOString()):'—'}</span>
+        </div>
+      </Section>
 
-      {/* ── EXCHANGE CONNECTIVITY ── */}
-      <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Exchange Connectivity</span>
-          <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <FreshnessBadge timestamp={lastLight?.getTime()} label="conn" />
-            {exchanges?.activeExchange&&<span style={{fontSize:9,color:C.blue,fontWeight:600}}>ACTIVE: {exchanges.activeExchange.toUpperCase()}</span>}
-          </div>
+      {/* ══════════════════════════════════════════
+          2. MANUAL COMMANDS
+          ══════════════════════════════════════════ */}
+      <Section title="Command Center" right={
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          {runningCmd&&<span style={{fontSize:9,color:C.yellow}}>Running: {runningCmd}</span>}
+          <HelpTooltip section={DASHBOARD_HELP.commands} position="left" />
         </div>
-        {health?.api&&[
-          {name:'Binance',ok:health.api.binance?.ok,latency:health.api.binance?.latencyMs,mode:health.api.binance?.mode},
-          {name:'DexScreener',ok:health.api.dexScreener?.ok,latency:null,mode:null},
-          {name:'CoinGecko',ok:health.api.coinGecko?.ok,latency:null,mode:null},
-        ].map(r=>(
-          <div key={r.name} className="ex-row">
-            <div style={{width:26,height:26,borderRadius:6,flexShrink:0,background:C.surfaceAlt,border:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,fontWeight:800,color:C.mutedLight}}>{r.name.slice(0,2).toUpperCase()}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:11,fontWeight:600,color:C.text}}>{r.name}</div>
-              {r.mode&&<div style={{fontSize:9,color:C.mutedLight}}>{r.mode}</div>}
-            </div>
-            {r.latency!=null&&r.ok&&<div style={{fontSize:9,color:C.mutedLight,marginRight:6}}>{r.latency}ms</div>}
-            <div style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,color:r.ok?C.green:C.red,background:r.ok?C.greenBg:C.redBg,border:`1px solid ${r.ok?C.green:C.red}30`}}>{r.ok?'● LIVE':'○ DOWN'}</div>
+      }>
+        <div style={{padding:'8px 12px'}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.mutedLight,marginBottom:6,letterSpacing:'0.06em'}}>KILL SWITCH</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
+            <CmdBtn label="ENGAGE KILL SWITCH" cmd="killswitch:engage" onRun={runCommand} running={runningCmd} variant="danger"/>
+            <CmdBtn label="Disengage Kill Switch" cmd="killswitch:disengage" onRun={runCommand} running={runningCmd} variant="success"/>
+            <CmdBtn label="Kill Switch Status" cmd="killswitch:status" onRun={runCommand} running={runningCmd}/>
           </div>
-        ))}
-        {exchanges?.exchanges.filter(e=>e.name!=='binance').map(ex=>(
-          <div key={ex.name} className="ex-row">
-            <div style={{width:26,height:26,borderRadius:6,flexShrink:0,background:C.surfaceAlt,border:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,fontWeight:800,color:C.mutedLight}}>{ex.name.slice(0,2).toUpperCase()}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:11,fontWeight:600,color:ex.enabled?C.text:C.mutedLight}}>{ex.name.toUpperCase()}</div>
-              <div style={{fontSize:9,color:C.mutedLight}}>{ex.enabled?ex.mode:'NOT CONFIGURED'}</div>
-            </div>
-            {diag?.mexc?.latencyMs!=null&&ex.name==='mexc'&&ex.connected&&<div style={{fontSize:9,color:C.mutedLight,marginRight:6}}>{diag.mexc.latencyMs}ms</div>}
-            <div style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,color:ex.connected?C.green:ex.enabled?C.red:C.muted,background:ex.connected?C.greenBg:ex.enabled?C.redBg:'transparent',border:`1px solid ${ex.connected?C.green:ex.enabled?C.red:C.muted}30`}}>{ex.connected?'● LIVE':ex.enabled?'○ DOWN':'— OFF'}</div>
-          </div>
-        ))}
-      </div>
 
-      {/* ── AI PROVIDERS + DB ── */}
-      <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>AI Providers & Database</span>
-          <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <FreshnessBadge timestamp={lastDiag?.getTime()} label="diag" freshMs={120000} staleMs={300000} />
-            {diagLoading&&<span style={{fontSize:9,color:C.yellow}}>◌ checking…</span>}
-            {lastDiag&&!diagLoading&&<span style={{fontSize:9,color:C.mutedLight}}>checked {ft(lastDiag.toISOString())}</span>}
+          <div style={{fontSize:9,fontWeight:700,color:C.mutedLight,marginBottom:6,letterSpacing:'0.06em'}}>AGENT ORCHESTRATION</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
+            <CmdBtn label="Swarm Status" cmd="agents:status" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Orchestrate BTCUSDT" cmd="agents:orchestrate" params={{symbol:'BTCUSDT'}} onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Orchestrate ETHUSDT" cmd="agents:orchestrate" params={{symbol:'ETHUSDT'}} onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Omega Status" cmd="omega:status" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Arena Status" cmd="arena:status" onRun={runCommand} running={runningCmd}/>
+          </div>
+
+          <div style={{fontSize:9,fontWeight:700,color:C.mutedLight,marginBottom:6,letterSpacing:'0.06em'}}>DATA COLLECTION</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
+            <CmdBtn label="Collect Sentiment" cmd="collect:sentiment" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Collect News" cmd="collect:news" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Snapshot Positions" cmd="collect:positions" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Poly Scan" cmd="poly:scan" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Poly MTM" cmd="poly:mtm" onRun={runCommand} running={runningCmd}/>
+          </div>
+
+          <div style={{fontSize:9,fontWeight:700,color:C.mutedLight,marginBottom:6,letterSpacing:'0.06em'}}>BOT CONTROL & DIAGNOSTICS</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
+            <CmdBtn label="Evaluate Signals" cmd="bot:evaluate" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Recalculate Performance" cmd="bot:recalculate" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Trigger Promoter" cmd="bot:trigger-promoter" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Full Diagnostics" cmd="diag:full" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Signal Quality" cmd="diag:signal-quality" onRun={runCommand} running={runningCmd}/>
+          </div>
+
+          <div style={{fontSize:9,fontWeight:700,color:C.mutedLight,marginBottom:6,letterSpacing:'0.06em'}}>SYSTEM</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            <CmdBtn label="Ping Watchdog" cmd="watchdog:ping" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Start Heartbeat" cmd="heartbeat:start" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Heartbeat Status" cmd="heartbeat:status" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Reset Daily Triggers" cmd="reset:daily-triggers" onRun={runCommand} running={runningCmd}/>
+            <CmdBtn label="Auto-Promote" cmd="arena:promote" onRun={runCommand} running={runningCmd}/>
           </div>
         </div>
-        <div className="grid-2" style={{background:C.border, gap:'1px'}}>
+      </Section>
+
+      {/* ══════════════════════════════════════════
+          3. STRATEGY PERFORMANCE
+          ══════════════════════════════════════════ */}
+      <Section title={`Strategy Performance (${strategies.length})`} right={
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          <FreshnessBadge timestamp={lastUpdate?.getTime()} label="perf"/>
+          <HelpTooltip section={DASHBOARD_HELP.strategy} position="left" />
+        </div>
+      }>
+        {strategies.length===0?(
+          <div style={{padding:'20px 12px',textAlign:'center',color:C.mutedLight,fontSize:11}}>No strategy data available</div>
+        ):(
+          <div style={{maxHeight:400,overflowY:'auto'}}>
+            {strategies.map((s:{signalType:string;source:string;totalTrades:number;wins:number;losses:number;winRate:number;avgPnlPercent:number;bestTrade:number;worstTrade:number},i:number)=>{
+              const wr=s.winRate*100;
+              const wrCol=wr>=60?C.green:wr>=45?C.yellow:C.red;
+              const pnlCol=s.avgPnlPercent>=0?C.green:C.red;
+              return(
+                <div key={i} style={{padding:'10px 12px',borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:11,fontWeight:700,color:C.white}}>{s.signalType}</span>
+                      <span style={{fontSize:8,color:C.mutedLight,padding:'1px 5px',borderRadius:3,background:C.surfaceAlt}}>{s.source}</span>
+                    </div>
+                    <span style={{fontSize:12,fontWeight:700,color:wrCol}}>{wr.toFixed(1)}% WR</span>
+                  </div>
+                  <div style={{display:'flex',gap:12,flexWrap:'wrap',fontSize:9,color:C.textDim}}>
+                    <span>Trades: <b style={{color:C.white}}>{s.totalTrades}</b></span>
+                    <span>W: <b style={{color:C.green}}>{s.wins}</b></span>
+                    <span>L: <b style={{color:C.red}}>{s.losses}</b></span>
+                    <span>Avg PnL: <b style={{color:pnlCol}}>{s.avgPnlPercent.toFixed(2)}%</b></span>
+                    <span>Best: <b style={{color:C.green}}>{s.bestTrade.toFixed(2)}%</b></span>
+                    <span>Worst: <b style={{color:C.red}}>{s.worstTrade.toFixed(2)}%</b></span>
+                  </div>
+                  {/* Win rate bar */}
+                  <div style={{marginTop:6,height:4,borderRadius:2,background:C.border,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${Math.min(100,wr)}%`,background:wrCol,borderRadius:2}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+
+      {/* ══════════════════════════════════════════
+          4. TRADING OPERATIONS
+          ══════════════════════════════════════════ */}
+      <Section title="Trading Operations" right={
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          <span style={{fontSize:9,color:health?.systemMode==='AUTO_TRADE'?C.yellow:C.blue,fontWeight:700}}>{health?.systemMode||bot?.stats?.mode||'PAPER'}</span>
+          <HelpTooltip section={DASHBOARD_HELP.trading} position="left" />
+        </div>
+      }>
+        <div className="grid-4" style={{background:C.border,gap:'1px'}}>
+          {card('Decisions Today',(health?.trading?.decisionsToday??dash?.trading?.totalSignals??'—').toString(),C.blue)}
+          {card('Open Positions',(diag?.positions?.open??dash?.trading?.openPositions??'—').toString(),C.white)}
+          {card('Win Rate',bot?.stats?.overallWinRate!=null?`${bot.stats.overallWinRate.toFixed(1)}%`:'—',bot?.stats?.overallWinRate!=null&&bot.stats.overallWinRate>=55?C.green:bot?.stats?.overallWinRate!=null&&bot.stats.overallWinRate>=45?C.yellow:C.red)}
+          {card('Total Trades',(diag?.equity?.totalTrades??bot?.stats?.totalDecisions??'—').toString(),C.text)}
+        </div>
+        {diag?.equity&&(
+          <div style={{padding:'8px 12px',display:'flex',gap:14,borderTop:`1px solid ${C.border}`,flexWrap:'wrap'}}>
+            {[
+              {l:'Equity',v:usd(diag.equity.currentBalance),c:C.white},
+              {l:'Peak',v:usd(diag.equity.peakBalance),c:C.blue},
+              {l:'MaxDD',v:pct(diag.equity.maxDrawdownPercent),c:(diag.equity.maxDrawdownPercent??0)>15?C.red:C.yellow},
+              {l:'W',v:String(diag.equity.wins),c:C.green},
+              {l:'L',v:String(diag.equity.losses),c:C.red},
+              {l:'WR',v:pct(diag.equity.winRatePercent),c:(diag.equity.winRatePercent??0)>=55?C.green:C.yellow},
+            ].map(x=>(
+              <div key={x.l} style={{fontSize:9,color:C.mutedLight}}>{x.l}&nbsp;<span style={{color:x.c,fontWeight:700}}>{x.v}</span></div>
+            ))}
+            {bot?.stats?.streakType&&bot.stats.streakType!=='NONE'&&(
+              <div style={{fontSize:9,color:C.mutedLight}}>Streak&nbsp;<span style={{color:bot.stats.streakType==='WIN'?C.green:C.red,fontWeight:700}}>{bot.stats.streakType==='WIN'?'▲':'▼'} {Math.abs(bot.stats.currentStreak)}</span></div>
+            )}
+          </div>
+        )}
+      </Section>
+
+      {/* ══════════════════════════════════════════
+          5. CHARTS — Equity, PnL, Memory, Errors
+          ══════════════════════════════════════════ */}
+      <Section title="Charts & Trends" right={
+        <div style={{display:'flex',gap:4}}>
+          {[12,24].map(h=>(
+            <button key={h} className={`tab-btn${historyHours===h?' active':''}`} onClick={(e)=>{e.stopPropagation();setHistoryHours(h);}}>{h}h</button>
+          ))}
+        </div>
+      }>
+        <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
+          {/* Equity Curve */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>EQUITY CURVE</div>
+            <Sparkline data={equityData} color={C.green}/>
+            {equityData.length>0&&<div style={{fontSize:9,color:C.green,fontWeight:700,marginTop:4}}>${equityData[equityData.length-1]?.toFixed(0)}</div>}
+          </div>
+          {/* PnL Trend */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>PnL TREND</div>
+            <Sparkline data={pnlData} color={C.blue}/>
+            {pnlData.length>0&&<div style={{fontSize:9,color:pnlData[pnlData.length-1]>=0?C.green:C.red,fontWeight:700,marginTop:4}}>{pnlData[pnlData.length-1]?.toFixed(2)}%</div>}
+          </div>
+          {/* Memory Usage */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>MEMORY (RSS)</div>
+            <Sparkline data={historyMem} color={C.yellow}/>
+            {diag?.system&&<div style={{fontSize:9,color:C.text,fontWeight:700,marginTop:4}}>{diag.system.memoryUsageMB.rss} MB</div>}
+          </div>
+          {/* Error Rate */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>ERROR RATE</div>
+            <Sparkline data={historyErrors} color={C.red}/>
+            {dash?.logs&&<div style={{fontSize:9,color:errorCount>0?C.red:C.green,fontWeight:700,marginTop:4}}>{dash.logs.errorCount1h} /hr</div>}
+          </div>
+          {/* Latency */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>LATENCY</div>
+            {diag?.supabase&&diag?.mexc?(
+              <BarChart data={[diag.supabase.roundtripMs,diag.mexc.latencyMs,health?.api?.binance?.latencyMs||0]} labels={['Supabase','MEXC','Binance']} colors={[C.blue,C.purple,C.yellow]} height={50}/>
+            ):<div style={{color:C.mutedLight,fontSize:9}}>No data</div>}
+          </div>
+          {/* Win Rate Trend */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>WIN RATE</div>
+            {strategies.length>0?(
+              <BarChart data={strategies.slice(0,5).map((s:{winRate:number})=>Math.round(s.winRate*100))} labels={strategies.slice(0,5).map((s:{signalType:string})=>s.signalType.slice(0,6))} colors={[C.green,C.blue,C.yellow,C.purple,C.orange]} height={50}/>
+            ):<div style={{color:C.mutedLight,fontSize:9}}>No data</div>}
+          </div>
+          {/* Drawdown */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>DRAWDOWN</div>
+            <div style={{fontSize:18,fontWeight:700,color:(diag?.equity?.maxDrawdownPercent??0)>10?C.red:(diag?.equity?.maxDrawdownPercent??0)>5?C.yellow:C.green}}>
+              {pct(diag?.equity?.maxDrawdownPercent)}
+            </div>
+            <div style={{fontSize:8,color:C.mutedLight,marginTop:2}}>Max Drawdown</div>
+          </div>
+          {/* Connection Uptime */}
+          <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>UPTIME</div>
+            <div style={{fontSize:18,fontWeight:700,color:C.green}}>{uptime(diag?.system?.uptimeSeconds||0)}</div>
+            <div style={{fontSize:8,color:C.mutedLight,marginTop:2}}>{updateCount} SSE updates</div>
+          </div>
+        </div>
+      </Section>
+
+      {/* ══════════════════════════════════════════
+          6. API / SOURCE HEALTH
+          ══════════════════════════════════════════ */}
+      <Section title={`API & Source Health (${apiSources.length})`} badge={apiSources.every(s=>s.status==='OK')?'OK':apiSources.some(s=>s.status==='DOWN')?'DEGRADED':'OK'} right={
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          <FreshnessBadge timestamp={lastLight?.getTime()} label="api"/>
+          <HelpTooltip section={DASHBOARD_HELP.apiHealth} position="left" />
+        </div>
+      }>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:1,background:C.border}}>
+          {apiSources.map(s=>{
+            const col=hColor(s.status);
+            return(
+              <div key={s.name} style={{background:C.surface,padding:'10px 12px',display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:8,height:8,borderRadius:'50%',background:col,animation:s.status==='OK'?'pulse 3s infinite':'none',flexShrink:0}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.white,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.name}</div>
+                  <div style={{fontSize:8,color:C.mutedLight}}>
+                    {s.latency!=null?`${s.latency}ms`:''}
+                    {s.grade?` · ${s.grade}`:''}
+                    {s.detail?` · ${s.detail}`:''}
+                  </div>
+                </div>
+                <span style={{fontSize:8,fontWeight:700,color:col,padding:'1px 5px',borderRadius:3,background:`${col}14`}}>{s.status}</span>
+              </div>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* ══════════════════════════════════════════
+          7. AI PROVIDERS & CREDITS
+          ══════════════════════════════════════════ */}
+      <Section title="AI Providers & Database" right={
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <FreshnessBadge timestamp={lastDiag?.getTime()} label="diag" freshMs={120000} staleMs={300000}/>
+          {diagLoading&&<span style={{fontSize:9,color:C.yellow}}>checking...</span>}
+        </div>
+      }>
+        <div className="grid-2" style={{background:C.border,gap:'1px'}}>
           <div style={{background:C.surface,padding:'10px 12px'}}>
             <div style={{fontSize:9,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase',marginBottom:4}}>OpenAI GPT</div>
             <div style={{fontSize:15,fontWeight:700,color:hColor(credits?.openai.status)}}>{credits?credits.openai.status:'—'}</div>
-            <div style={{fontSize:9,color:C.mutedLight,marginTop:2}}>GPT-4 / Analysis</div>
+            {credits?.openai?.balance&&<div style={{fontSize:9,color:C.mutedLight,marginTop:2}}>${credits.openai.balance}</div>}
           </div>
-          <div style={{background:C.surface,padding:'10px 12px',gridColumn:'span 1',minWidth:'200px'}}>
+          <div style={{background:C.surface,padding:'10px 12px',minWidth:'200px'}}>
             <DeepSeekStatus />
           </div>
           <div style={{background:C.surface,padding:'10px 12px'}}>
@@ -336,49 +854,37 @@ export default function StatusPage(){
             ):<div style={{fontSize:14,fontWeight:700,color:C.mutedLight}}>—</div>}
           </div>
         </div>
-      </div>
-
-      {/* ── TRADING OPERATIONS ── */}
-      <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Trading Operations</span>
-          <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <FreshnessBadge timestamp={lastUpdate?.getTime()} label="ops" />
-            <span style={{fontSize:9,color:health?.systemMode==='AUTO_TRADE'?C.yellow:C.blue,fontWeight:700}}>{health?.systemMode||bot?.stats?.mode||'PAPER'}</span>
-          </div>
-        </div>
-        <div className="grid-4" style={{background:C.border, gap:'1px'}}>
-          {card('Decisions Today',(health?.trading?.decisionsToday??dash?.trading?.totalSignals??'—').toString(),C.blue)}
-          {card('Open Positions',(diag?.positions?.open??dash?.trading?.openPositions??'—').toString(),C.white)}
-          {card('Win Rate',bot?.stats?.overallWinRate!=null?`${bot.stats.overallWinRate.toFixed(1)}%`:'—',bot?.stats?.overallWinRate!=null&&bot.stats.overallWinRate>=55?C.green:bot?.stats?.overallWinRate!=null&&bot.stats.overallWinRate>=45?C.yellow:C.red)}
-          {card('Total Trades',(diag?.equity?.totalTrades??bot?.stats?.totalDecisions??'—').toString(),C.text)}
-        </div>
-        {diag?.equity&&(
-          <div style={{padding:'9px 12px',display:'flex',gap:16,borderTop:`1px solid ${C.border}`,flexWrap:'wrap'}}>
+        {/* Credit bars */}
+        {credits&&(
+          <div style={{padding:'10px 12px',display:'flex',flexDirection:'column',gap:8,borderTop:`1px solid ${C.border}`}}>
             {[
-              {l:'W',v:(diag.equity.wins??0).toString(),c:C.green},
-              {l:'L',v:(diag.equity.losses??0).toString(),c:C.red},
-              {l:'WR',v:`${(diag.equity.winRatePercent??0).toFixed(1)}%`,c:(diag.equity.winRatePercent??0)>=55?C.green:C.yellow},
-              {l:'Equity',v:`$${(diag.equity.currentBalance??0).toFixed(0)}`,c:C.white},
-              {l:'Peak',v:`$${(diag.equity.peakBalance??0).toFixed(0)}`,c:C.blue},
-              {l:'MaxDD',v:`${(diag.equity.maxDrawdownPercent??0).toFixed(1)}%`,c:(diag.equity.maxDrawdownPercent??0)>15?C.red:C.yellow},
-            ].map(x=>(
-              <div key={x.l} style={{fontSize:9,color:C.mutedLight}}>{x.l}&nbsp;<span style={{color:x.c,fontWeight:700}}>{x.v}</span></div>
-            ))}
-            {bot?.stats?.streakType&&bot.stats.streakType!=='NONE'&&(
-              <div style={{fontSize:9,color:C.mutedLight}}>Streak&nbsp;<span style={{color:bot.stats.streakType==='WIN'?C.green:C.red,fontWeight:700}}>{bot.stats.streakType==='WIN'?'▲':'▼'} {Math.abs(bot.stats.currentStreak)}</span></div>
-            )}
+              {name:'OpenAI',data:credits.openai,color:C.green},
+              {name:'DeepSeek',data:credits.deepseek,color:C.purple},
+            ].map(p=>{
+              const available=p.data?.is_available||p.data?.status==='ok';
+              const bal=parseFloat(String(p.data?.balance||'0'))||0;
+              const pctVal=Math.min(100,Math.max(0,bal>0?(bal/20)*100:available?80:0));
+              return(
+                <div key={p.name}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                    <span style={{fontSize:9,fontWeight:700,color:C.white}}>{p.name}</span>
+                    <span style={{fontSize:9,fontWeight:700,color:available?p.color:C.red}}>{available?'AVAILABLE':'UNAVAILABLE'}{bal>0?` · $${bal.toFixed(2)}`:''}</span>
+                  </div>
+                  <div style={{height:5,background:C.surfaceAlt,borderRadius:3,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${pctVal}%`,background:`linear-gradient(90deg,${p.color},${p.color}88)`,borderRadius:3,transition:'width 0.6s ease'}}/>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
-      </div>
+      </Section>
 
-      {/* ── TOP GLADIATOR ── */}
+      {/* ══════════════════════════════════════════
+          8. TOP GLADIATOR
+          ══════════════════════════════════════════ */}
       {omega&&(
-        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Top Gladiator</span>
-            <span style={{fontSize:9,color:omega.isOmega?C.yellow:C.mutedLight,fontWeight:700}}>{omega.isOmega?'⚡ OMEGA':'ACTIVE'}</span>
-          </div>
+        <Section title="Top Gladiator" right={<span style={{fontSize:9,color:omega.isOmega?C.yellow:C.mutedLight,fontWeight:700}}>{omega.isOmega?'OMEGA':'ACTIVE'}</span>}>
           <div style={{padding:'10px 12px'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
               <div>
@@ -391,61 +897,73 @@ export default function StatusPage(){
               </div>
             </div>
             <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-              <span style={{fontSize:9,color:C.mutedLight}}>Training Progress</span>
+              <span style={{fontSize:9,color:C.mutedLight}}>Training</span>
               <span style={{fontSize:9,fontWeight:700,color:C.blue}}>{Math.round(omega.trainingProgress*100)}%</span>
             </div>
             <div style={{height:4,borderRadius:2,background:C.border,overflow:'hidden'}}>
               <div style={{height:'100%',borderRadius:2,background:omega.isOmega?C.yellow:C.green,width:`${Math.round(omega.trainingProgress*100)}%`}}/>
             </div>
-            <div style={{marginTop:7,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-              <span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:3,color:hColor(omega.status),background:hBg(omega.status),border:`1px solid ${hColor(omega.status)}30`}}>{omega.status}</span>
-              {gladiators.length>1&&<span style={{fontSize:9,color:C.mutedLight}}>{gladiators.length} gladiators active</span>}
-              {(health?.trading?.forgeProgress??0)>0&&<span style={{fontSize:9,color:C.purple}}>Forge: {Math.round((health?.trading?.forgeProgress??0)*100)}%</span>}
-            </div>
           </div>
-        </div>
+        </Section>
       )}
 
-      {/* ── SYSTEM RESOURCES ── */}
-      <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>System Resources</span>
-          <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <FreshnessBadge timestamp={lastDiag?.getTime()} label="sys" freshMs={120000} staleMs={300000} />
-            {diag?.system&&<span style={{fontSize:9,color:C.mutedLight}}>diag in {diag.system.diagnosticDurationMs}ms</span>}
+      {/* ══════════════════════════════════════════
+          9. ALL GLADIATORS
+          ══════════════════════════════════════════ */}
+      {bot?.gladiators&&bot.gladiators.length>0&&(
+        <Section title={`All Gladiators (${bot.gladiators.length})`} right={<span style={{fontSize:9,color:C.green}}>{bot.gladiators.filter((g:Record<string,unknown>)=>g.isLive||g.status==='LIVE').length} LIVE</span>} defaultOpen={false}>
+          <div style={{maxHeight:320,overflowY:'auto',padding:'6px 12px'}}>
+            {bot.gladiators.map((g:Record<string,unknown>)=>{
+              const gId=String(g.id||'');const gName=String(g.name||g.id||'?');const gStatus=String(g.status||'UNKNOWN');
+              const gIsLive=!!g.isLive||gStatus==='LIVE';const gWinRate=Number(g.winRate)||0;const gTotalTrades=Number(g.totalTrades)||0;
+              const gProfitFactor=Number(g.profitFactor)||0;const gArena=String(g.arena||'—');const gTrainingProgress=Number(g.trainingProgress)||0;const gIsOmega=!!g.isOmega;
+              const statusCol=gIsLive?C.green:gStatus==='IN_TRAINING'?C.blue:gStatus==='RETIRED'||gStatus==='ELIMINATED'?C.red:C.yellow;
+              const open=expandedGlad.has(gId);
+              return(
+                <div key={gId} onClick={()=>toggleGlad(gId)} style={{background:C.surfaceAlt,border:`1px solid ${open?C.blue:C.border}`,borderRadius:8,padding:'8px 10px',marginBottom:6,cursor:'pointer',transition:'all 0.2s'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <div style={{width:6,height:6,borderRadius:'50%',background:statusCol,animation:gIsLive?'pulse 2s infinite':'none'}}/>
+                      <span style={{fontSize:11,fontWeight:700,color:C.white}}>{gName}</span>
+                      {gIsOmega&&<span style={{fontSize:8,fontWeight:700,color:C.purple,padding:'1px 5px',borderRadius:3,background:C.purpleBg}}>OMEGA</span>}
+                      <span style={{fontSize:8,fontWeight:700,color:statusCol,padding:'1px 5px',borderRadius:3,background:`${statusCol}14`}}>{gStatus}</span>
+                    </div>
+                    <div style={{display:'flex',gap:10,alignItems:'center'}}>
+                      <span style={{fontSize:10,fontWeight:700,color:gWinRate>=0.6?C.green:gWinRate>=0.45?C.yellow:C.red}}>{(gWinRate*100).toFixed(1)}%</span>
+                      <span className="hide-phone" style={{fontSize:9,color:C.mutedLight}}>{gTotalTrades} trades</span>
+                      <span style={{fontSize:10,color:C.textDim,transform:open?'rotate(90deg)':'none',transition:'transform 0.2s'}}>›</span>
+                    </div>
+                  </div>
+                  {open&&(
+                    <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,fontSize:9,color:C.textDim}}>
+                      <div>Arena: <span style={{color:C.white,fontWeight:600}}>{gArena}</span></div>
+                      <div>P/F: <span style={{color:C.white,fontWeight:600}}>{gProfitFactor>0?gProfitFactor.toFixed(2):'—'}</span></div>
+                      <div>Training: <span style={{color:C.blue,fontWeight:600}}>{gTrainingProgress}%</span></div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        </div>
-        <div className="grid-3" style={{background:C.border, gap:'1px'}}>
-          {card('RSS Memory',diag?.system?`${diag.system.memoryUsageMB.rss} MB`:(dash?.system?.memoryUsageRssMB?`${dash.system.memoryUsageRssMB} MB`:'—'),diag?.system&&diag.system.memoryUsageMB.rss>400?C.yellow:C.text)}
-          {card('Heap',diag?.system?`${diag.system.memoryUsageMB.heapUsed}/${diag.system.memoryUsageMB.heapTotal} MB`:'—',C.text)}
-          {card('Uptime',diag?.system?uptime(diag.system.uptimeSeconds):(dash?.system?.uptime?uptime(dash.system.uptime):'—'),C.green)}
-          {card('Node',diag?.system?.nodeVersion||'—',C.mutedLight)}
-          {card('Sync Queue',dash?.system?.syncQueue?`${dash.system.syncQueue.pending} pending`:'—',dash?.system?.syncQueue?.pending?C.yellow:C.mutedLight)}
-          {card('Updates',updateCount.toString(),C.blue)}
-        </div>
-        {dash?.system?.syncQueue?.lastSyncComplete&&(
-          <div style={{padding:'6px 12px',borderTop:`1px solid ${C.border}`,fontSize:9,color:C.mutedLight}}>
-            Last sync: {ft(dash.system.syncQueue.lastSyncComplete)} · Completed: {dash.system.syncQueue.totalCompleted}
-          </div>
-        )}
-      </div>
+        </Section>
+      )}
 
-      {/* ── LIVE CONSOLE ── */}
-      <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Live Console</span>
-          <div style={{display:'flex',gap:4,alignItems:'center'}}>
-            {errorCount>0&&<span style={{fontSize:9,fontWeight:700,color:C.red,marginRight:4}}>{errorCount} ERR</span>}
-            {warnCount>0&&<span style={{fontSize:9,fontWeight:700,color:C.yellow,marginRight:4}}>{warnCount} WARN</span>}
-            {(['all','error','warn'] as const).map(t=>(
-              <button key={t} className={`tab-btn${activeLog===t?' active':''}`} onClick={()=>setActiveLog(t)}>{t.toUpperCase()}</button>
-            ))}
-          </div>
+      {/* ══════════════════════════════════════════
+          10. LIVE CONSOLE (backend logs)
+          ══════════════════════════════════════════ */}
+      <Section title="Live Console" right={
+        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+          {errorCount>0&&<span style={{fontSize:9,fontWeight:700,color:C.red}}>{errorCount} ERR</span>}
+          {warnCount>0&&<span style={{fontSize:9,fontWeight:700,color:C.yellow}}>{warnCount} WARN</span>}
+          {(['all','error','warn'] as const).map(t=>(
+            <button key={t} className={`tab-btn${activeLog===t?' active':''}`} onClick={(e)=>{e.stopPropagation();setActiveLog(t);}}>{t.toUpperCase()}</button>
+          ))}
         </div>
+      }>
         <div style={{maxHeight:240,overflowY:'auto'}}>
           {filteredLogs.length===0
             ?<div style={{padding:'20px 12px',textAlign:'center',color:C.mutedLight,fontSize:12}}>No log entries</div>
-            :filteredLogs.slice(0,40).map((log,i)=>(
+            :filteredLogs.slice(0,40).map((log:{ts:string;level:string;msg:string},i:number)=>(
               <div key={i} className="log-row">
                 <div style={{fontSize:8,fontWeight:800,color:lColor(log.level),minWidth:30,paddingTop:1,letterSpacing:'0.04em'}}>{log.level?.toUpperCase().slice(0,4)}</div>
                 <div style={{fontSize:9,color:C.mutedLight,whiteSpace:'nowrap',paddingTop:1}}>{ft(log.ts)}</div>
@@ -461,195 +979,29 @@ export default function StatusPage(){
             {lastUpdate&&<span>Updated {ft(lastUpdate.toISOString())}</span>}
           </div>
         )}
-      </div>
+      </Section>
 
-      {/* ── HEARTBEAT PROVIDERS ── */}
-      {dash?.heartbeat?.providers&&Object.keys(dash.heartbeat.providers).length>0&&(
-        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Data Providers</span>
-            <span style={{fontSize:9,color:hColor(dash.heartbeat.status)}}>{dash.heartbeat.status}</span>
-          </div>
-          <div style={{padding:'8px 12px',display:'flex',flexWrap:'wrap',gap:8}}>
-            {Object.entries(dash.heartbeat.providers).map(([name,prov])=>(
-              <div key={name} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 9px',borderRadius:6,background:C.surfaceAlt,border:`1px solid ${C.border}`}}>
-                <div style={{width:6,height:6,borderRadius:'50%',background:prov.ok?C.green:C.red}}/>
-                <span style={{fontSize:10,color:prov.ok?C.text:C.mutedLight,fontWeight:600}}>{name}</span>
-                {prov.lastLatencyMs!=null&&<span style={{fontSize:9,color:C.mutedLight}}>{prov.lastLatencyMs}ms</span>}
-              </div>
-            ))}
-          </div>
+      {/* ══════════════════════════════════════════
+          11. SYSTEM RESOURCES
+          ══════════════════════════════════════════ */}
+      <Section title="System Resources" right={<FreshnessBadge timestamp={lastDiag?.getTime()} label="sys" freshMs={120000} staleMs={300000}/>}>
+        <div className="grid-3" style={{background:C.border,gap:'1px'}}>
+          {card('RSS Memory',diag?.system?`${diag.system.memoryUsageMB.rss} MB`:(dash?.system?.memoryUsageRssMB?`${dash.system.memoryUsageRssMB} MB`:'—'),diag?.system&&diag.system.memoryUsageMB.rss>400?C.yellow:C.text)}
+          {card('Heap',diag?.system?`${diag.system.memoryUsageMB.heapUsed}/${diag.system.memoryUsageMB.heapTotal} MB`:'—',C.text)}
+          {card('Uptime',diag?.system?uptime(diag.system.uptimeSeconds):(dash?.system?.uptime?uptime(dash.system.uptime):'—'),C.green)}
+          {card('Node',diag?.system?.nodeVersion||'—',C.mutedLight)}
+          {card('Sync Queue',dash?.system?.syncQueue?`${dash.system.syncQueue.pending} pending`:'—',dash?.system?.syncQueue?.pending?C.yellow:C.mutedLight)}
+          {card('Updates',updateCount.toString(),C.blue)}
         </div>
-      )}
+      </Section>
 
-      {/* ── LAST SYNDICATE DECISION ── */}
-      {bot?.syndicateAudits&&bot.syndicateAudits.length>0&&(()=>{
-        const last=bot.syndicateAudits[0];
-        return(
-          <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-            <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Last Syndicate Decision</span>
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <FreshnessBadge timestamp={last.timestamp?new Date(last.timestamp).getTime():null} label="synd" freshMs={300000} staleMs={900000} />
-                <span style={{fontSize:9,color:C.mutedLight}}>{ft(last.timestamp)}</span>
-              </div>
-            </div>
-            <div style={{padding:'10px 12px'}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                <div style={{fontSize:13,fontWeight:700,color:C.white}}>{last.symbol}</div>
-                <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,color:last.decision==='BUY'?C.green:last.decision==='SELL'?C.red:C.yellow,background:last.decision==='BUY'?C.greenBg:last.decision==='SELL'?C.redBg:C.yellowBg}}>{last.decision}</span>
-                <span style={{fontSize:9,color:C.blue,marginLeft:'auto',fontWeight:700}}>{Math.round(last.confidence*100)}% conf</span>
-              </div>
-              <div className="grid-2" style={{gap:8}}>
-                {[{name:'ARCHITECT',data:last.architect},{name:'ORACLE',data:last.oracle}].map(a=>(
-                  <div key={a.name} style={{background:C.surfaceAlt,borderRadius:6,padding:'7px 9px',border:`1px solid ${C.border}`}}>
-                    <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:3}}>{a.name}</div>
-                    <div style={{fontSize:10,fontWeight:700,color:a.data.direction==='BUY'?C.green:a.data.direction==='SELL'?C.red:C.yellow}}>{a.data.direction} · {Math.round(a.data.confidence*100)}%</div>
-                    <div style={{fontSize:9,color:C.textDim,marginTop:3,lineHeight:1.4,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{a.data.reasoning}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── DEEP SYSTEM HEALTH GRID (NEW) ── */}
-      <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Deep System Health</span>
-          <FreshnessBadge timestamp={lastDiag?.getTime()} label="health" freshMs={120000} staleMs={300000} />
-        </div>
-        <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:8}}>
-          {[
-            {name:'Supabase DB',latency:diag?.supabase?.roundtripMs,grade:diag?.supabase?.healthGrade,read:diag?.supabase?.readLatencyMs,write:diag?.supabase?.writeLatencyMs,consistent:diag?.supabase?.consistent},
-            {name:'MEXC Exchange',latency:diag?.mexc?.latencyMs,grade:diag?.mexc?.healthGrade,balance:diag?.mexc?.usdtBalance,drift:diag?.mexc?.clockDriftMs},
-            {name:'Binance',latency:health?.api?.binance?.latencyMs,grade:health?.api?.binance?.ok?'A':'F',mode:health?.api?.binance?.mode},
-          ].map(sys=>{
-            const ok=sys.grade==='A'||sys.grade==='B'||sys.grade===undefined;
-            const col=ok?C.green:sys.grade==='C'?C.yellow:C.red;
-            return(
-              <div key={sys.name} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:10}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                  <span style={{fontSize:11,fontWeight:700,color:C.white}}>{sys.name}</span>
-                  <span style={{fontSize:9,fontWeight:700,color:col,padding:'2px 6px',borderRadius:4,background:`${col}14`}}>{sys.grade||'—'}</span>
-                </div>
-                <div style={{fontSize:9,color:C.textDim,display:'flex',flexDirection:'column',gap:3}}>
-                  {sys.latency!=null&&<div>Latency: <span style={{color:C.white,fontWeight:600}}>{sys.latency}ms</span></div>}
-                  {sys.read!=null&&<div>Read: <span style={{color:C.white}}>{sys.read}ms</span> · Write: <span style={{color:C.white}}>{sys.write}ms</span></div>}
-                  {sys.consistent!=null&&<div>Consistent: <span style={{color:sys.consistent?C.green:C.red,fontWeight:600}}>{sys.consistent?'YES':'NO'}</span></div>}
-                  {sys.balance!=null&&<div>USDT Balance: <span style={{color:C.green,fontWeight:700}}>${sys.balance.toFixed(2)}</span></div>}
-                  {sys.drift!=null&&<div>Clock Drift: <span style={{color:Math.abs(sys.drift)<1000?C.green:C.red}}>{sys.drift}ms</span></div>}
-                  {sys.mode&&<div>Mode: <span style={{color:C.blue}}>{sys.mode}</span></div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── API CREDITS VISUALIZER (NEW) ── */}
-      {credits&&(
-        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>API Credit Reserves</span>
-            <FreshnessBadge timestamp={lastDiag?.getTime()} label="creds" freshMs={120000} staleMs={300000} />
-          </div>
-          <div style={{padding:'10px 12px',display:'flex',flexDirection:'column',gap:10}}>
-            {[
-              {name:'OpenAI GPT',data:credits.openai,color:C.green},
-              {name:'DeepSeek',data:credits.deepseek,color:C.purple},
-            ].map(p=>{
-              const available=p.data?.is_available||p.data?.status==='ok';
-              const bal=parseFloat(String(p.data?.balance||'0'))||0;
-              const pct=Math.min(100,Math.max(0,bal>0?(bal/20)*100:available?80:0));
-              return(
-                <div key={p.name}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                    <span style={{fontSize:10,fontWeight:700,color:C.white}}>{p.name}</span>
-                    <span style={{fontSize:9,fontWeight:700,color:available?p.color:C.red}}>{available?'AVAILABLE':'UNAVAILABLE'}{bal>0?` · $${bal.toFixed(2)}`:''}</span>
-                  </div>
-                  <div style={{height:6,background:C.surfaceAlt,borderRadius:3,overflow:'hidden'}}>
-                    <div style={{height:'100%',width:`${pct}%`,background:`linear-gradient(90deg,${p.color},${p.color}88)`,borderRadius:3,transition:'width 0.6s ease'}}/>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── ALL GLADIATORS OVERVIEW (NEW) ── */}
-      {bot?.gladiators&&bot.gladiators.length>0&&(
-        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>All Gladiators ({bot.gladiators.length})</span>
-            <span style={{fontSize:9,color:C.green}}>{bot.gladiators.filter((g:Record<string,unknown>)=>g.isLive||g.status==='LIVE').length} LIVE</span>
-          </div>
-          <div style={{maxHeight:320,overflowY:'auto',padding:'6px 12px'}}>
-            {bot.gladiators.map((g:Record<string,unknown>)=>{
-              const gId=String(g.id||'');const gName=String(g.name||g.id||'?');const gStatus=String(g.status||'UNKNOWN');
-              const gIsLive=!!g.isLive||gStatus==='LIVE';const gWinRate=Number(g.winRate)||0;const gTotalTrades=Number(g.totalTrades)||0;
-              const gProfitFactor=Number(g.profitFactor)||0;const gArena=String(g.arena||'—');const gTrainingProgress=Number(g.trainingProgress)||0;const gIsOmega=!!g.isOmega;
-              const statusCol=gIsLive?C.green:gStatus==='IN_TRAINING'?C.blue:gStatus==='RETIRED'||gStatus==='ELIMINATED'?C.red:C.yellow;
-              const open=expandedGlad.has(gId);
-              return(
-                <div key={gId} onClick={()=>toggleGlad(gId)} style={{background:C.surfaceAlt,border:`1px solid ${open?C.blue:C.border}`,borderRadius:8,padding:'8px 10px',marginBottom:6,cursor:'pointer',transition:'all 0.2s'}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <div style={{width:6,height:6,borderRadius:'50%',background:statusCol,animation:gIsLive?'pulse 2s infinite':'none'}}/>
-                      <span style={{fontSize:11,fontWeight:700,color:C.white}}>{gName}</span>
-                      {gIsOmega&&<span style={{fontSize:8,fontWeight:700,color:C.purple,padding:'1px 5px',borderRadius:3,background:C.purpleBg}}>OMEGA</span>}
-                      <span style={{fontSize:8,fontWeight:700,color:statusCol,padding:'1px 5px',borderRadius:3,background:`${statusCol}14`}}>{gStatus}</span>
-                    </div>
-                    <div style={{display:'flex',gap:12,alignItems:'center'}}>
-                      <span style={{fontSize:10,fontWeight:700,color:gWinRate>=0.6?C.green:gWinRate>=0.45?C.yellow:C.red}}>{(gWinRate*100).toFixed(1)}%</span>
-                      <span style={{fontSize:9,color:C.mutedLight}}>{gTotalTrades} trades</span>
-                      <span style={{fontSize:10,color:C.textDim,transform:open?'rotate(90deg)':'none',transition:'transform 0.2s'}}>›</span>
-                    </div>
-                  </div>
-                  {open&&(
-                    <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,fontSize:9,color:C.textDim}}>
-                      <div>Arena: <span style={{color:C.white,fontWeight:600}}>{gArena}</span></div>
-                      <div>P/F: <span style={{color:C.white,fontWeight:600}}>{gProfitFactor>0?gProfitFactor.toFixed(2):'—'}</span></div>
-                      <div>Training: <span style={{color:C.blue,fontWeight:600}}>{gTrainingProgress}%</span></div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── LIVE POSITIONS PANEL (NEW) ── */}
-      {diag?.positions&&diag.positions.open>0&&(
-        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Open Positions</span>
-            <div style={{display:'flex',alignItems:'center',gap:8}}>
-              <FreshnessBadge timestamp={lastDiag?.getTime()} label="pos" freshMs={120000} staleMs={300000} />
-              <span style={{fontSize:9,color:C.blue,fontWeight:700}}>{diag.positions.open} active</span>
-            </div>
-          </div>
-          <div style={{padding:'6px 12px',fontSize:9,color:C.textDim}}>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,textAlign:'center'}}>
-              <div>Total: <span style={{color:C.white,fontWeight:700}}>{diag.positions.total}</span></div>
-              <div>Open: <span style={{color:C.green,fontWeight:700}}>{diag.positions.open}</span></div>
-              <div>Closed: <span style={{color:C.mutedLight,fontWeight:700}}>{diag.positions.closed}</span></div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── SYNDICATE AUDIT HISTORY (NEW — complements existing Last Syndicate Decision) ── */}
-      {bot?.syndicateAudits&&bot.syndicateAudits.length>1&&(
-        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`}}>
-            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Syndicate Audit Trail ({bot.syndicateAudits.length})</span>
-          </div>
-          <div style={{maxHeight:300,overflowY:'auto',padding:'6px 12px'}}>
-            {bot.syndicateAudits.slice(0,10).map((audit:{symbol:string;decision:string;confidence:number;timestamp:string;architect:{direction:string;confidence:number;reasoning:string};oracle:{direction:string;confidence:number;reasoning:string};nodes?:Array<{seat:string;direction:string;confidence:number;reasoning:string}>},i:number)=>{
+      {/* ══════════════════════════════════════════
+          12. SYNDICATE DECISIONS (last + history)
+          ══════════════════════════════════════════ */}
+      {bot?.syndicateAudits&&bot.syndicateAudits.length>0&&(
+        <Section title={`Syndicate Audit Trail (${bot.syndicateAudits.length})`} defaultOpen={false}>
+          <div style={{maxHeight:400,overflowY:'auto',padding:'6px 12px'}}>
+            {bot.syndicateAudits.slice(0,15).map((audit:{symbol:string;decision:string;confidence:number;timestamp:string;architect:{direction:string;confidence:number;reasoning:string};oracle:{direction:string;confidence:number;reasoning:string};nodes?:Array<{seat:string;direction:string;confidence:number;reasoning:string}>},i:number)=>{
               const open=expandedAudits.has(i);
               const dirCol=audit.decision==='BUY'?C.green:audit.decision==='SELL'?C.red:C.yellow;
               return(
@@ -661,7 +1013,7 @@ export default function StatusPage(){
                       <span style={{fontSize:9,color:C.blue}}>{Math.round(audit.confidence*100)}%</span>
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:6}}>
-                      <span style={{fontSize:8,color:C.mutedLight}}>{ft(audit.timestamp)}</span>
+                      <span style={{fontSize:8,color:C.mutedLight}}>{fdt(audit.timestamp)}</span>
                       <span style={{fontSize:10,color:C.textDim,transform:open?'rotate(90deg)':'none',transition:'transform 0.2s'}}>›</span>
                     </div>
                   </div>
@@ -687,55 +1039,108 @@ export default function StatusPage(){
               );
             })}
           </div>
-        </div>
+        </Section>
       )}
 
-      {/* ── EQUITY & PERFORMANCE DEEP DIVE (NEW) ── */}
-      {diag?.equity&&(
-        <div style={{margin:'12px 12px 0',background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-          <div style={{padding:'8px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>Equity Deep Dive</span>
-            <FreshnessBadge timestamp={lastDiag?.getTime()} label="equity" freshMs={120000} staleMs={300000} />
-          </div>
-          <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8}}>
-            {[
-              {label:'Current',val:`$${diag.equity.currentBalance.toFixed(0)}`,col:C.white},
-              {label:'Peak',val:`$${diag.equity.peakBalance.toFixed(0)}`,col:C.green},
-              {label:'Max DD',val:`${diag.equity.maxDrawdownPercent.toFixed(1)}%`,col:diag.equity.maxDrawdownPercent>10?C.red:C.yellow},
-              {label:'Win Rate',val:`${diag.equity.winRatePercent.toFixed(1)}%`,col:diag.equity.winRatePercent>=50?C.green:C.red},
-              {label:'Wins',val:String(diag.equity.wins),col:C.green},
-              {label:'Losses',val:String(diag.equity.losses),col:C.red},
-              {label:'Mode',val:diag.equity.mode,col:C.blue},
-              {label:'Total Trades',val:String(diag.equity.totalTrades),col:C.white},
-            ].map(m=>(
-              <div key={m.label} style={{background:C.surfaceAlt,borderRadius:6,padding:'8px',textAlign:'center',border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:3}}>{m.label}</div>
-                <div style={{fontSize:13,fontWeight:700,color:m.col}}>{m.val}</div>
+      {/* ══════════════════════════════════════════
+          13. DEEP SYSTEM HEALTH
+          ══════════════════════════════════════════ */}
+      <Section title="Deep System Health" right={<FreshnessBadge timestamp={lastDiag?.getTime()} label="health" freshMs={120000} staleMs={300000}/>} defaultOpen={false}>
+        <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:8}}>
+          {[
+            {name:'Supabase DB',latency:diag?.supabase?.roundtripMs,grade:diag?.supabase?.healthGrade,read:diag?.supabase?.readLatencyMs,write:diag?.supabase?.writeLatencyMs,consistent:diag?.supabase?.consistent},
+            {name:'MEXC Exchange',latency:diag?.mexc?.latencyMs,grade:diag?.mexc?.healthGrade,balance:diag?.mexc?.usdtBalance,drift:diag?.mexc?.clockDriftMs},
+            {name:'Binance',latency:health?.api?.binance?.latencyMs,grade:health?.api?.binance?.ok?'A':'F',mode:health?.api?.binance?.mode},
+          ].map(sys=>{
+            const col=gColor(sys.grade);
+            return(
+              <div key={sys.name} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:10}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                  <span style={{fontSize:11,fontWeight:700,color:C.white}}>{sys.name}</span>
+                  <span style={{fontSize:9,fontWeight:700,color:col,padding:'2px 6px',borderRadius:4,background:`${col}14`}}>{sys.grade||'—'}</span>
+                </div>
+                <div style={{fontSize:9,color:C.textDim,display:'flex',flexDirection:'column',gap:3}}>
+                  {sys.latency!=null&&<div>Latency: <span style={{color:C.white,fontWeight:600}}>{sys.latency}ms</span></div>}
+                  {sys.read!=null&&<div>Read: <span style={{color:C.white}}>{sys.read}ms</span> · Write: <span style={{color:C.white}}>{sys.write}ms</span></div>}
+                  {sys.consistent!=null&&<div>Consistent: <span style={{color:sys.consistent?C.green:C.red,fontWeight:600}}>{sys.consistent?'YES':'NO'}</span></div>}
+                  {sys.balance!=null&&<div>USDT: <span style={{color:C.green,fontWeight:700}}>${sys.balance.toFixed(2)}</span></div>}
+                  {sys.drift!=null&&<div>Clock Drift: <span style={{color:Math.abs(sys.drift)<1000?C.green:C.red}}>{sys.drift}ms</span></div>}
+                  {sys.mode&&<div>Mode: <span style={{color:C.blue}}>{sys.mode}</span></div>}
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
-      )}
+      </Section>
 
-      {/* ─── ADDITIVE: Paper Backtest Panel (Phase 2 Batch 8) ─── */}
+      {/* ══════════════════════════════════════════
+          14. HISTORY / EXPORT
+          ══════════════════════════════════════════ */}
+      <Section title="History & Export" right={
+        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+          {[12,24].map(h=>(
+            <button key={h} className={`tab-btn${historyHours===h?' active':''}`} onClick={(e)=>{e.stopPropagation();setHistoryHours(h);}}>{h}h</button>
+          ))}
+          <button className="tab-btn" onClick={async(e)=>{
+            e.stopPropagation();
+            // Export terminal + logs as JSON
+            const exportData={
+              exported:new Date().toISOString(),
+              timeframe:`${historyHours}h`,
+              terminal:terminalLines,
+              logs:logs,
+              equityCurve:bot?.equityCurve||[],
+              strategies,
+              health:{overall:overallStatus,apis:apiSources},
+            };
+            const jsonStr=JSON.stringify(exportData,null,2);
+            const blob=new Blob([jsonStr],{type:'application/json'});
+            const url=URL.createObjectURL(blob);
+            const fname=`trade-ai-export-${new Date().toISOString().slice(0,16)}.json`;
+            // Mobile-compatible download: use navigator.share if available, else <a> click
+            if(typeof navigator!=='undefined'&&navigator.share&&navigator.canShare?.({files:[new File([blob],fname,{type:'application/json'})]})){
+              try{await navigator.share({files:[new File([blob],fname,{type:'application/json'})],title:'Trade AI Export'});}catch{}
+            }else{
+              const a=document.createElement('a');
+              a.href=url;a.download=fname;
+              document.body.appendChild(a);a.click();document.body.removeChild(a);
+            }
+            URL.revokeObjectURL(url);
+          }}>EXPORT</button>
+        </div>
+      }>
+        <div style={{padding:'10px 12px'}}>
+          <div style={{fontSize:9,color:C.mutedLight,marginBottom:8}}>Showing last {historyHours} hours · {(bot?.equityCurve||[]).length} equity points · {logs.length} log entries · {terminalLines.length} terminal lines</div>
+          {bot?.decisions&&bot.decisions.length>0?(
+            <div style={{maxHeight:200,overflowY:'auto'}}>
+              {bot.decisions.filter((d:{timestamp:string})=>{
+                const t=new Date(d.timestamp).getTime();
+                return t>=Date.now()-historyHours*3600000;
+              }).slice(0,20).map((d:{id:string;symbol:string;direction:string;confidence:number;price:number;timestamp:string;outcome:string;pnlPercent:number|null},i:number)=>(
+                <div key={d.id||i} style={{display:'flex',gap:8,padding:'5px 0',borderBottom:`1px solid ${C.border}`,fontSize:9,alignItems:'center'}}>
+                  <span style={{color:C.mutedLight,whiteSpace:'nowrap'}}>{ft(d.timestamp)}</span>
+                  <span style={{fontWeight:700,color:C.white}}>{d.symbol}</span>
+                  <span style={{fontWeight:700,color:d.direction==='BUY'?C.green:d.direction==='SELL'?C.red:C.yellow}}>{d.direction}</span>
+                  <span style={{color:C.blue}}>{Math.round(d.confidence*100)}%</span>
+                  <span style={{color:d.outcome==='WIN'?C.green:d.outcome==='LOSS'?C.red:C.mutedLight}}>{d.outcome}</span>
+                  {d.pnlPercent!=null&&<span style={{color:d.pnlPercent>=0?C.green:C.red,marginLeft:'auto'}}>{d.pnlPercent.toFixed(2)}%</span>}
+                </div>
+              ))}
+            </div>
+          ):<div style={{color:C.mutedLight,fontSize:10}}>No decisions in selected timeframe</div>}
+        </div>
+      </Section>
+
+      {/* ══════════════════════════════════════════
+          15. EXISTING ADVANCED PANELS
+          ══════════════════════════════════════════ */}
       <PaperBacktestPanel division={selectedDivision ?? undefined} />
-
-      {/* ─── ADDITIVE: Backtest Trend + Tuner (Phase 2 Batch 9) ─── */}
       <BacktestTrendPanel />
-
-      {/* ─── ADDITIVE: Per-Division Tuner (Phase 2 Batch 11) ─── */}
       <DivisionTunerPanel />
-
-      {/* ─── ADDITIVE: Sentinel → Ranker Coupling (Phase 2 Batch 13) ─── */}
       <SentinelCouplingPanel />
-
-      {/* ─── ADDITIVE: Per-Division Sparkline Grid (Phase 2 Batch 13) ─── */}
       <DivisionSparklineGrid onSelectDivision={setSelectedDivision} />
-
-      {/* ─── ADDITIVE: Gladiator Attribution (Phase 2 Batch 16) ─── */}
       <GladiatorAttributionPanel />
 
-      {/* ─── ADDITIVE: Intelligence Panel (Phase 2 Batch 4) ─── */}
       <div style={{padding:'0 12px'}}>
         <IntelligencePanel defaultSector="ALL" title="Market Intelligence" />
       </div>

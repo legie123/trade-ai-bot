@@ -2,6 +2,44 @@
 
 import { useEffect, useState } from 'react';
 import BottomNav from '@/components/BottomNav';
+import HelpTooltip from '@/components/HelpTooltip';
+
+const ARENA_HELP = {
+  topGladiators: {
+    title: 'Top 3 Gladiatori Live',
+    description: 'Cei mai performanți 3 agenți AI activi care plasează tranzacții reale pe contul MEXC.',
+    details: [
+      'WIN RATE — procentul tranzacțiilor câștigătoare din total trades',
+      'PROFIT FACTOR — raportul profit brut / pierdere brută (>1.0 = profitabil)',
+      'LIVE badge = gladiatorul are capital alocat și plasează ordine reale',
+      'Rank 1 = cel mai performant gladiator al arenei la momentul actual',
+    ],
+    tip: 'Un gladiator devine LIVE când are WR ≥45%, PF ≥1.1, și minim 20 trades. Criteriile sunt hardcodate instituțional.',
+  },
+  omega: {
+    title: 'Super AI OMEGA',
+    description: 'Modulul de meta-learning care agregă înțelepciunea colectivă a tuturor gladiatorilor.',
+    details: [
+      'Aggregated WR — win rate-ul calculat din top gladiatori ponderați',
+      'Global Modifier — multiplicatorul aplicat semnalelor (0.7x - 1.3x)',
+      'Direction Bias — tendința generală a pieței detectată de OMEGA (LONG/SHORT/NEUTRAL)',
+      'Dormant = insuficiente date pentru activare (minim 3 gladiatori cu 10+ trades)',
+    ],
+    tip: 'Modifier >1.0 = condiții favorabile. OMEGA crește agresivitatea semnalelor în trend clar.',
+  },
+  leaderboard: {
+    title: 'Global Leaderboard',
+    description: 'Clasamentul complet al tuturor gladiatorilor din arenă, sortabil după metrici cheie.',
+    details: [
+      'PROFIT FAC — Profit Factor: >1.3 excelent, >1.0 profitabil, <1.0 neprofitabil',
+      'WIN RATE — procentul tranzacțiilor câștigătoare',
+      'TOTAL TR — numărul total de tranzacții simulate (phantom) + reale',
+      'PnL — profitul/pierderea cumulată în USDT',
+      'ARENA — categoria/piața pe care operează gladiatorul',
+    ],
+    tip: 'Click pe un gladiator pentru detalii complete: istoricul tranzacțiilor, strategia DNA, și parametrii de risc.',
+  },
+} as const;
 
 interface Gladiator {
   id: string;
@@ -202,9 +240,12 @@ export default function ArenaPage() {
         {/* ── TOP 3 PODIUM ──────────────────────────── */}
         {top3.length > 0 && (
           <div className="glass-card" style={{ padding: '30px 24px' }}>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ width: 4, height: 14, background: C.yellow, borderRadius: 2 }} />
-              ELITE STRIKE TEAM (TOP 3)
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 4, height: 14, background: C.yellow, borderRadius: 2 }} />
+                ELITE STRIKE TEAM (TOP 3)
+              </div>
+              <HelpTooltip section={ARENA_HELP.topGladiators} position="left" />
             </div>
             
             <div className="grid-3" style={{ gap: 16 }}>
@@ -306,6 +347,7 @@ export default function ArenaPage() {
                 <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: `${C.purple}20`, color: C.purple, border: `1px solid ${C.purple}50`, fontWeight: 800 }}>
                   {omega.status}
                 </span>
+                <HelpTooltip section={ARENA_HELP.omega} size={12} />
               </div>
               <div style={{ fontSize: 16, fontFamily: 'monospace', fontWeight: 800, color: winColor(omega.winRate) }}>
                 {omega.winRate}% WR
@@ -335,6 +377,7 @@ export default function ArenaPage() {
              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: C.text, display: 'flex', alignItems: 'center', gap: 10 }}>
                <span style={{ width: 4, height: 14, background: C.blue, borderRadius: 2 }} />
                GLOBAL LEADERBOARD
+               <HelpTooltip section={ARENA_HELP.leaderboard} />
              </div>
              
              {/* Sorters */}
