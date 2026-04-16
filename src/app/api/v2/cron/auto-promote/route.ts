@@ -7,6 +7,7 @@ import { getGladiatorsFromDb, saveGladiatorsToDb, getGladiatorBattles } from '@/
 import { getKillSwitchState } from '@/lib/core/killSwitch';
 import { MonteCarloEngine } from '@/lib/v2/superai/monteCarloEngine';
 import { sendMessage } from '@/lib/alerts/telegram';
+import { requireCronAuth } from '@/lib/core/cronAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,10 @@ interface PromotionResult {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
+
   const startTime = Date.now();
   const results: PromotionResult[] = [];
 

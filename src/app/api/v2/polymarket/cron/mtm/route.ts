@@ -9,12 +9,16 @@ import {
   waitForInit,
 } from '@/lib/polymarket/polyState';
 import { createLogger } from '@/lib/core/logger';
+import { requireCronAuth } from '@/lib/core/cronAuth';
 
 const log = createLogger('PolymarketCronMTM');
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  const authError = requireCronAuth(request);
+  if (authError) return authError;
+
   try {
     ensureInitialized();
     await waitForInit();

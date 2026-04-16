@@ -21,8 +21,8 @@
 | FAZA 9 — LLM Sentiment + Sentiment Heartbeat | ✅ COMPLET | GPT-4o-mini + keyword fallback, 10s timeout, Faza 10 ready |
 | FAZA 10 — Auto-LIVE Promotion + Cloud Scheduler | ✅ COMPLET | 4 cron jobs (sentiment 30min, auto-promote 1h, daily-rotation, health 5min), Darwinian merit-based promotion |
 | FAZA 11 — DeepSeek API + Credit Status | ✅ COMPLET | Integration Deep Seek API, balance endpoint, dashboard widget, top-up alerts |
-| FAZA 6 — Dashboard Agentic Mode | 🔲 PLANIFICAT | Redesign complet UI → Cockpit Spațial (detalii Secțiunea 5) |
-| FAZA 7 — Omega Gladiator + Meta-Learning | 🔲 PLANIFICAT | Implementare logică Omega (agregare DNA top 3) |
+| FAZA 6 — Dashboard Agentic Mode | ✅ COMPLET (16 Apr 2026) | Cockpit Spațial live: /cockpit + /api/v2/cockpit-health. Deploy Cloud Run confirmat. |
+| FAZA 7 — Omega Gladiator + Meta-Learning | ✅ COMPLET (16 Apr 2026) | OmegaExtractor wired în cron + dualMaster + swarmOrchestrator. OmegaEngine regime detection activ. /api/v2/omega-status endpoint. |
 
 ---
 

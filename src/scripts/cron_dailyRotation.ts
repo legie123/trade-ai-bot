@@ -6,6 +6,7 @@ import { saveGladiatorsToDb } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
 import { omegaExtractor } from '@/lib/v2/superai/omegaExtractor';
+import { omegaEngine } from '@/lib/v2/superai/omegaEngine';
 
 const log = createLogger('DailyRotation');
 
@@ -72,7 +73,20 @@ export async function runDailyRotation() {
       log.error('⚡ [Omega] Synthesis failed (non-critical)', { error: (omegaErr as Error).message });
     }
 
-    // 6. Broadcast to Moltbook
+    // 6. OmegaEngine — Market Regime Detection (FAZA 7 extension)
+    // Runs after synthesis so regime reflects fresh gladiator battle data
+    try {
+      const { regime, patterns, adaptiveThresholds } = await omegaEngine.analyze();
+      log.info(
+        `⚡ [OmegaEngine] Regime: ${regime.regime} (${(regime.confidence * 100).toFixed(0)}%) ` +
+        `| Patterns: ${patterns.length} | PromoThreshold: ${adaptiveThresholds.promotionThreshold} ` +
+        `| SignalMult: ${adaptiveThresholds.signalMultiplier}x`,
+      );
+    } catch (engineErr) {
+      log.warn('⚡ [OmegaEngine] Regime analysis failed (non-critical)', { error: (engineErr as Error).message });
+    }
+
+    // 7. Broadcast to Moltbook
     const omegaSummary = omegaExtractor.getSummary();
     const message = `🏛️ [TRADE AI ARENA] Rulaj Zilnic Efectuat 🏛️\n\n` +
                     `S-au eliberat ${executedIds.length} slot-uri din arena (Performanță slabă).\n` +

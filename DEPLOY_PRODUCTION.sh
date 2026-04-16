@@ -16,6 +16,12 @@ echo "Project: $PROJECT_ID"
 echo "Region: $REGION"
 echo "Service: $SERVICE_NAME"
 echo ""
+ 
+# Step 0: Load local .env
+if [ -f .env ]; then
+  echo "✓ Loading local .env..."
+  set -a; source .env; set +a
+fi
 
 # Step 1: Verify gcloud is configured
 echo "✓ Checking gcloud configuration..."
@@ -28,9 +34,10 @@ required_vars=(
   "DEEPSEEK_API_KEY"
   "OPENAI_API_KEY"
   "GEMINI_API_KEY"
-  "POLYMARKET_API_KEY"
-  "SUPABASE_URL"
-  "SUPABASE_ANON_KEY"
+  "MEXC_API_KEY"
+  "MEXC_API_SECRET"
+  "NEXT_PUBLIC_SUPABASE_URL"
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY"
   "SUPABASE_SERVICE_ROLE_KEY"
 )
 
@@ -56,7 +63,6 @@ echo ""
 echo "✓ Submitting Cloud Build deployment..."
 gcloud builds submit \
   --config=cloudbuild.yaml \
-  --substitutions=_PROJECT_ID=$PROJECT_ID \
   --timeout=1200s \
   --region=$REGION
 

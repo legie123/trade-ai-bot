@@ -98,4 +98,11 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 | Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
+## Project Environment & Credentials
+
+- **Source of Truth**: All API keys (MEXC, Supabase, AI, Telegram) are stored in the root `.env` file.
+- **Usage**: Before running tests or specialized agents, ensure you parse `.env`.
+- **Cloud Sync**: The script `./push-secrets.sh` is used to sync local `.env` values to GCP Secret Manager for Cloud Run deployments. Always run this script after modifying critical credentials in `.env`.
+- **Security**: Never commit `.env` or `.claude-creds` to the repository.
+
 <!-- gitnexus:end -->

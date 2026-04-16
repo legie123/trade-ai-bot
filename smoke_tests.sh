@@ -1,6 +1,6 @@
 #!/bin/bash
 # TRADE AI — Smoke Tests
-BASE="https://trade-ai-657910853930.europe-west1.run.app"
+BASE="https://trade-ai-657910053930.europe-west1.run.app"
 PASS=0; FAIL=0
 
 check() {
