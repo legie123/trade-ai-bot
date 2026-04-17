@@ -68,7 +68,8 @@ jobs:
               CRON_SECRET=CRON_SECRET:latest,\
               POLYMARKET_API_KEY=POLYMARKET_API_KEY:latest,\
               POLYMARKET_CLOB_URL=POLYMARKET_CLOB_URL:latest,\
-              POLYMARKET_GAMMA_URL=POLYMARKET_GAMMA_URL:latest"
+              POLYMARKET_GAMMA_URL=POLYMARKET_GAMMA_URL:latest,\
+              SWARM_TOKEN=SWARM_TOKEN:latest"
 
       - name: Get deployed URL
         run: |
