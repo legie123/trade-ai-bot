@@ -80,7 +80,7 @@ if [ $? -eq 0 ]; then
 
     echo ""
     echo "Health check:"
-    curl -s https://antigravity-trade-3rzn6ry36q-ew.a.run.app/api/diagnostics/master 2>/dev/null | python3 -m json.tool 2>/dev/null | head -40
+    curl -s https://trade-ai-657910053930.europe-west1.run.app/api/diagnostics/master 2>/dev/null | python3 -m json.tool 2>/dev/null | head -40
     echo ""
     echo ""
     echo "=========================================="
