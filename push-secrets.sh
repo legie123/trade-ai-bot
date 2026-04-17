@@ -41,6 +41,7 @@ SECRETS=(
   "POLYMARKET_API_KEY"
   "POLYMARKET_CLOB_URL"
   "POLYMARKET_GAMMA_URL"
+  "SWARM_TOKEN"
 )
 
 echo "☁️ Setare context proiect GCP..."

@@ -48,15 +48,23 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 // Upgrade: Prefer Service Role Key for backend operations to bypass RLS restrictions
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// Avoid crashing if credentials are not valid during build
-// AUDIT FIX API-8: No more silent placeholder — fail loudly if Supabase not configured
-if (!supabaseUrl || supabaseUrl === '') {
-  console.warn('[DB WARNING] NEXT_PUBLIC_SUPABASE_URL is not set. Database features will be disabled.');
+// AUDIT FIX: No placeholder — if Supabase not configured, client is null and ops gracefully degrade
+// AUDIT FIX: No placeholder — if Supabase not configured, db() throws and callers degrade gracefully via existing catches
+const SUPABASE_CONFIGURED = !!(supabaseUrl && supabaseKey && !supabaseUrl.includes('placeholder'));
+if (!SUPABASE_CONFIGURED) {
+  log.warn('Supabase NOT configured — all DB operations will return defaults. Set NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.');
 }
-const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseKey || 'placeholder'
-);
+const supabase = SUPABASE_CONFIGURED
+  ? createClient(supabaseUrl, supabaseKey)
+  : createClient('https://placeholder.supabase.co', 'placeholder-key');
+
+/** Guard: throws if Supabase is not properly configured. Callers catch and degrade. */
+function requireDb() {
+  if (!SUPABASE_CONFIGURED) {
+    throw new Error('[DB] Supabase not configured — operation skipped');
+  }
+  return supabase;
+}
 
 export interface PhantomTrade {
   id: string;
@@ -132,14 +140,14 @@ let dbInitialized = false;
 export async function initDB() {
   if (dbInitialized) return;
 
-  if (!supabaseUrl) {
+  if (!SUPABASE_CONFIGURED) {
     dbInitialized = true;
-    log.info('DB initialized in memory-only mode (no Supabase URL)');
+    log.warn('DB initialized in memory-only mode (Supabase not configured)');
     return;
   }
 
   try {
-    const { data, error } = await supabase.from('json_store').select('*');
+    const { data, error } = await requireDb().from('json_store').select('*');
     if (error) {
       log.error('Supabase init fetch error', { error: error.message });
       dbInitialized = true;
@@ -292,7 +300,7 @@ export function addDecision(snapshot: DecisionSnapshot): void {
             cache.decisions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
             if (cache.decisions.length > 1000) cache.decisions.length = 1000;
           }
-        } catch {}
+        } catch (err) { log.warn('Failed to merge remote decisions before insert', { error: String(err) }); }
       }
 
       if (!cache.decisions.some((d) => d.signalId === snapshot.signalId)) {
@@ -334,7 +342,7 @@ export function addSyndicateAudit(audit: Record<string, unknown>): void {
       hallucinationReport: auditRec.hallucinationReport || null,
     };
     supabase.from('syndicate_audits').insert(dbAudit).then(({ error }) => {
-      if (error) console.warn('Failed to insert syndicate audit', { error: error.message });
+      if (error) log.warn('Failed to insert syndicate audit to Supabase', { error: error.message });
     });
   }
 }
@@ -355,7 +363,7 @@ export async function refreshGladiatorsFromCloud(): Promise<void> {
       if (data?.data) {
         cache.gladiators = data.data as Gladiator[];
       }
-    } catch {}
+    } catch (err) { log.warn('Failed to refresh gladiators from cloud', { error: String(err) }); }
   }
 }
 
@@ -431,8 +439,9 @@ export async function addGladiatorDna(record: Record<string, unknown>): Promise<
         log.warn(`Failed to insert battle record: ${error.message}`);
       }
     }
-  } catch {
+  } catch (err) {
     // Network failure — data is already in memory cache
+    log.warn('Failed to insert gladiator battle record, falling back to json_store', { error: String(err) });
     syncToCloud('gladiator_dna', cache.gladiatorDna);
   }
 }
@@ -500,7 +509,8 @@ export async function getGladiatorBattles(gladiatorId: string, limit = 500): Pro
       timestamp: row.timestamp,
       marketContext: row.market_context || {},
     }));
-  } catch {
+  } catch (err) {
+    log.warn(`Failed to fetch gladiator battles for ${gladiatorId}, falling back to memory`, { error: String(err) });
     return cache.gladiatorDna
       .filter(r => r.gladiatorId === gladiatorId)
       .slice(0, limit);
@@ -525,7 +535,7 @@ export function addPhantomTrade(trade: PhantomTrade): void {
           }
           cache.phantomTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         }
-      } catch {} // ignore network errors and fallback 
+      } catch (err) { log.warn('Failed to merge remote phantom trades', { error: String(err) }); }
     }
     
     if (!cache.phantomTrades.some(t => t.id === trade.id)) {
@@ -560,7 +570,7 @@ export async function isPositionOpenStrict(symbol: string): Promise<boolean> {
     .limit(1);
 
   if (error) {
-     console.warn('Strict position check failed (bypassed via Cache)', { error: error.message });
+     log.warn('Strict position check failed, falling back to cache', { symbol, error: error.message });
      // Safe fallback: true (assume it's open to prevent double buy)
      return true; 
   }
@@ -571,7 +581,7 @@ export function addLivePosition(pos: LivePosition): void {
   cache.livePositions.unshift(pos);
   if (supabaseUrl && dbInitialized) {
     supabase.from('live_positions').insert(pos).then(({ error }) => {
-      if (error) console.warn('Failed to insert live position (bypassed via Cache)', { error: error.message });
+      if (error) log.warn('Failed to insert live position to Supabase', { error: error.message });
     });
   }
 }
@@ -860,8 +870,8 @@ export async function releaseTradeLock(symbol: string): Promise<void> {
       .delete()
       .eq('symbol', symbol)
       .eq('instance_id', instanceId);
-  } catch {
-    // Non-critical, TTL will expire it
+  } catch (err) {
+    log.warn('Failed to release distributed trade lock, TTL will expire it', { symbol, error: String(err) });
   }
 }
 
@@ -874,7 +884,7 @@ export async function loadPolyStateFromCloud(): Promise<{ wallet: Record<string,
       .from('json_store')
       .select('*')
       .in('id', ['poly_wallet', 'poly_gladiators']);
-    if (error) return { wallet: null, gladiators: null };
+    if (error) { log.warn('Failed to load Polymarket state from cloud', { error: error.message }); return { wallet: null, gladiators: null }; }
 
     const walletRow = data?.find((r: Record<string, unknown>) => r.id === 'poly_wallet');
     const gladiatorsRow = data?.find((r: Record<string, unknown>) => r.id === 'poly_gladiators');
@@ -883,7 +893,8 @@ export async function loadPolyStateFromCloud(): Promise<{ wallet: Record<string,
       wallet: (walletRow?.data as Record<string, unknown>) || null,
       gladiators: (gladiatorsRow?.data as unknown[]) || null,
     };
-  } catch {
+  } catch (err) {
+    log.warn('Failed to load Polymarket state from cloud', { error: String(err) });
     return { wallet: null, gladiators: null };
   }
 }

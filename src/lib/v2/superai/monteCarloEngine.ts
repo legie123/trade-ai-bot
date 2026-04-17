@@ -56,6 +56,24 @@ export interface MonteCarloResult {
     p5: number;
     p95: number;
   };
+  // ── Step 2.2 Extensions ──
+  /** Sharpe Ratio distribution (annualized, assuming ~365 trades/year) */
+  sharpeDistribution: {
+    mean: number;
+    p5: number;
+    p95: number;
+  };
+  /** Sortino Ratio distribution (only penalizes downside) */
+  sortinoDistribution: {
+    mean: number;
+    p5: number;
+  };
+  /** Kelly fraction — optimal fraction of capital to risk per trade */
+  kellyFraction: number;
+  /** P(equity > target%) — probability of reaching target return */
+  probabilityOfTarget: number;
+  /** 95% confidence interval on final equity */
+  confidenceInterval95: [number, number];
   computeTimeMs: number;
 }
 
@@ -101,7 +119,10 @@ export class MonteCarloEngine {
     const maxDrawdowns: number[] = [];
     const winRates: number[] = [];
     const profitFactors: number[] = [];
+    const sharpeRatios: number[] = [];
+    const sortinoRatios: number[] = [];
     let ruinCount = 0;
+    const TARGET_RETURN_PCT = 20; // P(equity > +20%)
 
     for (let sim = 0; sim < simulations; sim++) {
       let equity = startingEquity;
@@ -110,12 +131,14 @@ export class MonteCarloEngine {
       let wins = 0;
       let totalProfit = 0;
       let totalLoss = 0;
+      const returns: number[] = []; // per-trade returns for Sharpe/Sortino
 
       for (let t = 0; t < pathLength; t++) {
         // Random resample with replacement
         const trade = outcomes[Math.floor(Math.random() * outcomes.length)];
         const pnl = equity * (trade.pnlPercent / 100);
         equity += pnl;
+        returns.push(trade.pnlPercent / 100); // fractional return
 
         if (pnl > 0) { wins++; totalProfit += pnl; }
         else { totalLoss += Math.abs(pnl); }
@@ -130,6 +153,22 @@ export class MonteCarloEngine {
       winRates.push((wins / pathLength) * 100);
       profitFactors.push(totalLoss > 0 ? totalProfit / totalLoss : totalProfit > 0 ? 99 : 1);
 
+      // Step 2.2: Sharpe Ratio (annualized: assume ~365 trades/year)
+      if (returns.length > 1) {
+        const avgRet = returns.reduce((s, r) => s + r, 0) / returns.length;
+        const retStd = Math.sqrt(returns.reduce((s, r) => s + (r - avgRet) ** 2, 0) / returns.length);
+        const sharpe = retStd > 0 ? (avgRet / retStd) * Math.sqrt(Math.min(365, returns.length)) : 0;
+        sharpeRatios.push(sharpe);
+
+        // Sortino: only downside deviation
+        const downsideReturns = returns.filter(r => r < 0);
+        const downsideDev = downsideReturns.length > 0
+          ? Math.sqrt(downsideReturns.reduce((s, r) => s + r ** 2, 0) / downsideReturns.length)
+          : 0.001;
+        const sortino = avgRet / downsideDev * Math.sqrt(Math.min(365, returns.length));
+        sortinoRatios.push(sortino);
+      }
+
       if ((equity - startingEquity) / startingEquity * 100 <= this.RUIN_THRESHOLD) {
         ruinCount++;
       }
@@ -140,6 +179,8 @@ export class MonteCarloEngine {
     maxDrawdowns.sort((a, b) => a - b);
     winRates.sort((a, b) => a - b);
     profitFactors.sort((a, b) => a - b);
+    sharpeRatios.sort((a, b) => a - b);
+    sortinoRatios.sort((a, b) => a - b);
 
     const pct = (arr: number[], p: number) => arr[Math.floor(arr.length * p / 100)] ?? 0;
     const mean = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length;
@@ -147,6 +188,31 @@ export class MonteCarloEngine {
       const m = mean(arr);
       return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / arr.length);
     };
+
+    // Step 2.2: Kelly Criterion — optimal fraction of capital to risk
+    // Formula: K = W - (1-W)/R where W=winRate, R=avgWin/avgLoss
+    // ASSUMPTION: Kelly assumes independent trades with stable distribution.
+    // In crypto with regime shifts, full Kelly is dangerously aggressive.
+    // We report it raw; position sizing (adaptiveSizing) should use fractional Kelly (0.25-0.5x).
+    const wins = outcomes.filter(o => o.pnlPercent > 0);
+    const losses = outcomes.filter(o => o.pnlPercent <= 0);
+    const winRate = wins.length / outcomes.length;
+    const avgWin = wins.length > 0 ? wins.reduce((s, o) => s + o.pnlPercent, 0) / wins.length : 0;
+    const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((s, o) => s + o.pnlPercent, 0) / losses.length) : 0.001;
+    const winLossRatio = avgWin / avgLoss;
+    const kellyRaw = winLossRatio > 0 ? winRate - (1 - winRate) / winLossRatio : 0;
+    const kellyFraction = parseFloat(Math.max(0, Math.min(1, kellyRaw)).toFixed(4));
+
+    // Step 2.2: P(equity > target%) — how many sims beat the target return
+    const targetEquity = startingEquity * (1 + TARGET_RETURN_PCT / 100);
+    const simsAboveTarget = finalEquities.filter(e => e >= targetEquity).length;
+    const probabilityOfTarget = parseFloat(((simsAboveTarget / simulations) * 100).toFixed(2));
+
+    // Step 2.2: 95% CI on final equity
+    const ci95: [number, number] = [
+      parseFloat(pct(finalEquities, 2.5).toFixed(2)),
+      parseFloat(pct(finalEquities, 97.5).toFixed(2)),
+    ];
 
     return {
       gladiatorId,
@@ -177,6 +243,19 @@ export class MonteCarloEngine {
         p5: parseFloat(pct(profitFactors, 5).toFixed(2)),
         p95: parseFloat(pct(profitFactors, 95).toFixed(2)),
       },
+      // ── Step 2.2 Extensions ──
+      sharpeDistribution: {
+        mean: parseFloat(mean(sharpeRatios).toFixed(3)),
+        p5: parseFloat(pct(sharpeRatios, 5).toFixed(3)),
+        p95: parseFloat(pct(sharpeRatios, 95).toFixed(3)),
+      },
+      sortinoDistribution: {
+        mean: parseFloat(mean(sortinoRatios).toFixed(3)),
+        p5: parseFloat(pct(sortinoRatios, 5).toFixed(3)),
+      },
+      kellyFraction,
+      probabilityOfTarget,
+      confidenceInterval95: ci95,
       computeTimeMs: Date.now() - t0,
     };
   }
@@ -191,6 +270,11 @@ export class MonteCarloEngine {
       winRateDistribution: { mean: 0, stdDev: 0, p5: 0, p95: 0 },
       ruinProbability: 0,
       profitFactor: { mean: 1, p5: 1, p95: 1 },
+      sharpeDistribution: { mean: 0, p5: 0, p95: 0 },
+      sortinoDistribution: { mean: 0, p5: 0 },
+      kellyFraction: 0,
+      probabilityOfTarget: 0,
+      confidenceInterval95: [100, 100],
       computeTimeMs: ms,
     };
   }

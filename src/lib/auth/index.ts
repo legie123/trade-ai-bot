@@ -3,14 +3,15 @@
 // ============================================================
 import crypto from 'crypto';
 
-const AUTH_SECRET = process.env.AUTH_SECRET || 'trading-ai-secret-2026';
-const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || 'admin123';
+// AUDIT FIX: No fallback defaults — fail-closed if env vars missing
+const AUTH_SECRET = process.env.AUTH_SECRET || '';
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
 
 // ─── ADDITIVE SAFETY: refuse weak defaults in non-dev environments ───
 // Logs loudly at module init. Does not crash dev. In production, throws on first use.
 const IS_PROD = (process.env.NODE_ENV || '').toLowerCase() === 'production';
-const WEAK_PASSWORD = DASHBOARD_PASSWORD === 'admin123' || DASHBOARD_PASSWORD.length < 12;
-const WEAK_SECRET = AUTH_SECRET === 'trading-ai-secret-2026' || AUTH_SECRET.length < 24;
+const WEAK_PASSWORD = !DASHBOARD_PASSWORD || DASHBOARD_PASSWORD === 'admin123' || DASHBOARD_PASSWORD.length < 12;
+const WEAK_SECRET = !AUTH_SECRET || AUTH_SECRET === 'trading-ai-secret-2026' || AUTH_SECRET.length < 24;
 
 if (WEAK_PASSWORD) {
   console.warn(

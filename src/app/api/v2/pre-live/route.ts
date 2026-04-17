@@ -92,7 +92,8 @@ export async function GET(request: NextRequest) {
     // ── Check 4: Health endpoint returns 200 ──
     let healthOk = false;
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.SERVICE_URL || 'http://localhost:3000';
+      const { getServiceUrl } = await import('@/lib/core/serviceUrl');
+      const baseUrl = getServiceUrl();
       const healthResp = await fetch(`${baseUrl}/api/v2/health`, {
         signal: AbortSignal.timeout(5000),
       });

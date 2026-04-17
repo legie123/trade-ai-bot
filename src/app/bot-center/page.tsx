@@ -142,7 +142,7 @@ export default function BotCenterPage() {
 
   // Kick cron loop on mount + fetch external connection status
   useEffect(() => {
-    fetch('/api/cron').catch(() => {});
+    fetch('/api/v2/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: 'cron:kick' }) }).catch(() => {});
 
     // Check external connections once
     const checkExternal = async () => {
@@ -161,7 +161,7 @@ export default function BotCenterPage() {
 
     // Kick cron every 2 min to keep trading loop alive
     const cronInterval = setInterval(() => {
-      fetch('/api/cron').catch(() => {});
+      fetch('/api/v2/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: 'cron:kick' }) }).catch(() => {});
     }, 120_000);
 
     return () => clearInterval(cronInterval);

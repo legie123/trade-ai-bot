@@ -298,26 +298,42 @@ function checkMarketDataAnchoring(reasoning: string, marketDataStr: string): { a
   // Extract numbers from market data (prices, volumes, percentages)
   const dataNumbers = marketDataStr.match(/\d+\.?\d*/g) || [];
   // Filter to meaningful numbers (skip tiny ones like "0" or "1")
+  // Only keep price-like numbers (4+ chars) to avoid matching noise (array indices, flags, etc.)
   const significantNumbers = dataNumbers.filter(n => {
     const num = parseFloat(n);
-    return num > 1 && n.length >= 2;
+    return num > 1 && n.length >= 4;
   });
-  
+
   // Deduplicate
   const uniqueNumbers = [...new Set(significantNumbers)].slice(0, 20); // Cap at 20 data points
-  
+
   if (uniqueNumbers.length === 0) return { anchored: true, matchedDataPoints: 0, totalDataPoints: 0 };
 
   let matched = 0;
   for (const num of uniqueNumbers) {
-    // Check if this number (or a rounded version) appears in reasoning
+    // FUZZY MATCH: Check exact string, integer part, or rounded version
+    // AI often paraphrases "67832.45" as "67832" or "67,832" or "67.8K"
     if (reasoning.includes(num)) {
       matched++;
+    } else {
+      const parsed = parseFloat(num);
+      const intPart = Math.floor(parsed).toString();
+      // Check integer part (e.g. "67832" from "67832.45")
+      if (intPart.length >= 4 && reasoning.includes(intPart)) {
+        matched++;
+      } else {
+        // Check comma-formatted (e.g. "67,832" from "67832")
+        const commaFormatted = parsed >= 1000 ? parsed.toLocaleString('en-US', { maximumFractionDigits: 0 }) : null;
+        if (commaFormatted && reasoning.includes(commaFormatted)) {
+          matched++;
+        }
+      }
     }
   }
 
-  // At least 15% of key data points should be referenced
-  const anchorThreshold = 0.15;
+  // FIX: Lowered from 15% to 10% — market JSON has many numbers AI won't cite verbatim.
+  // The fuzzy matching above compensates by catching paraphrased references.
+  const anchorThreshold = 0.10;
   return {
     anchored: matched / uniqueNumbers.length >= anchorThreshold,
     matchedDataPoints: matched,

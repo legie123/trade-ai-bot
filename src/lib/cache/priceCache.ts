@@ -84,7 +84,7 @@ async function fetchPriceChain(symbol: string): Promise<number> {
       setCachedPrice(symbol, price, 'MEXC', DEFAULT_TTL);
       return price;
     }
-  } catch { /* next */ }
+  } catch (err) { log.warn(`MEXC price fetch failed for ${mexcSymbol}`, { error: String(err) }); }
 
   // 2. Binance (AUDIT FIX: Re-enabled — client now exists)
   try {
@@ -94,7 +94,7 @@ async function fetchPriceChain(symbol: string): Promise<number> {
       setCachedPrice(symbol, price, 'Binance', DEFAULT_TTL);
       return price;
     }
-  } catch { /* next */ }
+  } catch (err) { log.warn(`Binance price fetch failed for ${mexcSymbol}`, { error: String(err) }); }
 
   // 3. OKX (fallback)
 
@@ -125,7 +125,7 @@ async function fetchPriceChain(symbol: string): Promise<number> {
         }
       }
     }
-  } catch { /* next */ }
+  } catch (err) { log.warn(`DexScreener price fetch failed for ${symbol}`, { error: String(err) }); }
 
   // 5. CoinGecko (final fallback)
   try {
@@ -153,7 +153,7 @@ async function fetchPriceChain(symbol: string): Promise<number> {
         return price;
       }
     }
-  } catch { /* all failed */ }
+  } catch (err) { log.warn(`CoinGecko price fetch failed for ${symbol}`, { error: String(err) }); }
 
   log.error(`[PriceCache] All 5 sources failed for ${symbol}`);
   return 0;

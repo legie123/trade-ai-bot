@@ -28,11 +28,25 @@ export async function GET(request: NextRequest) {
     // CRITICAL: Load Supabase cache (gladiators, decisions, etc.) before anything runs
     await initDB();
 
-    // Ensure heartbeat is running
+    // Ensure heartbeat + WS feeds are running
     if (!loopStarted) {
       startHeartbeat();
+
+      // Start WebSocket feeds for real-time price data
+      try {
+        const { WsStreamManager } = await import('@/lib/providers/wsStreams');
+        WsStreamManager.getInstance().connect();
+        log.info('MEXC WebSocket feed started');
+      } catch (err) { log.warn('MEXC WS start failed', { error: String(err) }); }
+
+      try {
+        const { polyWsClient } = await import('@/lib/polymarket/polyWsClient');
+        polyWsClient.connect();
+        log.info('Polymarket WebSocket feed started');
+      } catch (err) { log.warn('Polymarket WS start failed', { error: String(err) }); }
+
       loopStarted = true;
-      log.info('Cron loop initialized — heartbeat started');
+      log.info('Cron loop initialized — heartbeat + WS feeds started');
     }
 
     // Ping watchdog to keep it alive
@@ -100,8 +114,21 @@ export async function GET(request: NextRequest) {
     const liveSymbols = livePos.map(p => p.symbol);
     const allSymbols = [...new Set([...uniqueSymbols, ...liveSymbols])];
 
+    // FIX: Decisions store 'BTC', MEXC returns 'BTCUSDT'. Normalize to MEXC format.
+    const toMexc = (s: string) => s.endsWith('USDT') ? s : s + 'USDT';
+    const mexcSymbols = allSymbols.map(toMexc);
+
     // OMEGA OPTIMIZATION: Use Batch Price fetcher. One request, no rate-limit delay.
-    const priceCache = await getMexcPrices(allSymbols);
+    const rawPriceCache = await getMexcPrices(mexcSymbols);
+
+    // Build dual-key cache: both 'BTCUSDT' and 'BTC' point to the same price
+    const priceCache: Record<string, number> = {};
+    for (const [mexcSym, price] of Object.entries(rawPriceCache)) {
+      priceCache[mexcSym] = price;
+      // Strip USDT suffix so dec.symbol ('BTC') lookups also work
+      const base = mexcSym.endsWith('USDT') ? mexcSym.slice(0, -4) : mexcSym;
+      priceCache[base] = price;
+    }
 
     for (const dec of eligibleDecisions) {
       const currentPrice = priceCache[dec.symbol];

@@ -15,7 +15,11 @@
 import { createLogger } from '@/lib/core/logger';
 import { omegaExtractor } from '@/lib/v2/superai/omegaExtractor';
 import { logDecision } from '@/lib/v2/audit/decisionLog';
+import { DebateEngine } from '@/lib/v2/debate/debateEngine';
+import type { DebateVerdict } from '@/lib/v2/audit/decisionLog';
 import { emitTradeExecuted } from '@/lib/v2/alerts/eventHub';
+import { experienceMemory } from '@/lib/v2/memory/experienceMemory';
+import { microML } from '@/lib/v2/ml/microML';
 
 const log = createLogger('SwarmOrchestrator');
 
@@ -140,17 +144,98 @@ export class SwarmOrchestrator {
       Math.min(0.95, candidateConf * omegaMod).toFixed(3)
     );
 
-    // ── Phase 5: Execute if approved ──
+    // ── Phase 4.3: Experience Memory lookup (Step 3.2) ──
+    let experienceInsight: string | null = null;
+    try {
+      if (candidateDirection !== 'FLAT') {
+        const xpInsight = experienceMemory.getSymbolInsight(
+          symbol,
+          candidateDirection as 'LONG' | 'SHORT',
+        );
+        if (xpInsight.totalTrades > 0) {
+          experienceInsight = xpInsight.summary;
+          log.info(`[Swarm] XP Insight: ${xpInsight.summary}`);
+        }
+      }
+    } catch (xpErr) {
+      log.warn(`[Swarm] Experience Memory error (fail-open): ${xpErr}`);
+    }
+
+    // ── Phase 4.4: Micro-ML prediction (Step 4.1) ──
+    let mlBlocked = false;
+    try {
+      if (riskApproved && candidateDirection !== 'FLAT' && context.gladiatorId) {
+        const mlPred = await microML.predict(context.gladiatorId, {
+          rsi: (context.indicators?.rsi as number) ?? undefined,
+          vwapDeviation: (context.indicators?.vwapDeviation as number) ?? undefined,
+          volumeZ: (context.indicators?.volumeZ as number) ?? undefined,
+          fundingRate: (context.indicators?.fundingRate as number) ?? undefined,
+          sentimentScore: (context.indicators?.sentimentScore as number) ?? undefined,
+          momentumScore: (context.indicators?.momentumScore as number) ?? undefined,
+          rollingWinRate: context.currentWinRate,
+          currentLossStreak: context.currentLossStreak,
+        });
+        // ML acts as soft gate: if P(profit) < 0.35, block trade
+        // Between 0.35-0.55: reduce confidence. Above 0.55: no change.
+        if (mlPred.probability < 0.35 && mlPred.method !== 'DISABLED') {
+          mlBlocked = true;
+          log.warn(`[Swarm] ML VETO: ${symbol} P(profit)=${mlPred.probability} (${mlPred.method})`);
+        }
+      }
+    } catch (mlErr) {
+      log.warn(`[Swarm] Micro-ML error (fail-open): ${mlErr}`);
+    }
+
+    // ── Phase 4.5: Adversarial Debate (Step 2.1) ──
+    let debateVerdict: DebateVerdict | null = null;
+    let debateAdjustedConfidence = finalConfidence;
+
+    if (riskApproved && candidateDirection !== 'FLAT') {
+      try {
+        const debateResult = await DebateEngine.getInstance().debate({
+          symbol,
+          proposedDirection: candidateDirection as 'LONG' | 'SHORT',
+          confidence: finalConfidence,
+          regime: null,  // TODO: wire regime from marketRegime agent
+          indicators: context.indicators as Record<string, number> || {},
+          recentWinRate: context.currentWinRate,
+          recentLossStreak: context.currentLossStreak,
+        });
+
+        debateVerdict = {
+          verdict: debateResult.verdict,
+          confidenceModifier: debateResult.confidenceModifier,
+          bullScore: debateResult.debateScore > 0 ? Math.abs(debateResult.debateScore) * 100 : 0,
+          bearScore: debateResult.debateScore < 0 ? Math.abs(debateResult.debateScore) * 100 : 0,
+          winnerSide: debateResult.winnerSide,
+        };
+
+        // Apply debate verdict
+        if (debateResult.verdict === 'OVERRIDE_FLAT') {
+          log.warn(`[Swarm] Debate OVERRIDE: ${symbol} ${candidateDirection} → FLAT (score=${debateResult.debateScore.toFixed(2)})`);
+          // Don't change candidateDirection (it's used in logs), but block execution below
+        } else {
+          debateAdjustedConfidence = parseFloat(
+            Math.min(0.95, finalConfidence * debateResult.confidenceModifier).toFixed(3)
+          );
+        }
+      } catch (debateErr) {
+        log.warn(`[Swarm] Debate error (fail-open): ${debateErr}`);
+      }
+    }
+
+    // ── Phase 5: Execute if approved (debate not overridden) ──
+    const debateBlocked = debateVerdict?.verdict === 'OVERRIDE_FLAT';
     let execution: ExecutionVote | null = null;
     let executionTriggered = false;
 
-    if (riskApproved && candidateDirection !== 'FLAT') {
+    if (riskApproved && candidateDirection !== 'FLAT' && !debateBlocked && !mlBlocked) {
       const execResult = await Promise.allSettled([
         this.callArena<ExecutionVote>(`${origin}/api/a2a/execution`, headers, {
           symbol,
           direction: candidateDirection,
           positionSize: risk?.positionSize ?? 10,
-          confidence: finalConfidence,
+          confidence: debateAdjustedConfidence,
           stopLoss: risk?.stopLossPercent,
           mode: context.executeLive ? 'LIVE' : 'PHANTOM',
           gladiatorId: context.gladiatorId ?? 'swarm-orchestrator',
@@ -174,11 +259,14 @@ export class SwarmOrchestrator {
     if (sentimentArena) reasons.push(`Sentiment: ${sentimentArena.direction} (${(sentimentArena.confidence * 100).toFixed(0)}%)`);
     if (risk && !risk.approved) reasons.push(`Risk DENIED: ${risk.denialReasons.join(', ')}`);
     reasons.push(`Omega modifier: ${omegaMod}x`);
+    if (debateVerdict) reasons.push(`Debate: ${debateVerdict.verdict} (${debateVerdict.winnerSide})`);
+    if (mlBlocked) reasons.push('ML VETO: P(profit) < 0.35');
+    if (experienceInsight) reasons.push(`XP: ${experienceInsight}`);
 
     const result: SwarmResult = {
       symbol,
-      finalDecision: riskApproved ? candidateDirection : 'FLAT',
-      confidence: finalConfidence,
+      finalDecision: (riskApproved && !debateBlocked && !mlBlocked) ? candidateDirection : 'FLAT',
+      confidence: debateAdjustedConfidence,
       omegaModifier: omegaMod,
       arenaConsensus: {
         alphaQuant,
@@ -220,17 +308,20 @@ export class SwarmOrchestrator {
       regime: null,              // will be enriched when regime agent is wired
       omegaModifier: omegaMod,
       consensusRatio,
-      debateVerdict: null,       // Step 2.1 — will populate after DebateEngine
+      debateVerdict,
       sentinelSafe: riskApproved,
       sentinelReason: (risk && !risk.approved) ? risk.denialReasons.join(', ') : null,
       action: action as 'EXECUTE_LONG' | 'EXECUTE_SHORT' | 'SKIP',
       skipReason: !executionTriggered
-        ? (risk && !risk.approved ? risk.denialReasons.join(', ') : 'No execution triggered')
+        ? (mlBlocked ? 'ML VETO: P(profit) < 0.35'
+          : debateBlocked ? 'Debate OVERRIDE_FLAT'
+          : risk && !risk.approved ? risk.denialReasons.join(', ')
+          : 'No execution triggered')
         : null,
       slippage: null,
       fillPrice: null,
       latencyMs: null,
-      experienceInsight: null,   // Step 3.2 — will populate after ExperienceMemory
+      experienceInsight: experienceInsight ? { summary: experienceInsight } as Record<string, unknown> : null,
     });
 
     // EventHub emit (fire-and-forget)

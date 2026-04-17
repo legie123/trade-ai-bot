@@ -217,6 +217,11 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
         return ok(command, 'Omega status retrieved', res, start);
       }
 
+      case 'cron:kick': {
+        const res = await internalFetch(new URL('/api/cron', baseUrl), { headers: cronHeaders() }).catch(() => ({ error: 'failed' }));
+        return ok(command, 'Cron loop kicked', res, start);
+      }
+
       default:
         return NextResponse.json({ ok: false, command, message: `Unknown command: ${command}`, durationMs: Date.now() - start }, { status: 400 });
     }

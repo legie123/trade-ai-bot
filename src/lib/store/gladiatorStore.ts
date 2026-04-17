@@ -1,6 +1,8 @@
 import { INITIAL_STRATEGIES } from './seedStrategies';
 import { Gladiator, ArenaType } from '../types/gladiator';
 import { getGladiatorsFromDb, saveGladiatorsToDb } from '@/lib/store/db';
+import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
+import type { WalkForwardResult } from '@/lib/v2/validation/walkForwardEngine';
 
 /**
  * Singleton for managing the Gladiator Ranks and Arenas for Phoenix V2.
@@ -9,6 +11,8 @@ class GladiatorStore {
   private static instance: GladiatorStore;
   private gladiators: Gladiator[] = [];
   private lastRecalibrateTime: number = 0;
+  /** Walk-forward validation cache: gladiatorId → result. Updated by runWalkForwardGate(). */
+  private wfCache = new Map<string, WalkForwardResult>();
 
   private constructor() {}
 
@@ -199,9 +203,38 @@ class GladiatorStore {
         const meetsThreshold = entry.gladiator.stats.totalTrades >= 20
           && entry.gladiator.stats.winRate >= 45   // Hardened from 40% — institutional gate
           && entry.gladiator.stats.profitFactor >= 1.1; // Hardened from 1.0 — must prove edge
-        entry.gladiator.isLive = index < 3 && meetsThreshold;
+        // Walk-Forward gate (Step 2.3): OVERFIT gladiators cannot go live
+        const wfResult = this.wfCache.get(entry.gladiator.id);
+        const wfClean = !wfResult || wfResult.verdict !== 'OVERFIT';
+        entry.gladiator.isLive = index < 3 && meetsThreshold && wfClean;
       });
     }
+  }
+
+  /**
+   * Run Walk-Forward validation for all gladiators (async).
+   * Call this periodically (e.g., every hour or after Butcher cycle).
+   * Results are cached and used by recalibrateRanks() synchronously.
+   *
+   * Step 2.3 integration: OVERFIT gladiators blocked from live promotion.
+   */
+  public async runWalkForwardGate(): Promise<void> {
+    const wf = WalkForwardEngine.getInstance();
+    const candidates = this.gladiators.filter(g => !g.isOmega && g.stats.totalTrades >= 30);
+
+    for (const g of candidates) {
+      try {
+        const result = await wf.validate(g.id);
+        this.wfCache.set(g.id, result);
+      } catch {
+        // Fail-open: if WF errors, don't block the gladiator
+      }
+    }
+  }
+
+  /** Get walk-forward result for a specific gladiator (from cache). */
+  public getWalkForwardResult(gladiatorId: string): WalkForwardResult | null {
+    return this.wfCache.get(gladiatorId) ?? null;
   }
 
   /**

@@ -70,7 +70,7 @@ export async function getAggregatedTokens(): Promise<NormalizedToken[]> {
           allTokens.push(token);
         }
       }
-    } catch { /* skip failed */ }
+    } catch (err) { log.warn('Failed to fetch batch pair data for boosted tokens', { error: String(err) }); }
   }
 
   // Process search results
@@ -92,7 +92,7 @@ export async function getAggregatedTokens(): Promise<NormalizedToken[]> {
         allTokens.push(normalizePumpToken(pt));
       }
     }
-  } catch { /* skip */ }
+  } catch (err) { log.warn('Failed to fetch Pump tokens', { error: String(err) }); }
 
   // --- Rugcheck new tokens (cross-reference) ---
   try {
@@ -106,7 +106,7 @@ export async function getAggregatedTokens(): Promise<NormalizedToken[]> {
         }
       }
     }
-  } catch { /* skip */ }
+  } catch (err) { log.warn('Failed to fetch Rugcheck new tokens', { error: String(err) }); }
 
   // --- GeckoTerminal trending (fallback) ---
   try {
@@ -156,7 +156,7 @@ export async function getAggregatedTokens(): Promise<NormalizedToken[]> {
         }
       }
     }
-  } catch { /* skip */ }
+  } catch (err) { log.warn('Failed to fetch GeckoTerminal trending pools', { error: String(err) }); }
 
   // Deduplicate
   const deduped = deduplicateTokens(allTokens);
@@ -206,7 +206,7 @@ export async function getTokenDetail(address: string): Promise<NormalizedToken |
         token.sourceOrigin.push('rugcheck');
       }
     }
-  } catch { /* skip */ }
+  } catch (err) { log.warn(`Failed to enrich token ${address} with Rugcheck`, { error: String(err) }); }
 
   // Enrich with Birdeye
   try {
@@ -219,7 +219,7 @@ export async function getTokenDetail(address: string): Promise<NormalizedToken |
         token.sourceOrigin.push('birdeye');
       }
     }
-  } catch { /* skip */ }
+  } catch (err) { log.warn(`Failed to enrich token ${address} with Birdeye`, { error: String(err) }); }
 
   // Enrich with Jupiter price
   try {
@@ -230,7 +230,7 @@ export async function getTokenDetail(address: string): Promise<NormalizedToken |
         token.sourceOrigin.push('jupiter');
       }
     }
-  } catch { /* skip */ }
+  } catch (err) { log.warn(`Failed to enrich token ${address} with Jupiter price`, { error: String(err) }); }
 
   // Enrich with paid orders
   try {
@@ -238,7 +238,7 @@ export async function getTokenDetail(address: string): Promise<NormalizedToken |
     if (ordersRes.data) {
       token.paidOrders = ordersRes.data.length;
     }
-  } catch { /* skip */ }
+  } catch (err) { log.warn(`Failed to enrich token ${address} with paid orders`, { error: String(err) }); }
 
   // Re-score with enriched data
   const [scored] = scoreTokens([token]);

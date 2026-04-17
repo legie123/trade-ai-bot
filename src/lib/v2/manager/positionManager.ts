@@ -7,8 +7,38 @@ import { postActivity } from '@/lib/moltbook/moltbookClient';
 import { DNAExtractor } from '../superai/dnaExtractor';
 import { isLiveTradingEnabled } from '@/lib/core/tradingMode';
 import { isKillSwitchEngaged } from '@/lib/core/killSwitch';
+import { experienceMemory } from '@/lib/v2/memory/experienceMemory';
 
 const log = createLogger('PositionManager');
+
+/**
+ * Step 3.2 wiring: Record trade outcome to Experience Memory.
+ * Called after every position close (TP, trailing exit, SL).
+ * Fire-and-forget — never blocks position management.
+ */
+function recordExperience(pos: LivePosition, exitPrice: number, pnlPercent: number): void {
+  try {
+    const isWin = pnlPercent > 0;
+    const direction = (pos.side === 'LONG' ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT';
+    experienceMemory.record({
+      timestamp: Date.now(),
+      symbol: pos.symbol,
+      direction,
+      outcome: isWin ? 'WIN' : 'LOSS',
+      pnlPercent,
+      regime: null,        // regime not available in positionManager context
+      indicators: {},      // indicators not stored on LivePosition
+      confidence: 0.5,     // confidence not stored on LivePosition
+      debateVerdict: null,
+      gladiatorId: pos.id.replace('pos_', ''),
+      slippageBps: null,
+      latencyMs: null,
+      mode: 'LIVE',
+    });
+  } catch {
+    // Non-blocking — experience memory recording must never affect exits
+  }
+}
 
 // Asymmetric Trailing TP rules mapping to bot logic
 const ASYMMETRIC_RULES = {
@@ -127,6 +157,7 @@ export class PositionManager {
             timestamp: Date.now(),
             marketContext: { exitType: 'PARTIAL_TP', holdTimeSec: (Date.now() - new Date(pos.openedAt).getTime()) / 1000 }
           });
+          recordExperience(pos, currentPrice, parseFloat(pnl.toFixed(4)));
 
           // 🔗 [MOLTBOOK BROADCAST] Partial TP
           this.broadcastExitToMoltbook('PARTIAL_TP', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 30);
@@ -194,6 +225,7 @@ export class PositionManager {
               timestamp: Date.now(),
               marketContext: { exitType: 'TRAILING_EXIT', holdTimeSec: (Date.now() - new Date(pos.openedAt).getTime()) / 1000 }
             });
+            recordExperience(pos, currentPrice, parseFloat(trailPnl.toFixed(4)));
             log.info(`[PositionManager] Trailing exit complete for ${pos.symbol}. Home run secured.`);
 
             // 🔗 [MOLTBOOK BROADCAST] Full Trailing Exit
@@ -253,6 +285,7 @@ export class PositionManager {
               timestamp: Date.now(),
               marketContext: { exitType: 'STOP_LOSS', holdTimeSec: (Date.now() - new Date(pos.openedAt).getTime()) / 1000 }
             });
+            recordExperience(pos, currentPrice, parseFloat(slPnl.toFixed(4)));
 
             // 🔗 [MOLTBOOK BROADCAST] Initial SL
             this.broadcastExitToMoltbook('STOP_LOSS', pos.symbol, isLong ? 'LONG' : 'SHORT', currentPrice, 100).catch((e) => log.warn('moltbook broadcast failed (SL)', { error: String(e) }));

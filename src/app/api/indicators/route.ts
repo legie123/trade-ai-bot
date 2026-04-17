@@ -28,7 +28,8 @@ export async function GET() {
     // Fetch BTC data for indicator calculations
     let btcPrice = 0, btcSignals: Record<string, unknown>[] = [];
     try {
-      const btcRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/btc-signals`, { signal: AbortSignal.timeout(5000) });
+      const { getServiceUrl } = await import('@/lib/core/serviceUrl');
+      const btcRes = await fetch(`${getServiceUrl()}/api/btc-signals`, { signal: AbortSignal.timeout(5000) });
       if (btcRes.ok) {
         const btcData = await btcRes.json();
         btcPrice = btcData.btc?.price || 0;

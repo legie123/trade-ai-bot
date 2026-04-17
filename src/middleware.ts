@@ -12,6 +12,7 @@ const AUTH_SECRET = process.env.AUTH_SECRET || '';
 // --- Public paths: no auth required ---
 const PUBLIC_PREFIXES = [
   '/api/auth',             // Login endpoint
+  '/api/health',            // Top-level health proxy (Cloud Scheduler)
   '/api/v2/health',        // Health check (monitoring)
   '/api/diagnostics/',     // Health diagnostics (master, credits, signal-quality)
   '/api/a2a/',             // A2A routes have SWARM_TOKEN auth
@@ -24,6 +25,9 @@ const PUBLIC_PREFIXES = [
   '/api/v2/intelligence/', // Intelligence feeds (read-only)
   '/api/v2/polymarket',    // Polymarket status + scan (scan has CRON auth)
   '/api/v2/deepseek-status',// DeepSeek credit check (read-only)
+  '/api/v2/events',         // EventHub log (has cronAuth)
+  '/api/v2/analytics',      // Performance analytics (has cronAuth)
+  '/api/v2/pre-live',       // Pre-live gate check (has cronAuth)
   '/api/btc-signals',      // BTC scanner (triggered by cron internally, read-only externally)
   '/api/solana-signals',   // Solana scanner (same)
   '/api/meme-signals',     // Meme scanner (same)

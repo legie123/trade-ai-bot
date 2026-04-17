@@ -66,7 +66,8 @@ export async function GET(request: Request) {
 
   try {
     // Fetch recent Moltbook posts from our internal API
-    const origin = process.env.SERVICE_URL ?? 'http://localhost:3000';
+    const { getServiceUrl } = await import('@/lib/core/serviceUrl');
+    const origin = getServiceUrl();
     let posts: Array<{ content: string; symbol?: string; timestamp?: string }> = [];
 
     try {

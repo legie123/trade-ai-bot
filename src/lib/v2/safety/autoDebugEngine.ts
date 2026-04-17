@@ -146,7 +146,8 @@ class AutoDebugEngine {
 
   private async notifyTelegram(message: string): Promise<void> {
     try {
-      await fetch((process.env.APP_URL || 'http://localhost:3000') + '/api/telegram', {
+      const { getServiceUrl } = await import('@/lib/core/serviceUrl');
+      await fetch(getServiceUrl() + '/api/telegram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }),
