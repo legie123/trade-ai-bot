@@ -103,8 +103,13 @@ export function analyzeRSI(
   let confirmsSignal = false;
   let reason = '';
 
+  // PAPER mode: wider RSI bands to generate training data. LIVE: strict institutional bands.
+  const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+  const BUY_RSI_MIN = isPaper ? 35 : 45;   // Paper: accept weaker momentum | Live: need 45+
+  const SELL_RSI_MAX = isPaper ? 65 : 55;   // Paper: accept higher RSI sells | Live: need <55
+
   if (proposedSignal === 'BUY') {
-    if (rsi > 45 && rsi < 70) {
+    if (rsi > BUY_RSI_MIN && rsi < 70) {
       confirmsSignal = true;
       reason = `RSI ${Math.round(rsi)} — Bullish momentum, room to run`;
     } else if (rsi <= 30) {
@@ -130,7 +135,7 @@ export function analyzeRSI(
     }
   } else {
     // SELL confirmation
-    if (rsi < 55 && rsi > 30) {
+    if (rsi < SELL_RSI_MAX && rsi > 30) {
       confirmsSignal = true;
       reason = `RSI ${Math.round(rsi)} — Bearish momentum confirmed`;
     } else if (rsi >= 70) {

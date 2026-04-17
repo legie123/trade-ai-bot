@@ -36,7 +36,8 @@ const SENTINEL = {
 
 function verifyToken(request: Request): boolean {
   const token = process.env.SWARM_TOKEN;
-  if (!token) return true;
+  // AUDIT FIX T1.1: Block all A2A when SWARM_TOKEN not configured
+  if (!token) { console.error('[SECURITY] SWARM_TOKEN not set — A2A blocked'); return false; }
   return request.headers.get('x-swarm-token') === token;
 }
 

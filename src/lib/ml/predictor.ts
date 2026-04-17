@@ -443,8 +443,18 @@ export function recordOutcome(wasWin: boolean): void {
     learner.bias -= 0.01 * err;
   }
 
-  // Update calibration map
-  const recentProb = Math.abs(0.5 - 0.5) * 200; // placeholder
+  // AUDIT FIX T1.9: Use actual ensemble prediction for calibration bucket (was hardcoded 0)
+  // Calculate mean prediction from all learners as the confidence estimate
+  let ensemblePred = 0;
+  for (const learner of ensemble.learners) {
+    let z = learner.bias;
+    for (const [key, weight] of Object.entries(learner.weights)) {
+      z += (features[key as keyof Features] || 0) * weight;
+    }
+    ensemblePred += sigmoid(z);
+  }
+  ensemblePred /= ensemble.learners.length;
+  const recentProb = Math.abs(ensemblePred - 0.5) * 200; // 0-100 scale distance from neutral
   const confBucket = Math.round(recentProb / 10) * 10;
   const currentCount = ensemble.calibration.correctByConf.get(confBucket) ?? 50;
   const newCount = Math.round((currentCount * ensemble.calibration.totalPredictions + target) / (ensemble.calibration.totalPredictions + 1));

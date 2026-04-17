@@ -249,10 +249,11 @@ export class OmegaEngine {
             existing.relevantGladiators.push(glad.id);
           }
 
-          // Infer timeframe from hold time
-          if ((win.marketContext?.holdTimeSec as number) || 0 < 300) {
+          // AUDIT FIX T1.8: Fix operator precedence — was: (val) || 0 < 300 → (val) || true → always truthy
+          const holdTime = (win.marketContext?.holdTimeSec as number) || 0;
+          if (holdTime < 300) {
             existing.preferredTimeframe = '1m';
-          } else if ((win.marketContext?.holdTimeSec as number) || 0 < 1800) {
+          } else if (holdTime < 1800) {
             existing.preferredTimeframe = '5m';
           } else {
             existing.preferredTimeframe = '1h';

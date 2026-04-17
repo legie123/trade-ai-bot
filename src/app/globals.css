@@ -1490,3 +1490,13 @@ input:focus-visible {
   0%, 80%, 100% { opacity: 0.3; }
   40% { opacity: 0.7; }
 }
+
+/* ═══ P0: TOUCH TARGETS — minimum 44px on mobile ═══ */
+@media (max-width: 768px) {
+  button, a[role="button"], [role="button"],
+  .nav-item, .bottom-nav a, .sidebar a {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+}

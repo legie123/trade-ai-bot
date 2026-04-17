@@ -50,7 +50,8 @@ async function binanceRequest(
     params.recvWindow = 5000;
   }
 
-  const qs = Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&');
+  // AUDIT FIX T2.7: URL-encode params to prevent injection & broken queries
+  const qs = Object.entries(params).map(([k, v]) => `${encodeURIComponent(String(k))}=${encodeURIComponent(String(v))}`).join('&');
   let url = `${BINANCE_BASE_URL}${endpoint}`;
 
   if (signed) {

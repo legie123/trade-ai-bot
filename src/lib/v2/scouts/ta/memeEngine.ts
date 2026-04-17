@@ -113,11 +113,24 @@ export async function runMemeEngineScan(): Promise<MemeResult> {
     // Trecem mai departe DOAR dacă avem date de preț (fără phantom data)
     if (currentPrice <= 0) continue;
 
+    // AUDIT FIX T1.3: Replace random scoring with deterministic heuristic
+    // Score based on actual observable data: price existence + chain quality + profile completeness
+    let heuristicScore = 50; // Base: neutral
+    if (currentPrice > 0) heuristicScore += 15; // Has real price data
+    if (profile.description && profile.description.length > 20) heuristicScore += 5; // Has description
+    if (profile.links && profile.links.length >= 2) heuristicScore += 5; // Has multiple links (website, twitter, etc)
+    if (profile.icon) heuristicScore += 3; // Has icon (not abandoned)
+    if (profile.header) heuristicScore += 2; // Has header image
+    // Chain bonus: Solana is faster execution
+    if (profile.chainId === 'solana') heuristicScore += 5;
+    // Cap at 85 — meme tokens should NEVER auto-pass the 90 threshold without real TA confirmation
+    heuristicScore = Math.min(heuristicScore, 85);
+
     const analysis: MemeAnalysis = {
       tokenAddress: profile.tokenAddress,
       chainId: profile.chainId,
-      score: 85 + Math.random() * 10, // Simulated fundamental scoring
-      momentum: 'EXPLOSIVE_HYPE',
+      score: heuristicScore,
+      momentum: heuristicScore >= 75 ? 'EXPLOSIVE_HYPE' : heuristicScore >= 60 ? 'MODERATE' : 'WEAK',
       timestamp: new Date().toISOString()
     };
     

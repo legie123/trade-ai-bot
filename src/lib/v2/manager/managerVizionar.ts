@@ -348,6 +348,20 @@ export class ManagerVizionar {
     };
     
     addDecision(snapshot);
+
+    // Telegram notification for paper trades (so we know the system is alive)
+    try {
+      const { sendMessage } = await import('@/lib/alerts/telegram');
+      const msg = `📝 *PAPER TRADE*\n\n` +
+        `Gladiator: \`${id}\`\n` +
+        `${payload.symbol} → *${consensus.finalDirection}*\n` +
+        `Price: $${payload.price.toLocaleString()}\n` +
+        `Confidence: ${(consensus.weightedConfidence * 100).toFixed(1)}%\n` +
+        `Signal: ${payload.source}`;
+      sendMessage(msg).catch(() => {}); // Fire and forget
+    } catch {
+      // Non-critical
+    }
   }
 }
 

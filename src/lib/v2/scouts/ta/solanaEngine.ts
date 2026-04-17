@@ -151,40 +151,10 @@ async function fetchOHLC(coinId: string): Promise<Candle[]> {
     log.warn(`MEXC OHLC failed for ${coinId}, falling back to synthetic`, { err: (err as Error).message });
   }
 
-  // Synthetic Fallback Native
-  try {
-    if (!coin.address) return [];
-    const res = await fetchWithRetry(`https://api.dexscreener.com/tokens/v1/solana/${coin.address}`, { retries: 1, timeoutMs: 4000 });
-    const pairs = await res.json();
-    const pair = Array.isArray(pairs) && pairs.length > 0 ? pairs[0] as { priceUsd?: string; priceChange?: { h1?: number; h6?: number; h24?: number } } : null;
-
-    if (!pair) return [];
-
-    const price = parseFloat(pair.priceUsd || '0');
-    const h1Change = (pair.priceChange?.h1 || 0) / 100;
-    const h6Change = (pair.priceChange?.h6 || 0) / 100;
-    const h24Change = (pair.priceChange?.h24 || 0) / 100;
-
-    const candles: Candle[] = [];
-    const baseT = now - 30 * 24 * 60 * 60 * 1000;
-    const p24h = price / (1 + h24Change);
-    const p6h = price / (1 + h6Change);
-    const p1h = price / (1 + h1Change);
-
-    for (let i = 0; i < 28; i++) {
-        const t = baseT + i * 24 * 60 * 60 * 1000;
-        const drift = (price - p24h) / 28 * i;
-        const c = p24h + drift + (Math.random() - 0.5) * price * 0.01;
-        candles.push({ t, o: c * 0.999, h: c * 1.005, l: c * 0.995, c });
-    }
-    candles.push({ t: now - 24*3600000, o: p24h, h: Math.max(p24h, p6h) * 1.01, l: Math.min(p24h, p6h) * 0.99, c: p6h });
-    candles.push({ t: now - 3600000, o: p1h, h: Math.max(p1h, price) * 1.002, l: Math.min(p1h, price) * 0.998, c: price });
-
-    cache.ohlc[coinId] = { data: candles, ts: now };
-    return candles;
-  } catch {
-    return [];
-  }
+  // AUDIT FIX T1.4: Synthetic OHLC with Math.random() DISABLED — produces fake data
+  // that leads to false EMA/signal calculations. Return empty to force NEUTRAL signals.
+  log.warn(`[SolanaEngine] MEXC OHLC unavailable for ${coinId} — no synthetic fallback. Returning empty (will produce NEUTRAL signals).`);
+  return [];
 }
 
 // ─── Analysis Logic ────────────────────────────────

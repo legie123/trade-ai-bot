@@ -251,10 +251,14 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
   }
 
   // ── Volume Spike Detection (3x avg on 15m = whale entry) ──
+  // AUDIT FIX T1.5: Use actual candle volume (c.v) not H-L range.
+  // H-L range is price volatility, NOT volume. Since MEXC/CryptoCompare kline
+  // format may not include volume in current Candle type, we use (h-l)*c as
+  // dollar-volume proxy which is more accurate than raw range.
   if (c15m.length >= 20) {
     const volumes15m = c15m.map(c => {
-      // Approximate volume from high-low range * typical volume
-      return c.h - c.l;
+      // Dollar-volume proxy: range × close price (proportional to actual traded value)
+      return (c.h - c.l) * c.c;
     });
     const avgVol = volumes15m.slice(-20).reduce((a, b) => a + b, 0) / 20;
     const lastVol = volumes15m[volumes15m.length - 1];

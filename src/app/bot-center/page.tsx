@@ -322,7 +322,10 @@ export default function BotCenterPage() {
             <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 'clamp(10px, 2.5vw, 13px)', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--accent-red)' }}>👑 SINDICATUL MAEȘTRILOR</span>
-                <span className="pulse" style={{ fontSize: 9, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', padding: '2px 8px', borderRadius: 10 }}>CONSENSUS: 70%</span>
+                {/* AUDIT FIX T2.8: Show real master count instead of hardcoded fake consensus */}
+                <span className="pulse" style={{ fontSize: 9, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', padding: '2px 8px', borderRadius: 10 }}>
+                  {data.v2Entities?.masters ? `${data.v2Entities.masters.filter((m: { status: string }) => m.status === 'ONLINE' || m.status === 'ACTIVE').length}/${data.v2Entities.masters.length} ACTIVE` : 'LOADING...'}
+                </span>
               </div>
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {data.v2Entities?.masters?.map((m) => (

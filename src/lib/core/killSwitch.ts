@@ -1,15 +1,18 @@
 // ============================================================
 // Kill Switch — Global emergency halt, daily loss auto-stop,
-// exposure limits, persisted to disk
+// exposure limits, persisted to Supabase (Cloud Run safe)
+// AUDIT FIX T2.3: Replaced filesystem persistence with Supabase
 // ============================================================
-import * as fs from 'fs';
-import * as path from 'path';
+import { createClient } from '@supabase/supabase-js';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('KillSwitch');
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const KILL_SWITCH_FILE = path.join(DATA_DIR, 'kill-switch.json');
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = supabaseUrl && supabaseKey
+  ? createClient(supabaseUrl, supabaseKey)
+  : null;
 
 export interface KillSwitchState {
   engaged: boolean;
@@ -38,22 +41,13 @@ const VELOCITY_CONFIG = {
 } as const;
 
 // ─── Global singleton ───────────────────────────────
-const g = globalThis as unknown as { __killSwitch?: KillSwitchState };
+const g = globalThis as unknown as { __killSwitch?: KillSwitchState; __killSwitchHydrated?: boolean };
 if (!g.__killSwitch) {
-  // Try to load from disk
-  g.__killSwitch = loadFromDisk();
+  g.__killSwitch = defaultState();
 }
 const state = g.__killSwitch;
 
-function loadFromDisk(): KillSwitchState {
-  try {
-    if (fs.existsSync(KILL_SWITCH_FILE)) {
-      const raw = fs.readFileSync(KILL_SWITCH_FILE, 'utf-8');
-      return JSON.parse(raw) as KillSwitchState;
-    }
-  } catch {
-    log.warn('Failed to load kill switch state from disk');
-  }
+function defaultState(): KillSwitchState {
   return {
     engaged: false,
     engagedAt: null,
@@ -66,15 +60,41 @@ function loadFromDisk(): KillSwitchState {
   };
 }
 
-function saveToDisk(): void {
+// AUDIT FIX T2.3: Hydrate from Supabase on first use (async, non-blocking init)
+async function hydrateFromSupabase(): Promise<void> {
+  if (g.__killSwitchHydrated || !supabase) return;
+  g.__killSwitchHydrated = true;
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    const { data } = await supabase
+      .from('json_store')
+      .select('data')
+      .eq('id', 'kill_switch')
+      .single();
+    if (data?.data) {
+      const remote = data.data as KillSwitchState;
+      Object.assign(state, remote);
+      log.info('Kill switch state hydrated from Supabase', { engaged: state.engaged });
     }
-    fs.writeFileSync(KILL_SWITCH_FILE, JSON.stringify(state, null, 2), 'utf-8');
   } catch (err) {
-    log.error('Failed to persist kill switch state', { error: (err as Error).message });
+    log.warn('Failed to hydrate kill switch from Supabase', { error: (err as Error).message });
   }
+}
+
+// Fire-and-forget hydration at module load
+hydrateFromSupabase().catch(() => {});
+
+function persistState(): void {
+  if (!supabase) {
+    log.warn('Kill switch state NOT persisted — Supabase not configured');
+    return;
+  }
+  supabase
+    .from('json_store')
+    .upsert({ id: 'kill_switch', data: { ...state }, updated_at: new Date().toISOString() })
+    .then(({ error }) => {
+      if (error) log.error('Failed to persist kill switch to Supabase', { error: error.message });
+      else log.debug('Kill switch state persisted to Supabase');
+    });
 }
 
 // ─── Engage kill switch ─────────────────────────────
@@ -84,7 +104,7 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
   state.reason = reason;
   state.autoEngaged = auto;
   state.manualOverride = !auto;
-  saveToDisk();
+  persistState();
 
   log.fatal(`KILL SWITCH ENGAGED: ${reason}`, { auto, reason });
 
@@ -117,8 +137,7 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
       error: lastError.message
     });
 
-    // VERIFICATION LOOP: Query MEXC every 5min to confirm positions are actually closed
-    let isVerified = false;
+    // AUDIT FIX T2.3: Bounded verification loop with proper cleanup
     let verifyAttempts = 0;
     const maxVerifyAttempts = 12; // 60 minutes total
     const verifyInterval = 5 * 60_000; // 5 minutes
@@ -130,11 +149,10 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
         const openPos = await getMexcOpenOrders();
         if (!openPos || openPos.length === 0) {
           log.info('KILL SWITCH VERIFICATION: All positions confirmed CLOSED on MEXC');
-          isVerified = true;
           clearInterval(verifyLoop);
-        } else {
-          log.warn(`[KILL SWITCH VERIFICATION] Still ${openPos.length} open position(s) on MEXC after ${verifyAttempts * 5}min`);
+          return;
         }
+        log.warn(`[KILL SWITCH VERIFICATION] Still ${openPos.length} open position(s) on MEXC after ${verifyAttempts * 5}min`);
       } catch (err) {
         log.error(`[KILL SWITCH VERIFICATION] Query failed: ${(err as Error).message}`);
       }
@@ -172,7 +190,7 @@ export function disengageKillSwitch(): void {
   state.manualOverride = false;
   state.dailyLossTriggered = false;
   state.maxExposureTriggered = false;
-  saveToDisk();
+  persistState();
 
   log.info('Kill switch disengaged');
 }
@@ -183,10 +201,11 @@ export function isKillSwitchEngaged(): boolean {
 }
 
 // ─── Check daily loss limit ─────────────────────────
-export function checkDailyLossLimit(dailyLossPercent: number, limitPercent: number): boolean {
+// AUDIT FIX T3.1: Made async to await engageKillSwitch (liquidation must complete)
+export async function checkDailyLossLimit(dailyLossPercent: number, limitPercent: number): Promise<boolean> {
   if (dailyLossPercent >= limitPercent && !state.dailyLossTriggered) {
     state.dailyLossTriggered = true;
-    engageKillSwitch(
+    await engageKillSwitch(
       `Daily loss limit hit: ${dailyLossPercent.toFixed(1)}% >= ${limitPercent}% limit`,
       true
     );
@@ -196,15 +215,16 @@ export function checkDailyLossLimit(dailyLossPercent: number, limitPercent: numb
 }
 
 // ─── Check total exposure limit ─────────────────────
-export function checkExposureLimit(
+// AUDIT FIX T3.1: Made async to await engageKillSwitch
+export async function checkExposureLimit(
   totalExposure: number,
   accountBalance: number,
   maxExposurePercent: number = 30
-): boolean {
+): Promise<boolean> {
   const exposurePercent = (totalExposure / accountBalance) * 100;
   if (exposurePercent >= maxExposurePercent && !state.maxExposureTriggered) {
     state.maxExposureTriggered = true;
-    engageKillSwitch(
+    await engageKillSwitch(
       `Exposure limit hit: ${exposurePercent.toFixed(1)}% >= ${maxExposurePercent}% of balance`,
       true
     );
@@ -220,7 +240,8 @@ export function checkExposureLimit(
  * @param spendPercent - this trade's size as % of equity
  * @returns true if velocity kill switch was triggered
  */
-export function trackTradeVelocity(spendPercent: number): boolean {
+// AUDIT FIX T3.1: Made async to await engageKillSwitch
+export async function trackTradeVelocity(spendPercent: number): Promise<boolean> {
   const now = Date.now();
   const cutoff = now - VELOCITY_CONFIG.windowMinutes * 60_000;
 
@@ -235,7 +256,7 @@ export function trackTradeVelocity(spendPercent: number): boolean {
   // Check trade frequency
   if (velocityWindow.length > VELOCITY_CONFIG.maxTradesInWindow) {
     state.velocityTriggered = true;
-    engageKillSwitch(
+    await engageKillSwitch(
       `Velocity Kill Switch: ${velocityWindow.length} trades in ${VELOCITY_CONFIG.windowMinutes}min ` +
       `(limit: ${VELOCITY_CONFIG.maxTradesInWindow})`,
       true,
@@ -247,7 +268,7 @@ export function trackTradeVelocity(spendPercent: number): boolean {
   const totalSpend = velocityWindow.reduce((s, e) => s + e.spendPercent, 0);
   if (totalSpend > VELOCITY_CONFIG.maxSpendDeltaPercent) {
     state.velocityTriggered = true;
-    engageKillSwitch(
+    await engageKillSwitch(
       `Velocity Kill Switch: ${totalSpend.toFixed(2)}% spend in ${VELOCITY_CONFIG.windowMinutes}min ` +
       `(limit: ${VELOCITY_CONFIG.maxSpendDeltaPercent}%)`,
       true,
@@ -278,5 +299,5 @@ export function resetDailyTriggers(): void {
     disengageKillSwitch();
     log.info('Kill switch auto-disengaged on new day');
   }
-  saveToDisk();
+  persistState();
 }

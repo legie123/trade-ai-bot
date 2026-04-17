@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
 export interface LiveBotStats {
   mode: string;
@@ -75,26 +75,76 @@ export function useBotStats(intervalMs = 30_000) {
     return () => { clearTimeout(timer); clearInterval(interval); };
   }, [fetchStats, intervalMs]);
 
-  // LIVE WebSocket for open positions to tick Equity to the second
+  // AUDIT FIX T2.4+T2.5: Stable symbol key to prevent reconnect on every SSE tick
+  const symbolsKey = useMemo(
+    () => activePositions.map(p => p.symbol).sort().join(','),
+    [activePositions]
+  );
+
+  // LIVE WebSocket with reconnect logic + throttled state updates
+  const priceBufferRef = useRef<Record<string, number>>({});
+  const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
-    if (activePositions.length === 0) return;
+    if (!symbolsKey) return;
 
-    const symbols = activePositions.map(p => p.symbol.replace('/', '').toLowerCase() + '@aggTrade');
-    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbols.join('/')}`);
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempts = 0;
+    let destroyed = false;
+    const MAX_RECONNECT_DELAY = 30_000;
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.s && data.p) {
-          const symbolStr = data.s.toUpperCase();
-          const p = parseFloat(data.p);
-          setLivePrices(prev => ({ ...prev, [symbolStr]: p }));
-        }
-      } catch {}
+    const symbols = symbolsKey.split(',').map(s => s.replace('/', '').toLowerCase() + '@aggTrade');
+
+    function connect() {
+      if (destroyed) return;
+      ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbols.join('/')}`);
+
+      ws.onopen = () => {
+        reconnectAttempts = 0; // Reset on success
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.s && data.p) {
+            // Buffer prices instead of immediate setState
+            priceBufferRef.current[data.s.toUpperCase()] = parseFloat(data.p);
+          }
+        } catch {}
+      };
+
+      ws.onclose = () => {
+        if (destroyed) return;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+        reconnectAttempts++;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+
+      ws.onerror = () => {
+        ws?.close(); // Will trigger onclose → reconnect
+      };
+    }
+
+    connect();
+
+    // Flush buffered prices to state at max 2 updates/sec (500ms)
+    flushTimerRef.current = setInterval(() => {
+      const buf = priceBufferRef.current;
+      if (Object.keys(buf).length > 0) {
+        const snapshot = { ...buf };
+        setLivePrices(prev => ({ ...prev, ...snapshot }));
+        priceBufferRef.current = {};
+      }
+    }, 500);
+
+    return () => {
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (flushTimerRef.current) clearInterval(flushTimerRef.current);
+      ws?.close();
     };
-
-    return () => ws.close();
-  }, [activePositions]);
+  }, [symbolsKey]);
 
   // Compute live equity safely during render to avoid cascading updates
   const computedStats = useMemo(() => {

@@ -57,15 +57,34 @@ export async function GET(request: Request) {
           let outcome: 'YES' | 'NO' | 'CANCEL' = 'CANCEL';
 
           if (market.closed) {
-            // Get final prices
-            const yesOutcome = market.outcomes.find(o => o.name.toUpperCase() === 'YES');
-            const noOutcome = market.outcomes.find(o => o.name.toUpperCase() === 'NO');
+            // Use resolved outcome from API if available (authoritative)
+            const resolvedOutcome = (market as unknown as Record<string, unknown>).resolvedOutcome
+              ?? (market as unknown as Record<string, unknown>).resolution;
+            if (typeof resolvedOutcome === 'string') {
+              const upper = resolvedOutcome.toUpperCase();
+              if (upper === 'YES' || upper === 'NO') outcome = upper;
+              else if (upper === 'CANCEL' || upper === 'N/A') outcome = 'CANCEL';
+              else {
+                log.warn('Unknown resolved outcome, skipping', { marketId: bet.marketId, resolvedOutcome });
+                continue; // Do not guess — wait for valid resolution
+              }
+            } else {
+              // Fallback: price heuristic only for highly decisive outcomes
+              const yesOutcome = market.outcomes.find(o => o.name.toUpperCase() === 'YES');
+              const noOutcome = market.outcomes.find(o => o.name.toUpperCase() === 'NO');
 
-            if (yesOutcome && noOutcome) {
-              if (yesOutcome.price > 0.95) outcome = 'YES';
-              else if (yesOutcome.price < 0.05) outcome = 'NO';
-              else if (yesOutcome.price > 0.5) outcome = 'YES';
-              else outcome = 'NO';
+              if (yesOutcome && noOutcome) {
+                if (yesOutcome.price > 0.95) outcome = 'YES';
+                else if (yesOutcome.price < 0.05) outcome = 'NO';
+                else {
+                  // Price is ambiguous (between 0.05-0.95) — do NOT guess, skip until price settles
+                  log.warn('Market closed but price ambiguous, deferring resolution', {
+                    marketId: bet.marketId,
+                    yesPrice: yesOutcome.price,
+                  });
+                  continue;
+                }
+              }
             }
           }
 

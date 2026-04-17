@@ -33,7 +33,11 @@ interface OrchestrateRequest {
 
 function verifyToken(request: Request): boolean {
   const token = process.env.SWARM_TOKEN;
-  if (!token) return true;
+  // AUDIT FIX T1.1: NEVER allow unauthenticated A2A access — require token always
+  if (!token) {
+    console.error('[SECURITY] SWARM_TOKEN not set — all A2A requests blocked. Set SWARM_TOKEN in .env');
+    return false;
+  }
   return request.headers.get('x-swarm-token') === token;
 }
 

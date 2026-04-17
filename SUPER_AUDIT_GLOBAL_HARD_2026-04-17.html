@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRADE AI — Super Audit Global Hard | 2026-04-17</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--card:#12121a;--border:#1e1e2e;--red:#ff4444;--orange:#ff8c00;--yellow:#ffd700;--green:#00ff88;--blue:#4488ff;--dim:#666;--text:#e0e0e0}
+body{background:var(--bg);color:var(--text);font-family:'SF Mono',Monaco,'Cascadia Code',monospace;font-size:13px;line-height:1.6;padding:20px;max-width:1400px;margin:0 auto}
+h1{color:var(--red);font-size:28px;text-align:center;padding:30px 0 10px;text-transform:uppercase;letter-spacing:4px;border-bottom:2px solid var(--red)}
+h2{color:var(--yellow);font-size:18px;margin:30px 0 15px;padding:10px 0;border-bottom:1px solid var(--border)}
+h3{color:var(--blue);font-size:15px;margin:20px 0 10px}
+h4{color:var(--orange);font-size:13px;margin:15px 0 8px}
+.verdict-box{text-align:center;padding:40px;margin:30px 0;border:3px solid var(--red);background:rgba(255,68,68,0.08);border-radius:8px}
+.verdict-box .label{font-size:14px;color:var(--dim);text-transform:uppercase;letter-spacing:3px}
+.verdict-box .value{font-size:48px;font-weight:900;color:var(--red);margin:10px 0}
+.verdict-box .sub{font-size:14px;color:var(--orange)}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin:20px 0}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:15px;text-align:center}
+.stat-card .num{font-size:36px;font-weight:900}
+.stat-card .lbl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:2px;margin-top:5px}
+.critical .num{color:var(--red)}
+.high .num{color:var(--orange)}
+.medium .num{color:var(--yellow)}
+.low .num{color:var(--blue)}
+.green .num{color:var(--green)}
+table{width:100%;border-collapse:collapse;margin:15px 0;font-size:12px}
+th{background:var(--card);color:var(--yellow);text-align:left;padding:8px 12px;border:1px solid var(--border);text-transform:uppercase;font-size:11px;letter-spacing:1px}
+td{padding:8px 12px;border:1px solid var(--border);vertical-align:top}
+tr:hover{background:rgba(255,255,255,0.03)}
+.sev{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;text-transform:uppercase}
+.sev-critical{background:rgba(255,68,68,0.2);color:var(--red);border:1px solid var(--red)}
+.sev-high{background:rgba(255,140,0,0.15);color:var(--orange);border:1px solid var(--orange)}
+.sev-medium{background:rgba(255,215,0,0.1);color:var(--yellow);border:1px solid var(--yellow)}
+.sev-low{background:rgba(68,136,255,0.1);color:var(--blue);border:1px solid var(--blue)}
+.section{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:20px;margin:15px 0}
+.pass{color:var(--green)}
+.fail{color:var(--red)}
+code{background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;font-size:12px}
+.nav{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);padding:10px 0;z-index:100;display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.nav a{color:var(--dim);text-decoration:none;font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:4px;text-transform:uppercase;letter-spacing:1px}
+.nav a:hover{color:var(--yellow);border-color:var(--yellow)}
+details{margin:8px 0}
+details summary{cursor:pointer;color:var(--blue);padding:5px 0}
+details summary:hover{color:var(--yellow)}
+.evidence{background:rgba(0,0,0,0.3);padding:10px;border-left:3px solid var(--dim);margin:5px 0;font-size:11px;overflow-x:auto;white-space:pre-wrap}
+</style>
+</head>
+<body>
+
+<h1>TRADE AI — SUPER AUDIT GLOBAL HARD</h1>
+<p style="text-align:center;color:var(--dim);margin:10px 0 30px">2026-04-17 | Auditor: Claude Opus 4.6 | Mod: HARD MODE — Zero Compromis</p>
+
+<nav class="nav">
+<a href="#verdict">Verdict</a>
+<a href="#summary">Sumar</a>
+<a href="#critical">Critical</a>
+<a href="#security">Security</a>
+<a href="#backend">Backend</a>
+<a href="#frontend">Frontend</a>
+<a href="#realtime">Realtime</a>
+<a href="#strategies">Strategii</a>
+<a href="#build">Build</a>
+<a href="#next">Next Actions</a>
+</nav>
+
+<!-- ============ VERDICT ============ -->
+<div id="verdict" class="verdict-box">
+<div class="label">Verdict Final</div>
+<div class="value">NOT READY</div>
+<div class="sub">16 CRITICAL + 48 HIGH severity issues — Sistemul NU este sigur pentru rulare live cu bani reali</div>
+</div>
+
+<!-- ============ SUMMARY STATS ============ -->
+<div id="summary">
+<h2>Sumar Executiv</h2>
+<div class="stats-grid">
+<div class="stat-card critical"><div class="num">16</div><div class="lbl">Critical</div></div>
+<div class="stat-card high"><div class="num">48</div><div class="lbl">High</div></div>
+<div class="stat-card medium"><div class="num">72</div><div class="lbl">Medium</div></div>
+<div class="stat-card low"><div class="num">52</div><div class="lbl">Low</div></div>
+<div class="stat-card green"><div class="num">188</div><div class="lbl">Total Issues</div></div>
+</div>
+
+<div class="section">
+<h3>Scanare completă</h3>
+<table>
+<tr><th>Strat</th><th>Fișiere scanate</th><th>Stare</th></tr>
+<tr><td>Backend Core (v2/master, manager, scouts, gladiators, safety, swarm, superai)</td><td>25+</td><td class="fail">65 issues (6C, 22H)</td></tr>
+<tr><td>Frontend (pages, components, hooks)</td><td>35+</td><td class="fail">45 issues (3C, 9H)</td></tr>
+<tr><td>Security (auth, env, CORS, deploy, DB)</td><td>20+</td><td class="fail">14 findings (3C, 5H)</td></tr>
+<tr><td>Realtime (WS, feeds, exchanges, providers, Polymarket)</td><td>30+</td><td class="fail">38 issues (2C, 5H)</td></tr>
+<tr><td>Strategii & Scoring (TA, ML, arena, gladiators, router)</td><td>25+</td><td class="fail">47 issues (7C, 12H)</td></tr>
+<tr><td>TypeScript typecheck</td><td>ALL</td><td class="pass">PASS — 0 errors</td></tr>
+<tr><td>ESLint</td><td>ALL</td><td class="fail">26 errors, 39 warnings</td></tr>
+<tr><td>Next.js Build</td><td>-</td><td style="color:var(--dim)">SKIP — SWC binary mismatch (arm64 sandbox)</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ============ CRITICAL ISSUES ============ -->
+<div id="critical">
+<h2>CRITICAL Issues — Trebuie rezolvate INAINTE de orice rulare</h2>
+
+<div class="section">
+<h3>C1. Meme Engine — Scoring RANDOM</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/v2/scouts/ta/memeEngine.ts:117</code></p>
+<p>Scorul meme token-urilor este <code>85 + Math.random() * 10</code> — un număr random între 85-95. Pragul de semnal e 90, deci ~50% din tokeni trec RANDOM. Asta nu e trading, e loterie.</p>
+<div class="evidence">score: 85 + Math.random() * 10, // Simulated fundamental scoring</div>
+
+<h3>C2. Solana Engine — Date OHLC fabricate cu Math.random()</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/v2/scouts/ta/solanaEngine.ts:174-181</code></p>
+<p>Când MEXC e indisponibil, engine-ul generează candle-uri FAKE cu noise random și rulează EMA/semnale pe ele. Decizii de trading pe date fabricate.</p>
+<div class="evidence">const c = p24h + drift + (Math.random() - 0.5) * price * 0.01;</div>
+
+<h3>C3. BTC Engine — "Volume Spike" = Price Range, NU volum real</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/v2/scouts/ta/btcEngine.ts:255-258</code></p>
+<p>Detecția "whale entry" folosește H-L price range ca proxy pentru volum. Fundamental greșit — wicking volatil cu volum mic generează false whale signals.</p>
+<div class="evidence">const volumes15m = c15m.map(c => { return c.h - c.l; });</div>
+
+<h3>C4. ML Calibration — Permanent broken</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/ml/predictor.ts:447</code></p>
+<p><code>Math.abs(0.5 - 0.5) * 200 = 0</code> — toate outcome-urile se scriu în bucket 0, corupând complet harta de calibrare.</p>
+<div class="evidence">const recentProb = Math.abs(0.5 - 0.5) * 200; // placeholder</div>
+
+<h3>C5. SELL = EXIT — Sistemul NU poate face SHORT</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/router/signalRouter.ts:78</code> + <code>src/lib/v2/manager/managerVizionar.ts:181</code></p>
+<p>ACTION_MAP mapează SELL→EXIT. ManagerVizionar filtrează orice nu e LONG. Sistemul poate DOAR cumpăra. În bear market = 0 activitate sau pierderi.</p>
+
+<h3>C6. Poziție orfană MEXC — Order executat dar SL eșuează</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/v2/scouts/executionMexc.ts:154-187</code></p>
+<p>Dacă limit order reușește dar plasarea SL eșuează, funcția returnează <code>executed: false</code>. Caller-ul nu înregistrează LivePosition. Rezultat: ordine activă pe MEXC fără tracking, fără SL, fără trailing.</p>
+
+<h3>C7. Race condition pe cache — Decisions/Gladiators pierdute</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/store/db.ts:251-277, 333-362</code></p>
+<p>addDecision și saveGladiatorsToDb fac read-merge-write async fără lock. Cereri concurente (Cloud Run multiple instances) pot pierde date silent.</p>
+
+<h3>C8. Kill Switch — setInterval niciodată curățat</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/core/killSwitch.ts:121-147</code></p>
+<p>Verification loop interval (5min) nu se curăță pe success. Apeluri repetate creează intervale multiple paralele care pot interfera.</p>
+
+<h3>C9. Kill Switch pe filesystem efemer</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/core/killSwitch.ts:50-77</code></p>
+<p>Starea kill switch se salvează pe disk (<code>/data/kill-switch.json</code>). Pe Cloud Run = ephemeral. Restart = kill switch dezactivat accidental.</p>
+
+<h3>C10. A2A Routes COMPLET deschise</h3>
+<p><span class="sev sev-critical">CRITICAL</span> Security audit</p>
+<p>SWARM_TOKEN nu e setat în .env. Funcția verifyToken returnează <code>true</code> când token-ul e undefined. Toate 5 endpoint-uri A2A (inclusiv execution = plasare trade-uri) sunt fără autentificare.</p>
+
+<h3>C11. ~30 GET endpoints expun date sensibile fără auth</h3>
+<p><span class="sev sev-critical">CRITICAL</span> Security audit</p>
+<p>/api/dashboard, /api/bot, /api/telegram, /api/diagnostics/*, /api/v2/intelligence/* — toate publice. POST-uri care modifică config polymarket — fără auth.</p>
+
+<h3>C12. RLS Supabase — anon key = full access</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>supabase/migrations</code></p>
+<p>Toate RLS policies: <code>USING (true) WITH CHECK (true)</code>. Anon key (expus în NEXT_PUBLIC_*) dă acces complet la toate tabelele.</p>
+
+<h3>C13. No ErrorBoundary — orice eroare React = ecran alb</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/app/layout.tsx</code></p>
+<p>Zero React ErrorBoundary în întreaga aplicație. O singură eroare nehandled în orice componentă crashuiește tot UI-ul.</p>
+
+<h3>C14. CommandPalette — Kill Switch cu UN click</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/components/CommandPalette.tsx</code></p>
+<p>Cmd+K → selectează kill switch → fire. Niciun dialog de confirmare. Accidental double-tap pe săgeți poate activa.</p>
+
+<h3>C15. Operator precedence bug — timeframe mereu '1m'</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/v2/superai/omegaEngine.ts:253-254</code></p>
+<p><code>(holdTimeSec) || 0 < 300</code> evaluează ca <code>holdTimeSec || true</code> = mereu truthy. DNA synthesis data corruptă.</p>
+
+<h3>C16. Exchange orders fără balance check</h3>
+<p><span class="sev sev-critical">CRITICAL</span> <code>src/lib/exchange/mexcClient.ts</code>, <code>binanceClient.ts</code></p>
+<p>Market/limit orders se trimit direct fără verificare sold. Order rejection la exchange fără handling graceful.</p>
+</div>
+</div>
+
+<!-- ============ SECURITY ============ -->
+<div id="security">
+<h2>Security Deep Findings</h2>
+<div class="section">
+<table>
+<tr><th>#</th><th>Finding</th><th>Sev</th><th>Stare</th></tr>
+<tr><td>S1</td><td>A2A routes open (SWARM_TOKEN absent)</td><td><span class="sev sev-critical">CRIT</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S2</td><td>30+ GET routes fără auth expun PnL, config, positions</td><td><span class="sev sev-critical">CRIT</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S3</td><td>POST polymarket tune/config fără auth</td><td><span class="sev sev-critical">CRIT</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S4</td><td>Supabase RLS = USING(true), anon key = full access</td><td><span class="sev sev-critical">CRIT</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S5</td><td>Default password admin123, JWT secret predictibil</td><td><span class="sev sev-high">HIGH</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S6</td><td>No middleware.ts — auth per-route, error-prone</td><td><span class="sev sev-high">HIGH</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S7</td><td>Zero rate limiting pe API</td><td><span class="sev sev-high">HIGH</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S8</td><td>Gemini API key în URL query string</td><td><span class="sev sev-medium">MED</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S9</td><td>CSP unsafe-inline + unsafe-eval</td><td><span class="sev sev-medium">MED</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S10</td><td>No brute-force protection on login</td><td><span class="sev sev-medium">MED</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S11</td><td>Error messages leak internal paths</td><td><span class="sev sev-medium">MED</span></td><td class="fail">OPEN</td></tr>
+<tr><td>S12</td><td>Dead deploy configs (render.yaml, vercel.json) cu AUTO_TRADE_ENABLED=true</td><td><span class="sev sev-low">LOW</span></td><td class="fail">OPEN</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ============ BACKEND ============ -->
+<div id="backend">
+<h2>Backend Engine Findings</h2>
+<div class="section">
+<table>
+<tr><th>File</th><th>Issue</th><th>Sev</th></tr>
+<tr><td>db.ts</td><td>addDecision race condition — async IIFE read-merge-write fără lock</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>db.ts</td><td>saveGladiatorsToDb — aceeași race condition</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>db.ts</td><td>Supabase client cu placeholder credentials dacă env vars lipsesc</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>db.ts</td><td>syncTasks queue fără size limit — memory leak dacă Supabase slow</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>db.ts</td><td>getEquityCurve bootstrap nu are câmp 'mode' — filterMode returnează empty</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>executionMexc.ts</td><td>Poziție orfană: SL fail → executed:false dar ordinul e activ</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>executionMexc.ts</td><td>roundToStep floating-point fix insuficient</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>executionMexc.ts</td><td>No timeout pe MEXC API calls</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>positionManager.ts</td><td>Race condition pe partial TP — quantity stale</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>positionManager.ts</td><td>Division by zero dacă entryPrice=0</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>positionManager.ts</td><td>broadcastExitToMoltbook — catch complet gol</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>dualMaster.ts</td><td>Promise({}) never resolves — GC leak</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>dualMaster.ts</td><td>Memory leak: AbortController signal listener acumulat</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>sentinelGuard.ts</td><td>emergencyExitAllPositions — marchează CLOSED chiar dacă MEXC order fail</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>autoDebugEngine.ts</td><td>triggerKillSwitch fără await — liquidare fire-and-forget</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>autoDebugEngine.ts</td><td>False positive: 'LIMIT' match pentru Min-Notional errors</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>swarmOrchestrator.ts</td><td>Self-referential HTTP calls fără circuit breaker (loop risk)</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>swarmOrchestrator.ts</td><td>No timeout pe arena calls</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>killSwitch.ts</td><td>engageKillSwitch async dar nu e awaited de callers</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>killSwitch.ts</td><td>velocityWindow reset pe cold start — burst exploitabil</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>omegaEngine.ts</td><td>N+1 query: 20+ sequential Supabase calls per gladiator loop</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>heartbeat.ts</td><td>criticalDown verifică doar Binance, NU MEXC (exchange-ul de execuție)</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>health route</td><td>Debug console.log dumps Supabase URL/key length pe fiecare health check</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>health route</td><td>DeepSeek/Telegram health checks sunt fake (doar string length)</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>auto-promote</td><td>saveGladiatorsToDb fire-and-forget — await nu face nimic</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>managerVizionar</td><td>extractIntelligence sync vs async inconsistency — stale WR gate</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>managerVizionar</td><td>console.error bypass structured logger/AutoDebug</td><td><span class="sev sev-medium">MED</span></td></tr>
+</table>
+</div>
+</div>
+
+<!-- ============ FRONTEND ============ -->
+<div id="frontend">
+<h2>Frontend Findings</h2>
+<div class="section">
+<table>
+<tr><th>File</th><th>Issue</th><th>Sev</th></tr>
+<tr><td>layout.tsx</td><td>Zero ErrorBoundary — crash = ecran alb</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>CommandPalette.tsx</td><td>Kill switch fără confirmare — un click din Cmd+K</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>bot-center/page.tsx</td><td>Hydration mismatch SSR — window.innerWidth în render</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>useRealtimeData.ts</td><td>WebSocket Binance FĂRĂ reconnect logic</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>useBotStats.ts</td><td>WebSocket FĂRĂ reconnect + 10-50 re-renders/sec unthrottled</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>useRealtimeData.ts</td><td>PnL drift cumulativ — se adaugă delta pe fiecare re-render</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>useRealtimeData.ts</td><td>WS reconnect la fiecare 5s din cauza dependency array (activePositions ref)</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>bot-center/page.tsx</td><td>Date hardcodate afișate ca reale: "CONSENSUS: 70%", "Backtest READY"</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>bot-center/page.tsx</td><td>Fire /api/cron la 2 min din client — tabs multiple = cron-uri duplicate</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>cockpit/page.tsx</td><td>Kill switch stale closure — race condition pe double-tap</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>crypto-radar/page.tsx</td><td>Data label: "1H MOVE" dar datele vin din priceChange24h</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>arena/page.tsx</td><td>String template bug: literal $ înainte de timestamp</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>polymarket/page.tsx</td><td>God component 953 linii, 16+ state vars</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>GoldDust.tsx</td><td>Canvas animație continuă pe TOATE paginile, inclusiv login</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>Sidebar.tsx</td><td>"PAPER MODE" hardcodat — nu reflectă trading mode real</td><td><span class="sev sev-low">LOW</span></td></tr>
+</table>
+</div>
+</div>
+
+<!-- ============ REALTIME ============ -->
+<div id="realtime">
+<h2>Realtime & Exchange Findings</h2>
+<div class="section">
+<table>
+<tr><th>File</th><th>Issue</th><th>Sev</th></tr>
+<tr><td>mexcClient.ts</td><td>Orders fără balance check pre-flight</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>binanceClient.ts</td><td>Orders fără balance check + query string fără URL encode</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>binanceClient.ts</td><td>Stop-loss: price = stopPrice — nu se fill pe gap</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>bybitClient.ts</td><td>Zero health tracking — failures invizibile monitoring</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>okxClient.ts</td><td>Symbol transform fragil: 'USDTUSDT' → 'USD-TUSDT-USDT'</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>providerManager.ts</td><td>7× silent catch {} — provider failures complet invizibile</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>providerManager.ts</td><td>Niciun fallback chain între provideri</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>live-stream route</td><td>Timer leak pe client disconnect — 3 timere active 5 min</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>live-stream route</td><td>No connection limit — DoS posibil</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>wsStreams.ts</td><td>Kline close simulation inexactă — prețuri fabricate</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>wsStreams.ts</td><td>lastKlineTime Map crește nelimitat</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>birdeyeProvider.ts</td><td>API key trimis gol dacă env var lipsește</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>pumpProvider.ts</td><td>Graduation detection logic broken — isGraduated mereu false</td><td><span class="sev sev-low">LOW</span></td></tr>
+<tr><td>marketScanner.ts</td><td>N+1: getOrderBook per market × 8 divisions = 160 calls/scan</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>riskManager.ts</td><td>DEFAULT_RISK_CONFIG.haltedDivisions = mutable shared Set</td><td><span class="sev sev-low">LOW</span></td></tr>
+</table>
+</div>
+</div>
+
+<!-- ============ STRATEGIES ============ -->
+<div id="strategies">
+<h2>Strategii, TA, ML, Arena Findings</h2>
+<div class="section">
+<table>
+<tr><th>File</th><th>Issue</th><th>Sev</th></tr>
+<tr><td>memeEngine.ts</td><td>Score = 85 + Math.random() * 10 — LOTERIE</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>solanaEngine.ts</td><td>Candle-uri FAKE cu Math.random() pentru EMA/signals</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>btcEngine.ts</td><td>Volume = H-L range, NU volum real</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>predictor.ts</td><td>Calibration broken: Math.abs(0.5-0.5)*200 = 0</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>signalRouter.ts</td><td>SELL→EXIT — short selling imposibil</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>managerVizionar.ts</td><td>LONG-only gate — SHORT signals vetoed silent</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>omegaEngine.ts</td><td>Operator precedence bug — timeframe mereu '1m'</td><td><span class="sev sev-critical">CRIT</span></td></tr>
+<tr><td>simulator.ts</td><td>Phantom trades → ALL gladiators indiferent de strategie</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>simulator.ts</td><td>TP 0.3% / SL 1.0% — win rate inflat artificial la ~77%</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>predictor.ts</td><td>ML ensemble circular: prezice wins din wins, nu din market data</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>predictor.ts</td><td>Look-ahead bias în training: features din același dataset</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>predictor.ts</td><td>Online learning fără regularizare — weights drift nelimitat</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>gladiatorRegistry.ts</td><td>isLive = rank ≤ 3 fără minimum trades gate</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>btcEngine.ts</td><td>Semnale stored ÎNAINTE de confidence gate — weak signals în store</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>vwapFilter.ts</td><td>Date insuficiente → confirmed: true — signals trec fără VWAP</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>openInterest.ts</td><td>Modul complet stub — returnează mereu NEUTRAL</td><td><span class="sev sev-high">HIGH</span></td></tr>
+<tr><td>sessionFilter.ts</td><td>Gap London→NY: ora 12 = OFF_HOURS (0.6x) — greșit</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>fundingRate.ts</td><td>Multiplicare ×100 — corect DOAR dacă MEXC returnează fracție</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>signalCooldown.ts</td><td>getCooldownStatus folosește DEFAULT pt toate simbolurile</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>alphaScout.ts</td><td>VWAP cu close*volume, nu typicalPrice*volume</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>omegaEngine.ts</td><td>Regime detection circular: bazat pe gladiator WR, nu market data</td><td><span class="sev sev-medium">MED</span></td></tr>
+<tr><td>paperWallet.ts</td><td>Slippage uniform 0.05-0.15% — nu modelează lichiditate reală</td><td><span class="sev sev-medium">MED</span></td></tr>
+</table>
+</div>
+</div>
+
+<!-- ============ BUILD ============ -->
+<div id="build">
+<h2>Build & Lint Results</h2>
+<div class="section">
+<h3>TypeScript Typecheck</h3>
+<p class="pass">✓ PASS — <code>tsc --noEmit</code> completat cu 0 erori</p>
+
+<h3>ESLint</h3>
+<p class="fail">✗ FAIL — 26 erori, 39 warnings</p>
+<p>Breakdown: 18× <code>no-explicit-any</code>, 14× <code>no-unused-vars</code>, 1× <code>prefer-const</code>. Unused vars includ: EDGE_THRESHOLD, API_KEY, SPAM_PATTERNS, longWinRate, shortWinRate, hasFakeStats.</p>
+
+<h3>Next.js Build</h3>
+<p style="color:var(--dim)">⊘ SKIP — SWC binary mismatch (arm64 sandbox vs x86 project). Build-ul nu poate rula în acest environment. Trebuie testat pe mașina de development sau în CI.</p>
+</div>
+</div>
+
+<!-- ============ WHAT RUNS CORRECTLY ============ -->
+<div id="works">
+<h2>Ce FUNCȚIONEAZĂ corect</h2>
+<div class="section">
+<table>
+<tr><th>Component</th><th>Status</th><th>Note</th></tr>
+<tr><td>TypeScript compilation</td><td class="pass">✓ PASS</td><td>Zero type errors</td></tr>
+<tr><td>Dockerfile</td><td class="pass">✓ SOLID</td><td>Multi-stage, non-root, no secrets baked in</td></tr>
+<tr><td>Security headers (next.config.ts)</td><td class="pass">✓ SOLID</td><td>Toate 7 headere recomandate prezente</td></tr>
+<tr><td>Cookie settings auth</td><td class="pass">✓ OK</td><td>httpOnly, secure in prod, sameSite lax</td></tr>
+<tr><td>Polymarket WS client</td><td class="pass">✓ SOLID</td><td>Reconnect, stale detection, LRU trimming, health reporting</td></tr>
+<tr><td>Polymarket risk manager</td><td class="pass">✓ OK</td><td>MDD, daily loss, halt logic funcționale</td></tr>
+<tr><td>Scoring system (convictionScore, dealScore, riskScore)</td><td class="pass">✓ OK</td><td>Division-by-zero guards, weights normalizate</td></tr>
+<tr><td>Monte Carlo engine</td><td class="pass">✓ OK</td><td>Resampling corect, percentile OK, caps rezonabile</td></tr>
+<tr><td>Telegram alerts</td><td class="pass">✓ OK</td><td>Cooldown, structured formatting</td></tr>
+<tr><td>Cron auth</td><td class="pass">✓ OK</td><td>Bearer token + CRON_SECRET validation</td></tr>
+<tr><td>LoadingStates component</td><td class="pass">✓ A11Y</td><td>role=status, role=alert — accessibility corect</td></tr>
+<tr><td>BottomNav component</td><td class="pass">✓ OK</td><td>Clean accessibility</td></tr>
+<tr><td>FeedHealthMonitor</td><td class="pass">✓ OK</td><td>Clean aggregation logic</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ============ NEXT ACTIONS ============ -->
+<div id="next">
+<h2>NEXT ACTIONS — Strict Critice (în ordine de prioritate)</h2>
+<div class="section">
+
+<h3>TIER 1 — BLOCKERS (Must fix pentru ORICE rulare)</h3>
+<table>
+<tr><th>#</th><th>Acțiune</th><th>Fișier(e)</th><th>Efort</th></tr>
+<tr><td>1</td><td>Setează SWARM_TOKEN în .env + GCP Secrets → securizează A2A routes</td><td>.env, push-secrets.sh</td><td>10 min</td></tr>
+<tr><td>2</td><td>Creează middleware.ts la root → auth obligatoriu pe /api/* (excepții: auth, health, cron)</td><td>middleware.ts (nou)</td><td>2h</td></tr>
+<tr><td>3</td><td>Fix memeEngine: înlocuiește Math.random() cu scoring real sau DISABLE complet</td><td>memeEngine.ts</td><td>1h</td></tr>
+<tr><td>4</td><td>Fix solanaEngine: DISABLE synthetic OHLC fallback sau returnează NEUTRAL</td><td>solanaEngine.ts</td><td>30 min</td></tr>
+<tr><td>5</td><td>Fix btcEngine: folosește volum real (c.v) NU H-L range</td><td>btcEngine.ts</td><td>30 min</td></tr>
+<tr><td>6</td><td>Fix executionMexc: dacă SL fail → anulează ordinul sau tracked ca no-SL position</td><td>executionMexc.ts</td><td>2h</td></tr>
+<tr><td>7</td><td>Adaugă balance check pre-flight în mexcClient + binanceClient</td><td>mexcClient.ts, binanceClient.ts</td><td>1h</td></tr>
+<tr><td>8</td><td>Fix operator precedence: <code>((holdTimeSec) || 0) < 300</code></td><td>omegaEngine.ts, dnaExtractor.ts</td><td>10 min</td></tr>
+<tr><td>9</td><td>Fix ML calibration placeholder: bucket corect pe confidence real</td><td>predictor.ts:447</td><td>15 min</td></tr>
+<tr><td>10</td><td>Adaugă React ErrorBoundary în layout.tsx</td><td>layout.tsx</td><td>30 min</td></tr>
+</table>
+
+<h3>TIER 2 — HIGH (Necesare pentru stabilitate)</h3>
+<table>
+<tr><th>#</th><th>Acțiune</th><th>Efort</th></tr>
+<tr><td>11</td><td>Fix db.ts race conditions: mutex/lock pe addDecision, saveGladiatorsToDb</td><td>3h</td></tr>
+<tr><td>12</td><td>Fix killSwitch: persist state în Supabase NU disk; cleanup intervals</td><td>2h</td></tr>
+<tr><td>13</td><td>WebSocket reconnect logic în useRealtimeData + useBotStats</td><td>2h</td></tr>
+<tr><td>14</td><td>Throttle WS messages în useBotStats (max 2 updates/sec)</td><td>1h</td></tr>
+<tr><td>15</td><td>Confirmation dialog pe kill switch (CommandPalette + Cockpit)</td><td>1h</td></tr>
+<tr><td>16</td><td>Fix SELL→EXIT mapping: permit short entries</td><td>2h</td></tr>
+<tr><td>17</td><td>Fix Supabase RLS policies: restrict anon key access</td><td>3h</td></tr>
+<tr><td>18</td><td>Fix Binance URL encoding în query string</td><td>15 min</td></tr>
+<tr><td>19</td><td>Scoate date hardcodate fake din bot-center</td><td>30 min</td></tr>
+<tr><td>20</td><td>Fix data label crypto-radar: "1H MOVE" → "24H MOVE" sau fix data source</td><td>15 min</td></tr>
+</table>
+
+<h3>TIER 3 — MEDIUM (Următorul sprint)</h3>
+<p>Provider fallback chains, env validation la startup (zod), rate limiting middleware, heartbeat să verifice MEXC nu Binance, fix session filter gap London→NY, VWAP cu typicalPrice, simulator phantom trades per-arena, N+1 query optimization, timer cleanup în live-stream route, etc.</p>
+</div>
+</div>
+
+<!-- ============ FINAL ============ -->
+<div style="margin-top:40px;padding:30px;border:2px solid var(--border);border-radius:8px;text-align:center">
+<h2 style="color:var(--red);margin:0 0 15px">VERDICT FINAL: NOT READY</h2>
+<p>Sistemul are <strong>16 probleme CRITICE</strong> care fac imposibilă rularea sigură cu bani reali.</p>
+<p style="margin-top:10px">Cele mai grave: <strong>scoring random pe meme tokens</strong>, <strong>date fabricate pe Solana</strong>, <strong>A2A endpoints fără autentificare (pot plasa trade-uri)</strong>, <strong>ordine MEXC fără SL tracking</strong>, <strong>kill switch pe storage efemer</strong>.</p>
+<p style="margin-top:15px;color:var(--yellow)">Estimare TIER 1 fix: ~12-15 ore de muncă concentrată.</p>
+<p style="margin-top:5px;color:var(--yellow)">Estimare TIER 1+2 fix: ~25-30 ore.</p>
+<p style="margin-top:15px;color:var(--dim);font-size:11px">După TIER 1 complet → re-audit necesar → posibil verdict READY WITH RISKS.<br>După TIER 1+2 complet → re-audit necesar → posibil verdict READY.</p>
+</div>
+
+<p style="text-align:center;color:var(--dim);margin-top:30px;font-size:11px">Generated by Claude Opus 4.6 | Hard Mode Audit | 2026-04-17 | 135+ files scanned | 188 issues documented</p>
+</body>
+</html>

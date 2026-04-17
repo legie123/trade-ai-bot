@@ -111,26 +111,30 @@ export async function checkVWAP(
   const priceBelowVWAP = currentPrice < vwap;
 
   // 4. Volume surge = recent 3-bar average vs 20-bar average
-  // Relaxed from 1.2x to 0.8x (normal volume) to prevent bot death during low volatility sessions
-  const volumeSurge = volumeRatio >= 1.5; // Audit fix: 0.8 was BELOW average, 1.5x = real surge
+  // PAPER mode uses relaxed thresholds to generate training data for gladiators.
+  // LIVE mode uses strict institutional thresholds.
+  const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+  const TREND_VOL_THRESHOLD = isPaper ? 0.8 : 1.5;      // Paper: normal volume ok | Live: need 1.5x surge
+  const MEAN_REV_VOL_THRESHOLD = isPaper ? 0.6 : 1.2;   // Paper: below-avg ok    | Live: need 1.2x
+  const volumeSurge = volumeRatio >= TREND_VOL_THRESHOLD;
 
   // 5. Final confirmation logic
-  // For trend-following, require price on correct side of VWAP with normal volume
-  // For mean-reversion, require slightly higher volume (1.2x)
+  // For trend-following, require price on correct side of VWAP with sufficient volume
+  // For mean-reversion, require slightly higher volume
   let confirmed = false;
   if (proposedSignal === 'BUY') {
     if (priceAboveVWAP && volumeSurge) {
-      // Classic: price above VWAP with normal volume
+      // Classic: price above VWAP with volume confirmation
       confirmed = true;
-    } else if (priceBelowVWAP && volumeRatio >= 1.2) {
+    } else if (priceBelowVWAP && volumeRatio >= MEAN_REV_VOL_THRESHOLD) {
       // Mean reversion: capitulation / reversal BUY
       confirmed = true;
     }
   } else if (proposedSignal === 'SELL') {
     if (priceBelowVWAP && volumeSurge) {
-      // Classic: price below VWAP with normal volume
+      // Classic: price below VWAP with volume confirmation
       confirmed = true;
-    } else if (priceAboveVWAP && volumeRatio >= 1.2) {
+    } else if (priceAboveVWAP && volumeRatio >= MEAN_REV_VOL_THRESHOLD) {
       // Distribution: smart money selling
       confirmed = true;
     }

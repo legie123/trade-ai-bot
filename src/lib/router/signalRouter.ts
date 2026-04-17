@@ -91,9 +91,12 @@ export function normalizeSignalType(raw: string): SignalType {
   // Direct match
   if (SIGNAL_ALIASES[cleaned]) return SIGNAL_ALIASES[cleaned];
 
-  // Partial match — check if raw contains a known keyword
-  if (cleaned.includes('BUY') || cleaned.includes('LONG')) return 'BUY';
-  if (cleaned.includes('SELL') || cleaned.includes('SHORT')) return 'SELL';
+  // AUDIT FIX T2.10: Check SHORT before SELL to preserve short entry signals
+  // Previously SHORT was caught by the SELL branch, mapping all shorts to EXIT
+  if (cleaned.includes('SHORT')) return 'SHORT';
+  if (cleaned.includes('LONG')) return 'LONG';
+  if (cleaned.includes('BUY')) return 'BUY';
+  if (cleaned.includes('SELL')) return 'SELL';
   if (cleaned.includes('BULL')) return 'BUY';
   if (cleaned.includes('BEAR')) return 'SELL';
 

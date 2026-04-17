@@ -15,6 +15,35 @@ import type { Gladiator } from '@/lib/types/gladiator';
 
 const log = createLogger('Database-Supabase');
 
+// AUDIT FIX T2.2: Simple async mutex to prevent read-merge-write race conditions
+class AsyncMutex {
+  private queue: (() => void)[] = [];
+  private locked = false;
+
+  async acquire(): Promise<() => void> {
+    return new Promise<() => void>((resolve) => {
+      const tryAcquire = () => {
+        if (!this.locked) {
+          this.locked = true;
+          resolve(() => {
+            this.locked = false;
+            if (this.queue.length > 0) {
+              const next = this.queue.shift()!;
+              next();
+            }
+          });
+        } else {
+          this.queue.push(tryAcquire);
+        }
+      };
+      tryAcquire();
+    });
+  }
+}
+
+const decisionMutex = new AsyncMutex();
+const gladiatorMutex = new AsyncMutex();
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 // Upgrade: Prefer Service Role Key for backend operations to bypass RLS restrictions
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -247,32 +276,34 @@ export function addDecision(snapshot: DecisionSnapshot): void {
     return; // Silent drop — engine should have caught this
   }
   
-  // Multi-Instance Race Condition Protection via Background Hydration
+  // AUDIT FIX T2.2: Mutex-protected read-merge-write to prevent data loss
   (async () => {
-    if (supabaseUrl && dbInitialized) {
-      try {
-        const { data } = await supabase.from('json_store').select('data').eq('id', 'decisions').single();
-        if (data?.data) {
-          const remote = data.data as DecisionSnapshot[];
-          // Merge arrays (dedupe by ID)
-          const localMap = new Map(cache.decisions.map(d => [d.id, d]));
-          for (const rd of remote) {
-            if (!localMap.has(rd.id)) cache.decisions.push(rd);
+    const release = await decisionMutex.acquire();
+    try {
+      if (supabaseUrl && dbInitialized) {
+        try {
+          const { data } = await supabase.from('json_store').select('data').eq('id', 'decisions').single();
+          if (data?.data) {
+            const remote = data.data as DecisionSnapshot[];
+            const localMap = new Map(cache.decisions.map(d => [d.id, d]));
+            for (const rd of remote) {
+              if (!localMap.has(rd.id)) cache.decisions.push(rd);
+            }
+            cache.decisions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            if (cache.decisions.length > 1000) cache.decisions.length = 1000;
           }
-          // Sort by timestamp desc and limit
-          cache.decisions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          if (cache.decisions.length > 1000) cache.decisions.length = 1000;
-        }
-      } catch {}
+        } catch {}
+      }
+
+      if (!cache.decisions.some((d) => d.signalId === snapshot.signalId)) {
+        cache.decisions.unshift(snapshot);
+        if (cache.decisions.length > 1000) cache.decisions.length = 1000;
+      }
+
+      syncToCloud('decisions', cache.decisions);
+    } finally {
+      release();
     }
-    
-    // Add new decision only if it wasn't miraculously inserted
-    if (!cache.decisions.some((d) => d.signalId === snapshot.signalId)) {
-      cache.decisions.unshift(snapshot);
-      if (cache.decisions.length > 1000) cache.decisions.length = 1000;
-    }
-    
-    syncToCloud('decisions', cache.decisions);
   })();
 }
 
@@ -330,34 +361,39 @@ export async function refreshGladiatorsFromCloud(): Promise<void> {
 
 
 export function saveGladiatorsToDb(gladiators: Gladiator[]): void {
+  // AUDIT FIX T2.2: Mutex-protected read-merge-write to prevent gladiator data loss
   (async () => {
-    if (supabaseUrl && dbInitialized) {
-      try {
-        const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiators').single();
-        if (data?.data) {
-          const remoteGladiators = data.data as Gladiator[];
-          // Safely merge: prefer whichever copy was updated more recently, with totalTrades as tiebreak
-          for (const remote of remoteGladiators) {
-             const localIndex = gladiators.findIndex(g => g.id === remote.id);
-             if (localIndex === -1) {
-                 gladiators.push(remote); // Pick up Gladiators created by other instances
-             } else {
-                 const local = gladiators[localIndex];
-                 const remoteTime = remote.lastUpdated || 0;
-                 const localTime = local.lastUpdated || 0;
-                 if (remoteTime > localTime || (remoteTime === localTime && (remote.stats?.totalTrades || 0) > (local.stats?.totalTrades || 0))) {
-                     gladiators[localIndex] = remote;
-                 }
-             }
+    const release = await gladiatorMutex.acquire();
+    try {
+      if (supabaseUrl && dbInitialized) {
+        try {
+          const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiators').single();
+          if (data?.data) {
+            const remoteGladiators = data.data as Gladiator[];
+            for (const remote of remoteGladiators) {
+               const localIndex = gladiators.findIndex(g => g.id === remote.id);
+               if (localIndex === -1) {
+                   gladiators.push(remote);
+               } else {
+                   const local = gladiators[localIndex];
+                   const remoteTime = remote.lastUpdated || 0;
+                   const localTime = local.lastUpdated || 0;
+                   if (remoteTime > localTime || (remoteTime === localTime && (remote.stats?.totalTrades || 0) > (local.stats?.totalTrades || 0))) {
+                       gladiators[localIndex] = remote;
+                   }
+               }
+            }
           }
+        } catch (err) {
+          log.warn('Could not sync gladiators for merge. Overwriting directly.', { err: String(err) });
         }
-      } catch (err) {
-        log.warn('Could not sync gladiators for merge. Overwriting directly.', { err: String(err) });
       }
+
+      cache.gladiators = gladiators;
+      syncToCloud('gladiators', cache.gladiators);
+    } finally {
+      release();
     }
-    
-    cache.gladiators = gladiators;
-    syncToCloud('gladiators', cache.gladiators);
   })();
 }
 

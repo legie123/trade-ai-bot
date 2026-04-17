@@ -209,7 +209,7 @@ function CmdBtn({label,cmd,params,onRun,running,variant='default'}:{label:string
   const colors={default:{bg:C.surfaceAlt,border:C.borderAlt,text:C.text},danger:{bg:C.redBg,border:`${C.red}40`,text:C.red},success:{bg:C.greenBg,border:`${C.green}40`,text:C.green}};
   const s=colors[variant];
   return(
-    <button onClick={()=>!isRunning&&onRun(cmd,params)} disabled={isRunning} style={{padding:'6px 10px',background:s.bg,border:`1px solid ${s.border}`,color:s.text,borderRadius:6,fontSize:10,fontWeight:600,cursor:isRunning?'wait':'pointer',opacity:isRunning?0.6:1,fontFamily:'inherit',whiteSpace:'nowrap',transition:'all 0.15s'}}>
+    <button onClick={()=>!isRunning&&onRun(cmd,params)} disabled={isRunning} style={{padding:'8px 12px',minHeight:44,background:s.bg,border:`1px solid ${s.border}`,color:s.text,borderRadius:6,fontSize:11,fontWeight:600,cursor:isRunning?'wait':'pointer',opacity:isRunning?0.6:1,fontFamily:'inherit',whiteSpace:'nowrap',transition:'all 0.15s',touchAction:'manipulation'}}>
       {isRunning?'◌ ...':label}
     </button>
   );
@@ -232,6 +232,16 @@ export default function StatusPage(){
   const [activeLog,setActiveLog]=useState<'all'|'error'|'warn'>('all');
   const [expandedGlad,setExpandedGlad]=useState<Set<string>>(new Set());
   const [expandedAudits,setExpandedAudits]=useState<Set<number>>(new Set());
+  /* ═══ KILL SWITCH ARM/CONFIRM PATTERN ═══ */
+  const [killArmed,setKillArmed]=useState(false);
+  const killTimerRef=useRef<NodeJS.Timeout|null>(null);
+  const armKillSwitch=useCallback(()=>{
+    setKillArmed(true);
+    if(killTimerRef.current)clearTimeout(killTimerRef.current);
+    killTimerRef.current=setTimeout(()=>setKillArmed(false),4000); // 4s window to confirm
+  },[]);
+  // confirmKillSwitch defined after runCommand below
+  useEffect(()=>()=>{if(killTimerRef.current)clearTimeout(killTimerRef.current);},[]);
   const toggleGlad=(id:string)=>setExpandedGlad(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
   const toggleAudit=(i:number)=>setExpandedAudits(s=>{const n=new Set(s);n.has(i)?n.delete(i):n.add(i);return n;});
   const diagRef=useRef<NodeJS.Timeout|null>(null);
@@ -276,6 +286,12 @@ export default function StatusPage(){
       setRunningCmd(null);
     }
   },[termLog]);
+
+  const confirmKillSwitch=useCallback((cmd:string)=>{
+    setKillArmed(false);
+    if(killTimerRef.current){clearTimeout(killTimerRef.current);killTimerRef.current=null;}
+    runCommand(cmd);
+  },[runCommand]);
 
   // Auto-scroll terminal
   useEffect(()=>{
@@ -602,10 +618,29 @@ export default function StatusPage(){
       }>
         <div style={{padding:'8px 12px'}}>
           <div style={{fontSize:9,fontWeight:700,color:C.mutedLight,marginBottom:6,letterSpacing:'0.06em'}}>KILL SWITCH</div>
-          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
-            <CmdBtn label="ENGAGE KILL SWITCH" cmd="killswitch:engage" onRun={runCommand} running={runningCmd} variant="danger"/>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12,alignItems:'center'}}>
+            {!killArmed?(
+              <button onClick={armKillSwitch} disabled={!!runningCmd} style={{
+                padding:'8px 14px',minHeight:44,background:C.redBg,border:`1px solid ${C.red}40`,
+                color:C.red,borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',
+                fontFamily:'inherit',whiteSpace:'nowrap',transition:'all 0.15s',
+                letterSpacing:'0.03em'
+              }}>
+                ⚠ ARM KILL SWITCH
+              </button>
+            ):(
+              <button onClick={()=>confirmKillSwitch('killswitch:engage')} style={{
+                padding:'8px 14px',minHeight:44,background:C.red,border:`2px solid ${C.red}`,
+                color:'#fff',borderRadius:6,fontSize:11,fontWeight:800,cursor:'pointer',
+                fontFamily:'inherit',whiteSpace:'nowrap',animation:'pulse 0.6s ease-in-out infinite',
+                letterSpacing:'0.03em',boxShadow:`0 0 20px ${C.red}60`
+              }}>
+                ⚡ CONFIRM ENGAGE — {runningCmd==='killswitch:engage'?'...':'CLICK NOW'}
+              </button>
+            )}
             <CmdBtn label="Disengage Kill Switch" cmd="killswitch:disengage" onRun={runCommand} running={runningCmd} variant="success"/>
             <CmdBtn label="Kill Switch Status" cmd="killswitch:status" onRun={runCommand} running={runningCmd}/>
+            {killArmed&&<span style={{fontSize:9,color:C.red,fontWeight:600,animation:'pulse 0.6s ease-in-out infinite'}}>4s to confirm...</span>}
           </div>
 
           <div style={{fontSize:9,fontWeight:700,color:C.mutedLight,marginBottom:6,letterSpacing:'0.06em'}}>AGENT ORCHESTRATION</div>

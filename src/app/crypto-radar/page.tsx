@@ -75,7 +75,7 @@ interface TokenRow {
   symbol: string;
   name: string;
   price: number | null;
-  change24h: number | null;
+  change1h: number | null;
   volume24h: number | null;
   marketCap: number | null;
   chain: string;
@@ -155,7 +155,7 @@ export default function CryptoRadarPage() {
   const [syncing, setSyncing] = useState(true);
   const [tokenSearch, setTokenSearch] = useState('');
   const [tokenChainFilter, setTokenChainFilter] = useState('');
-  const [sortCol] = useState<'change24h' | 'volume24h' | 'price'>('change24h');
+  const [sortCol] = useState<'change1h' | 'volume24h' | 'price'>('change1h');
   const [sortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedSignal, setExpandedSignal] = useState<number | null>(null);
   const [expandedToken, setExpandedToken] = useState<number | null>(null);
@@ -192,7 +192,8 @@ export default function CryptoRadarPage() {
           symbol: (t.symbol as string) || '?',
           name: (t.name as string) || '',
           price: t.price as number | null,
-          change24h: t.priceChange1h as number | null,
+          // AUDIT FIX T2.9: Field renamed from change24h → change1h to match actual data source (priceChange1h)
+          change1h: t.priceChange1h as number | null,
           volume24h: t.volume24h as number | null,
           marketCap: t.marketCap as number | null,
           chain: (t.chain as string) || 'solana',
@@ -567,7 +568,7 @@ export default function CryptoRadarPage() {
                 <div style={{ gridColumn: '1 / -1', padding: 40, textAlign: 'center', color: C.muted, fontWeight: 600, letterSpacing: '0.1em' }}>NO TARGETS FOUND</div>
              ) : (
                 filteredTokens.slice(0, 50).map((t, i) => {
-                  const isUp = t.change24h !== null && t.change24h >= 0;
+                  const isUp = t.change1h !== null && t.change1h >= 0;
                   const isTkExpanded = expandedToken === i;
                   return (
                     <div key={i} className="token-card" onClick={() => setExpandedToken(isTkExpanded ? null : i)}
@@ -594,7 +595,7 @@ export default function CryptoRadarPage() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
                            <span style={{ fontSize: 9, color: C.mutedLight, fontWeight: 700, letterSpacing: '0.1em' }}>1H MOVE</span>
                            <span style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 800, color: isUp ? C.green : C.red }}>
-                             {t.change24h !== null ? `${isUp ? '+' : ''}${t.change24h.toFixed(2)}%` : '—'}
+                             {t.change1h !== null ? `${isUp ? '+' : ''}${t.change1h.toFixed(2)}%` : '—'}
                            </span>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>

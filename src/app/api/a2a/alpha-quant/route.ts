@@ -32,7 +32,8 @@ interface AlphaQuantRequest {
 
 function verifyToken(request: Request): boolean {
   const token = process.env.SWARM_TOKEN;
-  if (!token) return true; // Dev: no token required
+  // AUDIT FIX T1.1: Block all A2A when SWARM_TOKEN not configured
+  if (!token) { console.error('[SECURITY] SWARM_TOKEN not set — A2A blocked'); return false; }
   const header = request.headers.get('x-swarm-token');
   return header === token;
 }

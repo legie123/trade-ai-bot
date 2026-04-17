@@ -182,9 +182,18 @@ export async function executeMexcTrade(
            }
         }
 
-        // VETO: If SL check failed, reject the trade entirely
+        // AUDIT FIX T1.6: If SL failed, attempt to CANCEL the limit order to prevent orphan
         if (!slCheckPassed) {
-          return { symbol: mexcSymbol, side, price, quantity, usdAmount: tradeAmount, executed: false, error: 'Stop Loss placement FAILED — trade rejected for safety' };
+          log.error(`[ORPHAN PREVENTION] SL failed for ${mexcSymbol} — attempting to cancel the limit order`);
+          try {
+            const { cancelAllMexcOrders } = await import('@/lib/exchange/mexcClient');
+            await cancelAllMexcOrders(mexcSymbol);
+            log.info(`[ORPHAN PREVENTION] Cancelled open orders for ${mexcSymbol} after SL failure`);
+          } catch (cancelErr) {
+            log.error(`[ORPHAN PREVENTION FAILED] Could not cancel orders for ${mexcSymbol} — MANUAL INTERVENTION REQUIRED`, { error: (cancelErr as Error).message });
+            sendMessage(`🚨 *ORPHAN POSITION RISK*\n${mexcSymbol} has a live order but NO stop loss AND cancel failed!\nCheck MEXC manually NOW.`).catch(() => {});
+          }
+          return { symbol: mexcSymbol, side, price, quantity, usdAmount: tradeAmount, executed: false, error: 'Stop Loss placement FAILED + order cancelled — trade rejected for safety' };
         }
       } catch (err) {
         throw new Error(`[LIMIT FAILED] ${(err as Error).message}. Vetoing fallback to prevent explicit double-spend.`);

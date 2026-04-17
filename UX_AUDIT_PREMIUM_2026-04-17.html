@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRADE AI — Audit UX + Operabilitate + Mobile | 2026-04-17</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #06040a;
+    --surface: #0d0a14;
+    --card: #110e1a;
+    --border: rgba(212,175,55,0.12);
+    --gold: #DAA520;
+    --gold-bright: #FFD700;
+    --green: #10b981;
+    --red: #DC143C;
+    --amber: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --text: #eae6f0;
+    --text-dim: #9a93a8;
+    --text-muted: #5e576e;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #FFD700, #DAA520);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+    letter-spacing: 0.02em;
+  }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 32px;
+  }
+
+  h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gold-bright);
+    margin: 36px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 0.04em;
+  }
+
+  h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 20px 0 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+
+  .verdict { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+  .v-good { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+  .v-warn { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.3); }
+  .v-bad { background: rgba(220,20,60,0.15); color: var(--red); border: 1px solid rgba(220,20,60,0.3); }
+  .v-info { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
+
+  p { margin-bottom: 10px; font-size: 13px; color: var(--text-dim); }
+  strong { color: var(--text); }
+
+  .finding {
+    border-left: 3px solid var(--border);
+    padding: 10px 16px;
+    margin: 10px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 0 8px 8px 0;
+  }
+  .finding.critical { border-left-color: var(--red); }
+  .finding.warning { border-left-color: var(--amber); }
+  .finding.good { border-left-color: var(--green); }
+  .finding.info { border-left-color: var(--blue); }
+
+  .finding-title { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .finding p { font-size: 12px; margin-bottom: 4px; }
+
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: rgba(0,0,0,0.3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--gold);
+  }
+
+  .priority-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 12px;
+  }
+  .priority-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--card);
+    color: var(--text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--border);
+  }
+  .priority-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    color: var(--text-dim);
+  }
+  .priority-table tr:hover td { background: var(--card); }
+
+  .dragon-spec {
+    background: linear-gradient(135deg, rgba(139,0,0,0.08), rgba(218,165,32,0.06));
+    border: 1px solid rgba(218,165,32,0.2);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .summary-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .summary-card h4 {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+  .summary-card .score {
+    font-size: 28px;
+    font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .mobile-rule {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 8px;
+    margin: 6px 0;
+    font-size: 12px;
+  }
+  .mobile-rule .label {
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+
+  @media (max-width: 768px) {
+    body { padding: 12px; }
+    h1 { font-size: 22px; }
+    .section { padding: 14px 16px; }
+    .summary-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>TRADE AI — AUDIT COMPLET UX + OPERABILITATE + MOBILE</h1>
+<p class="subtitle">Audit realizat pe 17 Aprilie 2026 · Cod analizat: 5 pagini, 32 componente, 1493 linii CSS, ~4500 linii TSX · Versiune: Faza 6</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>1. AUDIT UX — CLARITATE, IERARHIE, LAYOUT</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <h3>Scor General UX</h3>
+  <div class="summary-grid">
+    <div class="summary-card">
+      <h4>Ierarhie Vizuală</h4>
+      <div class="score" style="color: var(--amber)">6.5/10</div>
+      <p>Paginile au secțiuni clare, dar lipsa unui header fix consistent pe toate paginile creează discontinuitate.</p>
+    </div>
+    <div class="summary-card">
+      <h4>Claritate Informație</h4>
+      <div class="score" style="color: var(--green)">7.5/10</div>
+      <p>HelpTooltip-urile adăugate pe fiecare secțiune sunt excelente. Terminologia e clară.</p>
+    </div>
+    <div class="summary-card">
+      <h4>Densitate Informație</h4>
+      <div class="score" style="color: var(--amber)">5.5/10</div>
+      <p>Status Page e supraîncărcată: 15+ secțiuni fără grupare vizuală clară.</p>
+    </div>
+    <div class="summary-card">
+      <h4>Contrast / Lizibilitate</h4>
+      <div class="score" style="color: var(--green)">7/10</div>
+      <p>Bun pe fundal dark. Font-size-urile de 8-9px sunt prea mici pe multe label-uri.</p>
+    </div>
+    <div class="summary-card">
+      <h4>Viteză de Înțelegere</h4>
+      <div class="score" style="color: var(--amber)">6/10</div>
+      <p>User-ul trebuie să scrolleze mult pe Status Page ca să-și facă o imagine completă.</p>
+    </div>
+    <div class="summary-card">
+      <h4>Call-to-Action</h4>
+      <div class="score" style="color: var(--red)">4.5/10</div>
+      <p>Butoanele de comandă arată identic — nu ai ierarhie vizuală între acțiuni critice și benigne.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Probleme UX Identificate</h3>
+
+  <div class="finding critical">
+    <div class="finding-title" style="color: var(--red)">🔴 Status Page: 15 secțiuni într-o coloană infinită</div>
+    <p>Pagina /dashboard are 1200 linii de cod, 15 Section-uri collapsibile, toate stacked vertical. User-ul trebuie să scrolleze ~3000px ca să vadă totul. Nu există "dashboard overview" — totul e la același nivel de importanță.</p>
+    <p><strong>Fix:</strong> Grupează în 3 zone: (1) CRITICAL STATUS (top, always visible) — health, kill switch, alert level, equity; (2) OPERATIONS (middle) — terminal, commands, strategies; (3) DEEP DIVE (bottom, collapsed by default) — system resources, diagnostics, history.</p>
+  </div>
+
+  <div class="finding critical">
+    <div class="finding-title" style="color: var(--red)">🔴 Butoane de comandă fără ierarhie</div>
+    <p>Command Center: 25+ butoane cu aceeași dimensiune, aceeași culoare. Kill Switch ENGAGE e vizual identic cu "Ping Watchdog". Un misclick pe ENGAGE vs DISENGAGE poate costa bani reali.</p>
+    <p><strong>Fix:</strong> Kill Switch = roșu mare, izolat, cu confirmare. Agent commands = albastru. Data collection = gri. Diagnostics = outline. Adaugă <code>confirm()</code> pe orice acțiune distructivă.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 Inconsistență color system între pagini</div>
+    <p>Cockpit folosește <code>C.cyan/#00e5ff</code> + violet. Arena folosește gold theme. Dashboard folosește un al 3-lea color system propriu (<code>#07080d</code>, <code>#29b6f6</code>). Nu se simte ca aceeași aplicație.</p>
+    <p><strong>Fix:</strong> Un singur color system definit în <code>globals.css</code>, importat peste tot. Permis: accent diferit per pagină, dar backgrounds, borders, text trebuie identice.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 Font sizes prea mici pe label-uri operaționale</div>
+    <p>Multe label-uri au <code>fontSize: 8px</code> sau <code>9px</code>. Pe desktop sunt greu de citit; pe mobil sunt imposibile. Minimum recomandat WCAG pentru text operațional: 11px / 0.6875rem.</p>
+    <p><strong>Fix:</strong> Minimum 10px pe desktop, 11px pe mobile. Label-urile de metrici cheie (EQUITY, P&L, WIN RATE) — minim 12px.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 GoldDust canvas pe toată pagina — performance drag</div>
+    <p><code>GoldDust.tsx</code> rulează un canvas full-screen cu 40 particule + glow pe <code>requestAnimationFrame</code>. Pe mobile low-end, asta consumă battery și frame budget inutil. Pe desktop cu multiple tabs = memory leak potential.</p>
+    <p><strong>Fix:</strong> (1) Reduce la 20 particule pe mobile. (2) Pause animation când tab-ul nu e vizibil (<code>document.visibilitychange</code>). (3) Disable complet pe <code>prefers-reduced-motion</code>. (4) <code>IntersectionObserver</code> — nu anima dacă nu e vizibil.</p>
+  </div>
+
+  <div class="finding good">
+    <div class="finding-title" style="color: var(--green)">✅ CE E BUN</div>
+    <p><strong>HelpTooltip pe fiecare secțiune</strong> — excelent UX educațional. Utilizatorul învață ce face fiecare panel.</p>
+    <p><strong>Collapsible sections</strong> — permite organizare mentală.</p>
+    <p><strong>FreshnessBadge</strong> — indică clar cât de vechi sunt datele. Esențial într-un dashboard de trading.</p>
+    <p><strong>Command palette (⌘K)</strong> — power-user feature premium.</p>
+    <p><strong>Color coding consistent pe statuse</strong> — green/amber/red e intuitiv.</p>
+    <p><strong>Sidebar cu keyboard shortcuts</strong> — profesionist.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>2. AUDIT OPERABILITATE</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <h3>Butoane & Controls</h3>
+
+  <div class="finding critical">
+    <div class="finding-title" style="color: var(--red)">🔴 Kill Switch fără confirmare pe Status Page</div>
+    <p>Pe /dashboard, Command Center — butonul "ENGAGE KILL SWITCH" se execută cu un singur click, fără confirmare. Pe Cockpit există un pattern de armare (2 click-uri + timeout), dar pe Status page lipsește complet.</p>
+    <p><strong>Fix:</strong> Implementează același pattern de armare pe ambele pagini. Minimum: <code>window.confirm("ENGAGE KILL SWITCH? All trading stops immediately.")</code></p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 Butoane de orchestrare hardcodate pe 2 simboluri</div>
+    <p>"Orchestrate BTCUSDT" și "Orchestrate ETHUSDT" sunt singurele opțiuni. Nu poți alege alt simbol fără a face request manual.</p>
+    <p><strong>Fix:</strong> Adaugă un input field "Custom symbol" + buton "Orchestrate" lângă cele existente. Sau un dropdown cu top 10 active coins din pipeline.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 Filtre terminal limitate</div>
+    <p>Terminal-ul live are filtre ALL/CMD/ERROR/LOG, dar nu poți filtra după simbol, timestamp, sau nivel de severitate combinat. Într-un terminal cu 500 linii, asta face debugging lent.</p>
+    <p><strong>Fix:</strong> Adaugă search box cu filter live (regex-capable). Adaugă timestamp range picker (last 5m/15m/1h).</p>
+  </div>
+
+  <div class="finding good">
+    <div class="finding-title" style="color: var(--green)">✅ BUN: Terminal cu auto-scroll, export JSON/CSV</div>
+    <p>Export-ul funcțional cu JSON + CSV și suport <code>navigator.share</code> pe mobile e o funcționalitate premium rară. Bine gândit.</p>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Grafice & Vizualizări</h3>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 Sparkline-uri prea mici, fără interactive hover</div>
+    <p>Charts & Trends are 11 mini-carduri cu sparklines de 120x32px. Nu poți hover pentru valori, nu poți zoom, nu poți selecta period. Sunt decorative, nu operaționale.</p>
+    <p><strong>Fix:</strong> (1) Click pe card = expand to full-width chart cu hover tooltips. (2) Adaugă min/max/avg sub fiecare sparkline. (3) Mărește la 160x48px minim.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 BarChart-uri cu font 7-8px pe labels</div>
+    <p>Label-urile de sub barchart-uri au <code>fontSize: 7</code>. Imposibil de citit pe orice dispozitiv.</p>
+    <p><strong>Fix:</strong> Minimum 10px. Dacă nu încape, folosește tooltip on hover în loc de label permanent.</p>
+  </div>
+
+  <div class="finding good">
+    <div class="finding-title" style="color: var(--green)">✅ BUN: AgentStatusHero canvas animation</div>
+    <p>Synapse pulse e vizual impresionant, se adaptează la starea agentului (viteză, culoare). Excelent feedback vizual live.</p>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Filtre & Sortare</h3>
+
+  <div class="finding good">
+    <div class="finding-title" style="color: var(--green)">✅ Arena: sortare funcțională pe WIN RATE / PROFIT FAC / MAX DD</div>
+    <p>Toggle sort cu direcție asc/desc, vizual clar care coloană e activă. Expandable fighter cards cu detalii complete. Bine implementat.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 Lipsă: filter global pe gladiatori (status, arena, live/shadow)</div>
+    <p>Nu poți filtra rapid doar gladiatorii LIVE, sau doar cei din arena "MAIN". Pe 30+ gladiatori, scrolling-ul e ineficient.</p>
+    <p><strong>Fix:</strong> Adaugă filter pills: ALL | LIVE | SHADOW | ELIMINATED deasupra leaderboard-ului.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>3. AUDIT OPERAȚIONALITATE</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <h3>Health Indicators & Monitoring</h3>
+
+  <div class="finding good">
+    <div class="finding-title" style="color: var(--green)">✅ EXCELENT: Core Services Strip</div>
+    <p>STREAM / HEARTBEAT / WATCHDOG / KILL SW / SUPABASE / MODE / ALERT — toate vizibile într-o linie scrollabilă. Asta e cel mai bun element din dashboard. Păstrează-l exact cum e, eventual fă-l sticky sub header.</p>
+  </div>
+
+  <div class="finding good">
+    <div class="finding-title" style="color: var(--green)">✅ BUN: Alert bar cu nivel RED/YELLOW/GREEN</div>
+    <p>Apare automat când kill switch e activ sau API-uri sunt down. Mesaje clare: "CRITICAL — Multiple systems down". Corect implementat.</p>
+  </div>
+
+  <div class="finding critical">
+    <div class="finding-title" style="color: var(--red)">🔴 API Health grid nu diferențiază criticitate</div>
+    <p>Toate sursele API sunt afișate egal. Dar MEXC DOWN = nu poți tranzacționa. CoinGecko DOWN = pierzi price feed secundar. Impactul e total diferit, dar vizual arată la fel.</p>
+    <p><strong>Fix:</strong> Marchează sursele critice (MEXC, Supabase) cu un indicator "CRITICAL PATH". Când una critică e DOWN, evidențiază-o cu border roșu pulsant, nu doar un dot.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 SSE connection status nu e evident pe mobile</div>
+    <p>Indicatorul "SSE LIVE" e un dot mic de 6px în header. Pe mobile, utilizatorul nu știe dacă datele sunt live sau stale.</p>
+    <p><strong>Fix:</strong> Pe mobile, adaugă un banner subtil la top: "🔴 DISCONNECTED — data may be stale" când SSE nu e connected. Pe desktop, status-ul actual e ok.</p>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Agent Orchestration Controls</h3>
+
+  <div class="finding good">
+    <div class="finding-title" style="color: var(--green)">✅ BUN: Cockpit Panic Button cu double-confirm</div>
+    <p>Pattern de armare (click 1 = arm, 4s window, click 2 = confirm) e sigur și previne accidental engagement. Poziționare fixă top-right e corectă.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 Lipsa unui "action feedback" vizual persistent</div>
+    <p>Când execuți un command (e.g. "Collect Sentiment"), rezultatul apare doar în terminal. Dacă terminalul e collapsed sau user-ul nu se uită acolo, nu primești feedback.</p>
+    <p><strong>Fix:</strong> Adaugă un toast/notification system: "✅ Sentiment collected (230ms)" care apare 3s overlay, indiferent de poziția de scroll.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 Time-to-diagnosis prea mare</div>
+    <p>Când ceva e broken, user-ul trebuie să: (1) vadă alert bar, (2) scrolleze la API Health, (3) identifice sursa DOWN, (4) scrolleze la terminal, (5) caute eroarea relevantă. 5 pași, ~30 secunde.</p>
+    <p><strong>Fix:</strong> Când alertLevel !== GREEN, inserează automat un "Diagnosis Panel" sub header care listează: ce e down, de când, last error message, și buton de remediere sugerat. Target: 1 click → diagnostic complet.</p>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Logs & Debug</h3>
+
+  <div class="finding good">
+    <div class="finding-title" style="color: var(--green)">✅ BUN: Dual terminal system</div>
+    <p>Live Terminal (comenzi + rezultate) + Live Console (backend logs) = separare clară între acțiunile user-ului și event-urile sistemului.</p>
+  </div>
+
+  <div class="finding good">
+    <div class="finding-title" style="color: var(--green)">✅ BUN: TerminalOverlay cu tab-uri EXECUTION | NEURAL</div>
+    <p>Separarea log-urilor AI (reasoning, confidence) de log-urile de execuție (ordere, fill-uri) e o funcționalitate premium. Bine gândit.</p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--blue)">ℹ️ Lipsă: Persistent log search</div>
+    <p>Nu poți căuta în log-uri un simbol specific sau un error message. Pe 500 linii de terminal, asta face debugging mult mai lent.</p>
+    <p><strong>Fix:</strong> Adaugă search bar în terminal header cu highlight pe match-uri.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>4. PROPUNERI DE OPTIMIZARE</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <h3>4.1 Restructurare Status Page (Impact: MAXIM)</h3>
+  <p>Transformă Status Page din "lista de 15 secțiuni" în "3 zone strategice":</p>
+  <div class="finding info">
+    <p><strong>ZONA 1 — CRITICAL (always visible, never collapsed):</strong></p>
+    <p>Header sticky + Core Services Strip + Alert Bar + KPI strip (Equity, P&L, Win Rate, MaxDD, Mode). Max 200px înălțime.</p>
+    <p><strong>ZONA 2 — OPERATIONS (main workspace):</strong></p>
+    <p>Terminal + Command Center + Strategy Performance. Visible by default. Tab-based, nu stacked.</p>
+    <p><strong>ZONA 3 — DEEP DIVE (collapsed by default):</strong></p>
+    <p>Charts, API Health detail, System Resources, Syndicate Audit, History/Export. Accesibil, dar nu în cale.</p>
+  </div>
+
+  <h3>4.2 Unificare Color System (Impact: MARE)</h3>
+  <div class="finding info">
+    <p>Definește un singur token set în <code>globals.css</code>. Fiecare pagină poate avea un accent override, dar core palette rămâne identic:</p>
+    <p><code>--surface</code>, <code>--surface-alt</code>, <code>--border</code>, <code>--text</code>, <code>--text-dim</code>, <code>--text-muted</code> — IDENTICE pe toate paginile.</p>
+    <p>Acum: Dashboard definește <code>C.bg: '#07080d'</code>, Cockpit <code>C.bgDeep: '#05020d'</code>, Arena <code>'#050609'</code>, globals <code>--bg-primary: '#06040a'</code>. 4 valori diferite pentru background.</p>
+  </div>
+
+  <h3>4.3 Toast/Notification System (Impact: MEDIU)</h3>
+  <div class="finding info">
+    <p>Implementează un <code>ToastProvider</code> global în <code>AppShell.tsx</code>:</p>
+    <p>Poziționare: bottom-center pe desktop (deasupra BottomNav pe mobile). Auto-dismiss 4s. Tipuri: success/error/warning/info. Maximum 3 toasts vizibile simultan, stack vertical.</p>
+  </div>
+
+  <h3>4.4 Quick Diagnosis Panel (Impact: MARE)</h3>
+  <div class="finding info">
+    <p>Când <code>alertLevel !== 'GREEN'</code>, renderează sub header un panel compact:</p>
+    <p>"⚠️ MEXC DOWN (3m ago) — Last error: Connection timeout. [Retry] [Details]"</p>
+    <p>Reduce time-to-diagnosis de la ~30s la ~2s.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>5. CE MAI TREBUIE ADĂUGAT</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--blue)">1. Activity Timeline / Event Feed</div>
+    <p>O linie temporală vizuală care arată: trade opened → trade closed → kill switch engaged → API recovered. Cronologic, nu fragmentat pe secțiuni. Esențial pentru post-mortem analysis.</p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--blue)">2. Sound/Push Notifications pentru events critice</div>
+    <p>Când kill switch se activează sau un API critic cade, user-ul trebuie să fie pe pagină ca să vadă. Adaugă: (1) browser notification via Service Worker (deja ai SwRegister), (2) optional audio beep pe alert RED.</p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--blue)">3. Shortcuts cheat sheet accesibil</div>
+    <p>Ai shortcuts în sidebar (R, P, A, C, S) + ⌘K, dar nu există un vizual care le listează. Adaugă "?" shortcut care deschide un overlay cu toate shortcut-urile. Standard în orice power-user tool.</p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--blue)">4. Dark/Darker mode toggle</div>
+    <p>Background-ul actual e foarte dark (#06040a). Unii utilizatori preferă un dark mai "luminat" (#111827). Adaugă un toggle: VOID (actual) vs SLATE (mai deschis).</p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--blue)">5. Settings page funcțional</div>
+    <p>Sidebar-ul are "⚙️ Settings" cu <code>opacity: 0.5</code> și <code>cursor: default</code>. E un buton mort. Ori implementează-l (preferences, notifications, thresholds), ori scoate-l complet.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>6. CUM SE AȘEAZĂ MAI BINE ÎN PAGINĂ</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <h3>Layout Recomandat per Pagină</h3>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--gold)">COCKPIT (Brain View)</div>
+    <p><strong>Actual:</strong> Grid 2-column pe desktop (hero+matrix | swarm). Bine proporționat.</p>
+    <p><strong>Recomandare:</strong> Păstrează layout-ul actual. Adaugă un mini KPI bar sub title strip (equity + P&L + positions) ca user-ul să nu trebuiască să navigheze la Status pentru cifre de bază. Kill switch position = corect.</p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--gold)">ARENA (Gladiator View)</div>
+    <p><strong>Actual:</strong> Top 3 podium → Omega bar → Full leaderboard. Flow logic natural.</p>
+    <p><strong>Recomandare:</strong> Adaugă un "quick stats" bar deasupra podium-ului: Total LIVE / Total TRAINING / Avg WR / Best PF. Leaderboard-ul ar beneficia de compact mode (toggle): rows dense fără expand space.</p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--gold)">STATUS (Control Room)</div>
+    <p><strong>Actual:</strong> Single column vertical scroll, 15 sections.</p>
+    <p><strong>Recomandare critică:</strong> Restructurare în tab-based layout: OVERVIEW | COMMANDS | CHARTS | DIAGNOSTICS. Overview = critical KPIs + API health + alert. Commands = terminal + command buttons. Charts = all sparklines/trends. Diagnostics = deep system health + gladiator detail + audit trail.</p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--gold)">RADAR (Signal View)</div>
+    <p><strong>Recomandare:</strong> KPI bar sus, syndicate radar centru, active targets lateral, heatgrid jos. Exact ca un Bloomberg terminal layout — informația critică (semnale active) la eye-level.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>7. DRAGON PREMIUM — SPECIFICAȚII COMPLETE</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="dragon-spec">
+  <h3>Status Actual Dragon</h3>
+  <p>DragonLogo.tsx: SVG pur, 120x120 viewBox, ~190 linii. Folosit în Sidebar (26-32px). Cristalografic gold, ochi roșii, breathing animation CSS (scale 1→1.02), nostril flicker, eye glow. Bevel filter SVG.</p>
+  <p><span class="verdict v-warn">MEDIU</span> Arată decent la 32px, dar la orice dimensiune >60px se vede low-poly și amateurish. Filtrele SVG (bevel, glow) adaugă blur care spală detaliul.</p>
+
+  <h3>Direcție Premium — Ce Trebuie Schimbat</h3>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--gold-bright)">CONCEPT: Dragon Silhouette Luxury, nu low-poly crystal</div>
+    <p>Renunță la abordarea "crystalline facets" (poligoane vizibile). Premium = forme fluide, clean, cu detaliu subtil. Gândește-te la un logo de hedge fund, nu la un joc video.</p>
+  </div>
+
+  <p><strong>DIMENSIUNE:</strong> Mărește în sidebar la 44px collapsed / 56px expanded. Pe mobile header (dacă adaugi): 40px. Viewbox: 200x200 pentru mai mult detaliu.</p>
+
+  <p><strong>DESIGN DIRECTION:</strong></p>
+  <p>— Siluetă minimalistă de dragon din profil (cap + coarne + gât), nu frontal. Profil = mai regal, mai heraldic.</p>
+  <p>— Linii clean, fără stroke vizibil. Gradient gold subtil (3 stops: #FFE08A → #DAA520 → #996515).</p>
+  <p>— Ochi: singur punct luminos roșu (#FF2D55), nu elipsă mare. Mic, intens, lethal.</p>
+  <p>— Coarne: 2 arce elegante, nu spike-uri drepte. Thinning la vârf.</p>
+  <p>— Gât: scame sugerate prin 3-4 arce paralele, nu poligoane individuale.</p>
+
+  <p><strong>ANIMAȚII PREMIUM (CSS, nu JS canvas):</strong></p>
+  <p>1. <strong>Breathing glow:</strong> <code>filter: drop-shadow</code> care pulsează de la <code>0 0 8px gold/0.2</code> la <code>0 0 20px gold/0.4</code> pe 4s ease-in-out. Subtil, nu flashy.</p>
+  <p>2. <strong>Eye pulse:</strong> Ochiul pulsează independent, offset de breathing cu 1.5s. <code>opacity: 0.6 → 1.0</code>, <code>filter: drop-shadow(0 0 3px #FF2D55)</code>.</p>
+  <p>3. <strong>Hover state:</strong> La hover pe sidebar, dragonul face un micro-tilt (rotate 2deg) + glow-ul crește la <code>0 0 30px gold/0.5</code>. Smooth 0.4s transition.</p>
+  <p>4. <strong>Ambient light:</strong> Background radial gradient subtil în spatele dragonului: <code>radial-gradient(circle, rgba(218,165,32,0.08) 0%, transparent 70%)</code>. Dă senzația că dragonul emite lumină.</p>
+  <p>5. <strong>NO:</strong> Fără 3D transform, fără perspective, fără animații de foc, fără particule. Premium = restrained power.</p>
+
+  <p><strong>INTEGRARE UI:</strong></p>
+  <p>— Sidebar collapsed: dragon centered, ambient light subtle. Singurul element vizual din sidebar care "trăiește".</p>
+  <p>— Sidebar expanded: dragon + "TRADE AI" text la dreapta. Dragon la stânga, text la dreapta, aliniat vertical centru.</p>
+  <p>— Nu adăuga dragon pe paginile principale. Dragon = brand mark, nu decorație. Doar în sidebar/header.</p>
+  <p>— Z-index: dragon-ul NU trebuie să suprapună conținut operațional niciodată.</p>
+
+  <h3>Pseudo-cod SVG Structure</h3>
+  <p style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); white-space: pre-wrap; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-top: 10px;">
+viewBox="0 0 200 200"
+
+// Head silhouette - single smooth path, no polygons
+&lt;path d="M... smooth bezier curves for head profile"
+  fill="url(#goldGrad)" /&gt;
+
+// Horns - 2 elegant arcs
+&lt;path d="M... bezier horn 1" fill="url(#goldGrad)" /&gt;
+&lt;path d="M... bezier horn 2" fill="url(#goldGrad)" /&gt;
+
+// Eye - single circle, small, intense
+&lt;circle cx="..." cy="..." r="4"
+  fill="#FF2D55" class="dragon-eye-premium" /&gt;
+
+// Neck scales - 3-4 subtle arcs, semi-transparent
+&lt;path d="M... scale arc 1" stroke="url(#goldGrad)"
+  stroke-width="1" fill="none" opacity="0.3" /&gt;
+
+// Ambient glow behind dragon
+&lt;circle cx="100" cy="100" r="80"
+  fill="radial-gradient(gold 0%, transparent 70%)"
+  opacity="0.06" /&gt;
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>8. PLAN MOBILE 100% — INSTRUCȚIUNI CONCRETE</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <h3>Status Actual Mobile</h3>
+  <p><span class="verdict v-warn">PARȚIAL IMPLEMENTAT</span> globals.css are media queries pentru 768px, 480px, 360px. BottomNav apare pe mobile. Safe area insets sunt setate. Dar paginile individuale (mai ales Status Page) au inline styles care overridează responsive-ul.</p>
+
+  <h3>Breakpoints Necesare</h3>
+  <div class="mobile-rule">
+    <span class="label">≥1200px</span>
+    <span>Desktop full — sidebar expanded on hover, grids 3-4 coloane</span>
+  </div>
+  <div class="mobile-rule">
+    <span class="label">1024-1199px</span>
+    <span>Desktop compact — sidebar collapsed permanent, grids 2 coloane</span>
+  </div>
+  <div class="mobile-rule">
+    <span class="label">769-1023px</span>
+    <span>Tablet — no sidebar, top nav optional, grids 2 col, BottomNav activ</span>
+  </div>
+  <div class="mobile-rule">
+    <span class="label">481-768px</span>
+    <span>Phone large — single column, BottomNav, compact cards</span>
+  </div>
+  <div class="mobile-rule">
+    <span class="label">360-480px</span>
+    <span>Phone small — ultra-compact, KPI-uri pe 2 coloane, hide non-essential</span>
+  </div>
+  <div class="mobile-rule">
+    <span class="label">≤359px</span>
+    <span>Phone mini — single column everything, stat cards stacked</span>
+  </div>
+
+  <h3>Reguli Critice Mobile</h3>
+
+  <div class="finding critical">
+    <div class="finding-title" style="color: var(--red)">🔴 FIX 1: Inline styles overridează responsive CSS</div>
+    <p>Status Page (dashboard/page.tsx) are ~200 inline <code>style={{}}</code> cu valori fixe (fontSize, padding, grid-template-columns). CSS media queries din globals.css nu pot override inline styles.</p>
+    <p><strong>Fix:</strong> Mută toate inline styles critice în CSS classes. Folosește CSS variables pentru sizing care se schimbă per breakpoint. Exemplu: <code>.grid-4</code> class există deja în globals.css cu responsive — dar dashboard-ul redefinește grid inline.</p>
+  </div>
+
+  <div class="finding critical">
+    <div class="finding-title" style="color: var(--red)">🔴 FIX 2: Arena leaderboard — minWidth: 200px pe fighter name</div>
+    <p>Arena page: <code>style={{ flex: 1, minWidth: 200 }}</code> pe fighter name container + metrici cu <code>minWidth: 60-80px</code>. Pe un ecran de 375px, asta forțează horizontal overflow.</p>
+    <p><strong>Fix:</strong> Pe ≤768px: fighter plate devine vertical stack. Name + status top, metrici grid 2×2 bottom. Remove all <code>minWidth</code> pe mobile.</p>
+  </div>
+
+  <div class="finding critical">
+    <div class="finding-title" style="color: var(--red)">🔴 FIX 3: Cockpit kill button overlap pe mobile</div>
+    <p>Kill switch: <code>position: fixed; right: 18px; top: 18px;</code>. Pe mobile cu header sticky + sidebar collapsat, kill button suprapune header-ul sau dispare sub safe area.</p>
+    <p><strong>Fix:</strong> Pe ≤768px: mută kill button ÎN header-ul cockpit-ului, lângă titlu. Sau fă-l parte din BottomNav ca emergency action.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 FIX 4: Command Center buttons overflow</div>
+    <p>25+ butoane în flex-wrap. Pe 375px wide, încap ~3 butoane pe rând. User-ul scrollează mult.</p>
+    <p><strong>Fix:</strong> Pe mobile: grupează comenzile în dropdown/accordion per categorie. Vizibil: Kill Switch + top 3 acțiuni frecvente. Rest: collapsate sub "More commands ▼".</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 FIX 5: Tables pe mobile</div>
+    <p>Globals.css setează <code>table { display: block; overflow-x: auto }</code> pe mobile. Corect, dar Syndicate Audit Trail și Decision History nu folosesc &lt;table&gt;, ci div-uri cu flex. Acestea nu beneficiază de regula CSS.</p>
+    <p><strong>Fix:</strong> Pentru div-based tables: adaugă <code>overflow-x: auto</code> și <code>-webkit-overflow-scrolling: touch</code> pe container. Sau transformă-le în card-based layout pe mobile.</p>
+  </div>
+
+  <div class="finding warning">
+    <div class="finding-title" style="color: var(--amber)">🟡 FIX 6: Touch targets prea mici</div>
+    <p>Globals.css setează <code>button { min-height: 36px; min-width: 36px }</code> pe ≤480px. Dar inline styles pe <code>CmdBtn</code> au <code>padding: 6px 10px</code> cu <code>fontSize: 10px</code>. Rezultatul: butoane de ~28px înălțime. Sub minimum 44px Apple HIG.</p>
+    <p><strong>Fix:</strong> Pe mobile: toate butoanele interactive minimum 44×44px touch target (poți folosi padding invizibil). Tab buttons, filter buttons, expand/collapse — toate minim 44px.</p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--blue)">FIX 7: Bottom padding pentru BottomNav</div>
+    <p>Page container are <code>padding-bottom: 80px</code> pe ≤768px. Dar Status page setează <code>paddingBottom: 80</code> inline. Duplicate, dar funcțional. Cockpit și Arena au de asemenea <code>paddingBottom: 80</code>. Unificat ar fi mai curat în globals: <code>@media (max-width: 768px) { .app-main { padding-bottom: 80px; } }</code></p>
+  </div>
+
+  <div class="finding info">
+    <div class="finding-title" style="color: var(--blue)">FIX 8: userScalable: false — dezactivează zoom pe mobil</div>
+    <p>layout.tsx: <code>userScalable: false</code>. Asta blochează pinch-to-zoom, ceea ce e un anti-pattern de accesibilitate WCAG. Utilizatorii cu probleme de vedere nu pot mări textul.</p>
+    <p><strong>Fix:</strong> Schimbă la <code>userScalable: true</code> sau omite proprietatea. Dashboard-ul trebuie să funcționeze și cu zoom 200%.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>9. PRIORITĂȚI DE IMPLEMENTARE</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <table class="priority-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Task</th>
+        <th>Impact</th>
+        <th>Efort</th>
+        <th>Prioritate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><strong>Kill Switch confirm pe Status Page</strong></td>
+        <td style="color: var(--red)">CRITIC</td>
+        <td style="color: var(--green)">30min</td>
+        <td><span class="verdict v-bad">P0 — IMEDIAT</span></td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><strong>Touch targets 44px pe mobile</strong></td>
+        <td style="color: var(--red)">CRITIC</td>
+        <td style="color: var(--amber)">2h</td>
+        <td><span class="verdict v-bad">P0 — IMEDIAT</span></td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td><strong>Remove userScalable: false</strong></td>
+        <td style="color: var(--amber)">MARE</td>
+        <td style="color: var(--green)">5min</td>
+        <td><span class="verdict v-bad">P0 — IMEDIAT</span></td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><strong>Unificare color system (4 backgrounds → 1)</strong></td>
+        <td style="color: var(--amber)">MARE</td>
+        <td style="color: var(--amber)">3h</td>
+        <td><span class="verdict v-warn">P1 — SĂPTĂMÂNA ASTA</span></td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td><strong>Arena: fix minWidth overflow pe mobile</strong></td>
+        <td style="color: var(--amber)">MARE</td>
+        <td style="color: var(--green)">1h</td>
+        <td><span class="verdict v-warn">P1 — SĂPTĂMÂNA ASTA</span></td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td><strong>Cockpit kill button reposition pe mobile</strong></td>
+        <td style="color: var(--amber)">MARE</td>
+        <td style="color: var(--green)">1h</td>
+        <td><span class="verdict v-warn">P1 — SĂPTĂMÂNA ASTA</span></td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td><strong>Status Page: restructurare în tab layout</strong></td>
+        <td style="color: var(--red)">MAXIM</td>
+        <td style="color: var(--red)">8h</td>
+        <td><span class="verdict v-warn">P1 — SĂPTĂMÂNA ASTA</span></td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td><strong>Toast notification system</strong></td>
+        <td style="color: var(--amber)">MEDIU</td>
+        <td style="color: var(--amber)">3h</td>
+        <td><span class="verdict v-info">P2 — SPRINT URMĂTOR</span></td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td><strong>Dragon premium redesign</strong></td>
+        <td style="color: var(--amber)">MEDIU</td>
+        <td style="color: var(--amber)">4h</td>
+        <td><span class="verdict v-info">P2 — SPRINT URMĂTOR</span></td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td><strong>Inline styles → CSS classes migration</strong></td>
+        <td style="color: var(--red)">MAXIM</td>
+        <td style="color: var(--red)">12h</td>
+        <td><span class="verdict v-info">P2 — SPRINT URMĂTOR</span></td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td><strong>Quick Diagnosis Panel</strong></td>
+        <td style="color: var(--amber)">MARE</td>
+        <td style="color: var(--amber)">4h</td>
+        <td><span class="verdict v-info">P2 — SPRINT URMĂTOR</span></td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td><strong>Font size minimum 10px enforcement</strong></td>
+        <td style="color: var(--amber)">MEDIU</td>
+        <td style="color: var(--green)">2h</td>
+        <td><span class="verdict v-info">P2 — SPRINT URMĂTOR</span></td>
+      </tr>
+      <tr>
+        <td>13</td>
+        <td><strong>API Health criticality marking</strong></td>
+        <td style="color: var(--amber)">MEDIU</td>
+        <td style="color: var(--green)">1h</td>
+        <td><span class="verdict v-info">P2 — SPRINT URMĂTOR</span></td>
+      </tr>
+      <tr>
+        <td>14</td>
+        <td><strong>GoldDust: reduce particles + visibility pause</strong></td>
+        <td style="color: var(--amber)">MEDIU</td>
+        <td style="color: var(--green)">1h</td>
+        <td><span class="verdict v-info">P2 — SPRINT URMĂTOR</span></td>
+      </tr>
+      <tr>
+        <td>15</td>
+        <td><strong>Settings page funcțional sau removed</strong></td>
+        <td style="color: var(--blue)">MIC</td>
+        <td style="color: var(--green)">30min</td>
+        <td><span class="verdict v-good">P3 — BACKLOG</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>SUMAR FINAL</h2>
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<div class="section" style="border-color: rgba(218,165,32,0.3);">
+  <h3>🔴 TOP 5 PROBLEME</h3>
+  <p>1. <strong>Kill Switch fără confirmare pe Status Page</strong> — risc de pierdere financiară</p>
+  <p>2. <strong>Status Page supraîncărcată</strong> — 15 secțiuni, no hierarchy, scroll infinit</p>
+  <p>3. <strong>Inline styles blochează responsive</strong> — media queries din CSS nu pot override inline</p>
+  <p>4. <strong>Touch targets sub 44px</strong> — butoanele sunt inutilizabile pe telefon</p>
+  <p>5. <strong>4 color systems diferite</strong> — aplicația nu pare o platformă unificată</p>
+
+  <h3>🟢 TOP 5 OPTIMIZĂRI</h3>
+  <p>1. <strong>Restructurare Status Page în tab layout</strong> (OVERVIEW / COMMANDS / CHARTS / DIAGNOSTICS)</p>
+  <p>2. <strong>Toast notification system</strong> — feedback instant pe fiecare acțiune</p>
+  <p>3. <strong>Quick Diagnosis Panel</strong> — 1-click diagnostic când ceva e down</p>
+  <p>4. <strong>Unificare color tokens</strong> — un singur source of truth în globals.css</p>
+  <p>5. <strong>Migare inline styles → CSS classes</strong> — prerequisite pentru orice responsive serios</p>
+
+  <h3>🔵 TOP 5 ADĂUGĂRI NECESARE</h3>
+  <p>1. <strong>Activity Timeline</strong> — event feed cronologic pentru toate acțiunile</p>
+  <p>2. <strong>Push notifications</strong> — alert pe kill switch / API down via Service Worker</p>
+  <p>3. <strong>Keyboard shortcuts overlay</strong> — "?" key → cheat sheet</p>
+  <p>4. <strong>Terminal search</strong> — filter + regex search în log-uri</p>
+  <p>5. <strong>Gladiator filter pills</strong> — ALL / LIVE / SHADOW / ELIMINATED quick filters</p>
+
+  <h3>🐉 DRAGON DIRECTION</h3>
+  <p><strong>DE LA:</strong> Low-poly crystalline frontal, multiple poligoane vizibile, bevel filter blurry → small size</p>
+  <p><strong>SPRE:</strong> Siluetă profil luxury, bezier curves clean, gradient gold subtil 3-stop, ochi mic roșu intens, breathing glow CSS, ambient light radial, hover micro-tilt. Premium = restrained power. 44px sidebar collapsed, 56px expanded.</p>
+
+  <h3>📱 MOBILE FIX PLAN (ordinea execuției)</h3>
+  <p>1. <code>userScalable: true</code> — 5 minute</p>
+  <p>2. Touch targets 44px pe toate butoanele — 2 ore</p>
+  <p>3. Kill switch reposition pe mobile — 1 oră</p>
+  <p>4. Arena minWidth removal pe mobile — 1 oră</p>
+  <p>5. Inline styles → CSS classes pe Status Page — 12 ore (cel mai mare efort, cel mai mare impact)</p>
+  <p>6. Command Center collapse pe mobile — 2 ore</p>
+  <p>7. BottomNav padding unificat în globals — 30 min</p>
+  <p>8. Test pe: iPhone SE (375px), iPhone 14 (390px), iPhone 14 Pro Max (430px), Samsung Galaxy S21 (360px), iPad (768px)</p>
+</div>
+
+<p style="text-align: center; color: var(--text-muted); font-size: 11px; margin-top: 40px; padding-bottom: 20px;">
+  TRADE AI UX Audit · 17.04.2026 · Generated by Claude Architecture Review
+</p>
+
+</body>
+</html>

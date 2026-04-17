@@ -135,16 +135,18 @@ export class PolyWsClient extends EventEmitter {
     });
 
     this.ws.on('message', (data: Buffer) => {
-      this.lastMessageAt = Date.now();
-      if (this.isStale) {
-        log.info('🟢 [PolyWS] Feed recovered from STALE');
-        this.isStale = false;
-        recordProviderHealth('polymarket-ws', true, null);
-      }
       try {
         const text = data.toString();
         // Polymarket sometimes sends a literal "PONG" string or heartbeats
+        // Do NOT count PING/PONG toward lastMessageAt — only real data resets stale timer
         if (text === 'PONG' || text === 'PING') return;
+
+        this.lastMessageAt = Date.now();
+        if (this.isStale) {
+          log.info('🟢 [PolyWS] Feed recovered from STALE');
+          this.isStale = false;
+          recordProviderHealth('polymarket-ws', true, null);
+        }
         const payload = JSON.parse(text);
         this.handleMessage(payload);
       } catch (err) {
