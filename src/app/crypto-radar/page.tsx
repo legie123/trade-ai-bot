@@ -99,18 +99,7 @@ interface CombatAudit {
   opinions?: { seat: string; direction: string; confidence: number; reasoning: string }[];
 }
 
-const C = {
-  text: '#eae6f0',
-  muted: '#5e576e',
-  mutedLight: '#9a93a8',
-  green: '#00e676',
-  red: '#DC143C',
-  blue: '#DAA520',
-  yellow: '#FFD700',
-  purple: '#B8860B',
-  borderLight: '#1e1828',
-  border: '#140e20',
-};
+import { C } from '@/lib/theme';
 
 function directionColor(d: string) {
   if (!d) return C.blue;

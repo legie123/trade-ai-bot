@@ -5,7 +5,7 @@
 // stale on error. Aggregates per symbol and per topic for ranker.
 // ============================================================
 import { createLogger } from '@/lib/core/logger';
-import { NewsItem, SentimentScore, decayRelevance } from '../feeds/types';
+import { SentimentScore, decayRelevance } from '../feeds/types';
 import { getSentimentAdapter } from '../feeds/registry';
 import { newsCollector } from './newsCollector';
 
@@ -85,7 +85,7 @@ export class SentimentAgent {
     const bySymbolMap = new Map<string, SymbolSentiment>();
     let totalAgg = 0;
     let totalWeight = 0;
-    let counts = { bullish: 0, bearish: 0, neutral: 0, mixed: 0 };
+    const counts = { bullish: 0, bearish: 0, neutral: 0, mixed: 0 };
 
     for (const s of scores) {
       const weight = s.confidence * s.relevance;

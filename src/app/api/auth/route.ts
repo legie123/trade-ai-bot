@@ -4,7 +4,6 @@
 // GET /api/auth — check auth status
 // DELETE /api/auth — logout
 // ============================================================
-import { NextResponse } from 'next/server';
 import { createToken, DASHBOARD_PASSWORD, isAuthenticated } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 
@@ -42,16 +41,25 @@ export async function POST(request: Request) {
   }
 }
 
+// AUDIT FIX T4: Added try/catch for defense-in-depth
 export async function GET(request: Request) {
-  const authed = isAuthenticated(request);
-  return successResponse({
-    authenticated: authed,
-    message: authed ? 'Logged in' : 'Not authenticated',
-  });
+  try {
+    const authed = isAuthenticated(request);
+    return successResponse({
+      authenticated: authed,
+      message: authed ? 'Logged in' : 'Not authenticated',
+    });
+  } catch (err) {
+    return errorResponse('AUTH_CHECK_ERROR', (err as Error).message, 500);
+  }
 }
 
 export async function DELETE() {
-  const response = successResponse({ status: 'logged out' });
-  response.cookies.set('auth_token', '', { maxAge: 0, path: '/' });
-  return response;
+  try {
+    const response = successResponse({ status: 'logged out' });
+    response.cookies.set('auth_token', '', { maxAge: 0, path: '/' });
+    return response;
+  } catch (err) {
+    return errorResponse('LOGOUT_ERROR', (err as Error).message, 500);
+  }
 }

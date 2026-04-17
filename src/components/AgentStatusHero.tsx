@@ -52,8 +52,9 @@ export default function AgentStatusHero({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
+  // AUDIT FIX T6: Moved ref update out of render into useEffect
   const stateRef = useRef(agentState);
-  stateRef.current = agentState;
+  useEffect(() => { stateRef.current = agentState; }, [agentState]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

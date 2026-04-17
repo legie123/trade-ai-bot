@@ -1,12 +1,11 @@
 // GET /api/v2/polymarket — Polymarket sector status, scanner, wallet
 // POST /api/v2/polymarket — Manual actions (open_position, close_position, etc.)
-import { NextResponse } from 'next/server';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { PolyDivision } from '@/lib/polymarket/polyTypes';
 import { testPolymarketConnection, getMarketsByCategory, getMarket } from '@/lib/polymarket/polyClient';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
 import { getWalletSummary, openPosition, closePosition } from '@/lib/polymarket/polyWallet';
-import { evaluateMarket, getPolyLeaderboard } from '@/lib/polymarket/polyGladiators';
+import { getPolyLeaderboard } from '@/lib/polymarket/polyGladiators';
 import { analyzeMarket } from '@/lib/polymarket/polySyndicate';
 import {
   ensureInitialized,
@@ -15,8 +14,6 @@ import {
   getLastScans,
   setLastScans,
   persistWallet,
-  persistGladiators,
-  persistBoth,
   waitForInit,
 } from '@/lib/polymarket/polyState';
 import { createLogger } from '@/lib/core/logger';
@@ -214,7 +211,6 @@ export async function POST(request: Request) {
     await waitForInit();
 
     const wallet = getWallet();
-    const gladiators = getGladiators();
 
     const body = (await request.json()) as Record<string, unknown>;
     const action = body.action as string;
@@ -355,7 +351,7 @@ export async function POST(request: Request) {
 
       case 'reset_wallet': {
         // Reset wallet to initial state ($1000 per division)
-        for (const [division, divBalance] of wallet.divisionBalances.entries()) {
+        for (const [, divBalance] of wallet.divisionBalances.entries()) {
           divBalance.balance = 1000;
           divBalance.investedCapital = 0;
           divBalance.realizedPnL = 0;

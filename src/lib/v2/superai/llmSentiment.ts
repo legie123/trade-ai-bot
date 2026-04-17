@@ -50,7 +50,6 @@ const SHILL_PHRASES = [
   'lambo incoming', 'moon mission', 'guaranteed gains', 'can\'t lose',
 ];
 
-const SPAM_PATTERNS = /[A-Z]{4,}/g; // 4+ consecutive caps
 const REPETITIVE_EMOJI = /(.)\1{3,}/g; // 4+ repeated chars/emojis
 
 const SYSTEM_PROMPT = `You are a crypto market sentiment analyzer. Analyze the provided social media posts about a cryptocurrency and return a JSON sentiment assessment.
@@ -185,7 +184,6 @@ function getTemporalWeight(timestamp?: number): number {
 export async function analyzeSentimentLLM(
   symbol: string,
   posts: (string | PostMetadata)[] = [],
-  sourceMetadata?: Record<string, any>,
 ): Promise<LLMSentimentResult> {
   if (!OPENAI_API_KEY() || posts.length === 0) {
     return fallbackKeywordScore(symbol, posts);

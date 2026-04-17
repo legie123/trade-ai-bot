@@ -190,10 +190,10 @@ export async function placeBinanceStopLossOrder(
 }
 
 // ─── Open Positions ────────────────────────
-export async function getBinanceOpenPositions(): Promise<any[]> {
+export async function getBinanceOpenPositions(): Promise<Record<string, unknown>[]> {
   try {
     const data = await binanceRequest('GET', '/api/v3/openOrders', {}, true);
-    return (data as unknown as any[]) || [];
+    return (data as unknown as Record<string, unknown>[]) || [];
   } catch (err) {
     log.warn(`[BINANCE] Failed to fetch open positions: ${(err as Error).message}`);
     return [];

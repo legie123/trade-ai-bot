@@ -13,13 +13,26 @@ const AUTH_SECRET = process.env.AUTH_SECRET || '';
 const PUBLIC_PREFIXES = [
   '/api/auth',             // Login endpoint
   '/api/v2/health',        // Health check (monitoring)
+  '/api/diagnostics/',     // Health diagnostics (master, credits, signal-quality)
   '/api/a2a/',             // A2A routes have SWARM_TOKEN auth
   '/api/cron',             // Has CRON_SECRET auth
   '/api/moltbook-cron',    // Has CRON_SECRET auth
   '/api/v2/cron/',         // Has CRON_SECRET auth
+  '/api/v2/arena',         // Arena status (read-only leaderboard)
+  '/api/v2/omega-status',  // Omega status (read-only)
+  '/api/v2/cockpit-health',// Cockpit health (read-only)
+  '/api/v2/intelligence/', // Intelligence feeds (read-only)
+  '/api/v2/polymarket',    // Polymarket status + scan (scan has CRON auth)
+  '/api/v2/deepseek-status',// DeepSeek credit check (read-only)
+  '/api/btc-signals',      // BTC scanner (triggered by cron internally, read-only externally)
+  '/api/solana-signals',   // Solana scanner (same)
+  '/api/meme-signals',     // Meme scanner (same)
   '/api/tradingview',      // Has TV_SECRET_TOKEN auth
   '/api/live-stream',      // SSE stream (auth checked internally or public dashboard)
-  '/api/v2/command',       // Has own CRON_SECRET auth
+  '/api/v2/command',       // Has own auth check internally
+  '/api/dashboard',        // Dashboard data (read-only)
+  '/api/telegram',         // Telegram connectivity check (read-only)
+  '/api/bot',              // Bot status (read-only)
 ];
 
 function isPublicRoute(pathname: string): boolean {
@@ -59,30 +72,51 @@ function isAuthenticated(request: NextRequest): boolean {
   return false;
 }
 
+// AUDIT FIX T5.3: Security headers applied to ALL responses
+const SECURITY_HEADERS: Record<string, string> = {
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'X-XSS-Protection': '1; mode=block',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss://stream.binance.com wss://ws-subscriptions-clob.polymarket.com https://*.supabase.co https://api.binance.com https://min-api.cryptocompare.com https://api.mexc.com https://gamma-api.polymarket.com https://clob.polymarket.com; font-src 'self' data:;",
+};
+
+function applySecurityHeaders(response: NextResponse): NextResponse {
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+    response.headers.set(key, value);
+  }
+  return response;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Only protect /api/* routes
+  // Non-API routes: just add security headers
   if (!pathname.startsWith('/api/')) {
-    return NextResponse.next();
+    return applySecurityHeaders(NextResponse.next());
   }
 
   // Skip public/self-authed routes
   if (isPublicRoute(pathname)) {
-    return NextResponse.next();
+    return applySecurityHeaders(NextResponse.next());
   }
 
   // Require auth for everything else
   if (!isAuthenticated(request)) {
-    return NextResponse.json(
-      { error: 'Unauthorized', message: 'Valid auth token required' },
-      { status: 401 }
+    return applySecurityHeaders(
+      NextResponse.json(
+        { error: 'Unauthorized', message: 'Valid auth token required' },
+        { status: 401 }
+      )
     );
   }
 
-  return NextResponse.next();
+  return applySecurityHeaders(NextResponse.next());
 }
 
 export const config = {
-  matcher: '/api/:path*',
+  // Match all routes for security headers, API routes also get auth
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.json|icons/).*)'],
 };

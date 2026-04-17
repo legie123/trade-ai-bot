@@ -69,16 +69,7 @@ interface ArenaData {
 
 type SortKey = 'winRate' | 'totalTrades' | 'profitFactor' | 'maxDrawdown' | 'sharpeRatio';
 
-const C = {
-  text: '#eae6f0',
-  muted: '#5e576e',
-  mutedLight: '#9a93a8',
-  green: '#00e676',
-  red: '#DC143C',
-  blue: '#DAA520',
-  yellow: '#FFD700',
-  purple: '#B8860B',
-};
+import { C } from '@/lib/theme';
 
 function winColor(wr: string) {
   const n = parseFloat(wr);
@@ -413,7 +404,7 @@ export default function ArenaPage() {
                        #{i + 1}
                      </div>
 
-                     <div style={{ flex: 1, minWidth: 200 }}>
+                     <div style={{ flex: 1, minWidth: 0 }}>
                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                          <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{g.name}</span>
                          <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, color: ss.color, background: ss.bg, border: `1px solid ${ss.border}` }}>
@@ -425,23 +416,23 @@ export default function ArenaPage() {
                        </div>
                      </div>
 
-                     <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 80 }}>
+                     <div className="arena-stats-row" style={{ display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 56 }}>
                            <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>WIN RATE</div>
                            <div style={{ fontSize: 18, fontFamily: 'monospace', fontWeight: 800, color: winColor(g.winRate) }}>{g.winRate}%</div>
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 48 }}>
                            <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>P/F</div>
                            <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 800, color: C.text }}>{g.profitFactor}</div>
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 48 }}>
                            <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>TRADES</div>
                            <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 800, color: C.mutedLight }}>{g.totalTrades}</div>
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 60 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 48 }}>
                            <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: '0.05em' }}>MAX DD</div>
                            <div style={{ fontSize: 15, fontFamily: 'monospace', fontWeight: 800, color: parseFloat(g.maxDrawdown) > 15 ? C.red : C.mutedLight }}>{g.maxDrawdown}</div>
                         </div>

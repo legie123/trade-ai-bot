@@ -71,21 +71,9 @@ const COCKPIT_HELP = {
   },
 } as const;
 
-const C = {
-  bgDeep: '#05020d',
-  bgViolet: '#0a0518',
-  panelBg: 'rgba(18, 10, 36, 0.62)',
-  panelBorder: 'rgba(138, 106, 255, 0.14)',
-  panelBorderAccent: 'rgba(0, 229, 255, 0.22)',
-  cyan: '#00e5ff',
-  violet: '#8a6aff',
-  gold: '#ffd740',
-  red: '#ff3d57',
-  mutedLight: '#7a82a0',
-  text: '#dbe3ff',
-  textDim: '#8a90b0',
-  font: 'ui-monospace, "Segoe UI", -apple-system, sans-serif',
-};
+import { C, CockpitAccent } from '@/lib/theme';
+// Cockpit-specific panel overrides layered on unified theme
+const CP = { ...C, ...CockpitAccent };
 
 // ─── Derive agent state from system + trading telemetry ────
 function deriveAgentState(
@@ -160,7 +148,7 @@ export default function CockpitPage() {
           background:
             radial-gradient(1200px 800px at 18% 12%, rgba(0,229,255,0.07), transparent 60%),
             radial-gradient(1000px 700px at 82% 88%, rgba(138,106,255,0.09), transparent 60%),
-            linear-gradient(135deg, ${C.bgDeep}, ${C.bgViolet});
+            linear-gradient(135deg, ${CP.bgDeep}, ${CP.bgViolet});
           color: ${C.text};
           font-family: ${C.font};
           padding: 14px 14px 80px 14px;
@@ -168,21 +156,28 @@ export default function CockpitPage() {
           animation: cockpitSynapseBg 30s ease-in-out infinite;
         }
         .glass {
-          background: ${C.panelBg};
-          border: 1px solid ${C.panelBorder};
+          background: ${CP.panelBg};
+          border: 1px solid ${CP.panelBorder};
           border-radius: 14px;
           backdrop-filter: blur(14px) saturate(140%);
           -webkit-backdrop-filter: blur(14px) saturate(140%);
           box-shadow: 0 6px 36px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.02);
         }
         .glass.accent {
-          border-color: ${C.panelBorderAccent};
+          border-color: ${CP.panelBorderAccent};
           box-shadow: 0 6px 36px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,229,255,0.06) inset;
         }
         .kill-cover {
           position: fixed;
           right: 18px; top: 18px;
           z-index: 90;
+        }
+        @media (max-width: 768px) {
+          .kill-cover {
+            top: auto;
+            bottom: 80px; /* above BottomNav */
+            right: 14px;
+          }
         }
         .kill-btn {
           width: 54px; height: 54px; border-radius: 14px;
@@ -247,7 +242,7 @@ export default function CockpitPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 9, color: C.mutedLight }}>signals today</span>
           <span style={{ fontSize: 11, color: C.gold, fontWeight: 700, fontFamily: 'monospace' }}>{totalSignals}</span>
-          <span style={{ width: 1, height: 12, background: C.panelBorder }} />
+          <span style={{ width: 1, height: 12, background: CP.panelBorder }} />
           <a href="/dashboard" style={{ fontSize: 9, color: C.cyan, textDecoration: 'none', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Operational →</a>
         </div>
       </div>

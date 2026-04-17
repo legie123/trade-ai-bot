@@ -4,7 +4,6 @@
 // POST /api/exchanges — execute on specific exchange
 // Supported: Binance, Bybit, MEXC, OKX
 // ============================================================
-import { NextResponse } from 'next/server';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { isAuthenticated } from '@/lib/auth';
 import { getTradingModeSummary, isLiveTradingEnabled } from '@/lib/core/tradingMode';

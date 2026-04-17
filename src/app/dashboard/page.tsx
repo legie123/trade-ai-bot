@@ -18,6 +18,7 @@ import SentinelCouplingPanel from '@/components/SentinelCouplingPanel';
 import DivisionSparklineGrid from '@/components/DivisionSparklineGrid';
 import GladiatorAttributionPanel from '@/components/GladiatorAttributionPanel';
 import HelpTooltip from '@/components/HelpTooltip';
+import { useToast, ToastContainer } from '@/components/Toast';
 
 /* ═══ DASHBOARD HELP ═══ */
 const DASHBOARD_HELP = {
@@ -78,15 +79,8 @@ const DASHBOARD_HELP = {
   },
 } as const;
 
-/* ═══ COLOR SYSTEM ═══ */
-const C = {
-  bg:'#07080d', surface:'#0d1018', surfaceAlt:'#111520', border:'#1a2133', borderAlt:'#242d40',
-  green:'#00e676', greenBg:'#00e67614', red:'#ff3d57', redBg:'#ff3d5714',
-  yellow:'#ffd600', yellowBg:'#ffd60014', blue:'#29b6f6', blueBg:'#29b6f614',
-  purple:'#b39ddb', purpleBg:'#b39ddb14', muted:'#3a4558', mutedLight:'#5a6a85',
-  text:'#c8d4e8', textDim:'#8899b0', white:'#edf2fb', orange:'#ff9100',
-  font:'system-ui,-apple-system,"Segoe UI",sans-serif',
-};
+/* ═══ COLOR SYSTEM — unified from lib/theme.ts ═══ */
+import { C } from '@/lib/theme';
 
 /* ═══ INTERFACES ═══ */
 interface HealthData {
@@ -174,9 +168,9 @@ function BarChart({data,labels,colors,height=60}:{data:number[];labels:string[];
     <div style={{display:'flex',alignItems:'flex-end',gap:3,height}}>
       {data.map((v,i)=>(
         <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-          <div style={{fontSize:8,color:C.white,fontWeight:700}}>{v}</div>
+          <div style={{fontSize:10,color:C.white,fontWeight:700}}>{v}</div>
           <div style={{width:'100%',height:`${(v/max)*100}%`,minHeight:2,background:colors[i%colors.length],borderRadius:2}}/>
-          <div style={{fontSize:7,color:C.mutedLight,whiteSpace:'nowrap'}}>{labels[i]}</div>
+          <div style={{fontSize:10,color:C.mutedLight,whiteSpace:'nowrap'}}>{labels[i]}</div>
         </div>
       ))}
     </div>
@@ -191,7 +185,7 @@ function Section({title,badge,right,children,defaultOpen=true}:{title:string;bad
       <div onClick={()=>setOpen(!open)} style={{padding:'8px 12px',borderBottom:open?`1px solid ${C.border}`:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',userSelect:'none'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <span style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase'}}>{title}</span>
-          {badge&&<span style={{fontSize:8,fontWeight:700,padding:'1px 5px',borderRadius:3,color:hColor(badge),background:hBg(badge)}}>{badge}</span>}
+          {badge&&<span style={{fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:3,color:hColor(badge),background:hBg(badge)}}>{badge}</span>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           {right}
@@ -220,12 +214,15 @@ function CmdBtn({label,cmd,params,onRun,running,variant='default'}:{label:string
    ═══════════════════════════════════════════════════════════ */
 export default function StatusPage(){
   const {dashboard:dash,bot,connectionStatus,lastUpdate,updateCount,forceRefresh}=useRealtimeData();
+  const {toasts,toast,dismiss}=useToast();
   const [health,setHealth]=useState<HealthData|null>(null);
   const [diag,setDiag]=useState<DiagData|null>(null);
   const [credits,setCredits]=useState<CreditsData|null>(null);
   const [exchanges,setExchanges]=useState<ExchangeData|null>(null);
   const [loading,setLoading]=useState(true);
   const [selectedDivision,setSelectedDivision]=useState<string|null>(null);
+  type DashTab = 'terminal' | 'commands' | 'strategy' | 'system';
+  const [dashTab,setDashTab]=useState<DashTab>('terminal');
   const [diagLoading,setDiagLoading]=useState(false);
   const [lastDiag,setLastDiag]=useState<Date|null>(null);
   const [lastLight,setLastLight]=useState<Date|null>(null);
@@ -242,8 +239,8 @@ export default function StatusPage(){
   },[]);
   // confirmKillSwitch defined after runCommand below
   useEffect(()=>()=>{if(killTimerRef.current)clearTimeout(killTimerRef.current);},[]);
-  const toggleGlad=(id:string)=>setExpandedGlad(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
-  const toggleAudit=(i:number)=>setExpandedAudits(s=>{const n=new Set(s);n.has(i)?n.delete(i):n.add(i);return n;});
+  const toggleGlad=(id:string)=>{setExpandedGlad(s=>{const n=new Set(s);if(n.has(id)){n.delete(id);}else{n.add(id);}return n;});};
+  const toggleAudit=(i:number)=>{setExpandedAudits(s=>{const n=new Set(s);if(n.has(i)){n.delete(i);}else{n.add(i);}return n;});};
   const diagRef=useRef<NodeJS.Timeout|null>(null);
 
   // Terminal state
@@ -274,18 +271,21 @@ export default function StatusPage(){
       const data:CmdResult=await res.json();
       if(data.ok){
         termLog('result',`[${data.durationMs}ms] ${data.message}`);
+        toast('success',data.message,`${cmd} · ${data.durationMs}ms`);
         if(data.data&&typeof data.data==='object'){
           termLog('log',JSON.stringify(data.data,null,2).slice(0,1000));
         }
       }else{
         termLog('error',`FAIL: ${data.message}`);
+        toast('error',`FAIL: ${data.message}`,cmd);
       }
     }catch(err){
       termLog('error',`ERROR: ${(err as Error).message}`);
+      toast('error',(err as Error).message,cmd);
     }finally{
       setRunningCmd(null);
     }
-  },[termLog]);
+  },[termLog,toast]);
 
   const confirmKillSwitch=useCallback((cmd:string)=>{
     setKillArmed(false);
@@ -427,14 +427,16 @@ export default function StatusPage(){
   // Card helper
   const card=(label:string,val:string,col?:string)=>(
     <div style={{background:C.surface,padding:'10px 12px'}}>
-      <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,letterSpacing:'0.06em',textTransform:'uppercase'}}>{label}</div>
+      <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,letterSpacing:'0.06em',textTransform:'uppercase'}}>{label}</div>
       <div style={{color:col||C.white,fontSize:'1.15rem',fontWeight:700,marginTop:2}}>{val}</div>
     </div>
   );
 
   /* ═══ API HEALTH GRID — all sources ═══ */
+  // Critical path APIs — if these go down, trading stops
+  const CRITICAL_APIS = new Set(['MEXC','Supabase','Binance']);
   const apiSources=useMemo(()=>{
-    const sources:{name:string;status:string;latency?:number;grade?:string;detail?:string}[]=[];
+    const sources:{name:string;status:string;latency?:number;grade?:string;detail?:string;critical?:boolean}[]=[];
     // Health API systems
     if(health?.api){
       sources.push({name:'Binance',status:health.api.binance?.ok?'OK':'DOWN',latency:health.api.binance?.latencyMs,detail:health.api.binance?.mode});
@@ -471,7 +473,12 @@ export default function StatusPage(){
         }
       });
     }
+    // Tag critical path sources
+    sources.forEach(s=>{ s.critical = CRITICAL_APIS.has(s.name); });
+    // Sort: critical first, then alphabetical
+    sources.sort((a,b)=>(b.critical?1:0)-(a.critical?1:0)||a.name.localeCompare(b.name));
     return sources;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[health,exchanges,diag,credits,dash?.heartbeat]);
 
   // Overall alert level
@@ -485,6 +492,7 @@ export default function StatusPage(){
 
   return(
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:C.font,paddingBottom:80,color:C.text}}>
+      <ToastContainer toasts={toasts} dismiss={dismiss}/>
       <style>{`
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         @keyframes spin{to{transform:rotate(360deg)}}
@@ -569,7 +577,7 @@ export default function StatusPage(){
           <div key={c.label} className="chip">
             <div style={{width:7,height:7,borderRadius:'50%',background:c.col,animation:c.col===C.green?'pulse 2.5s infinite':'none',flexShrink:0}}/>
             <div>
-              <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,letterSpacing:'0.07em'}}>{c.label}</div>
+              <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,letterSpacing:'0.07em'}}>{c.label}</div>
               <div style={{fontSize:10,fontWeight:700,color:c.col,whiteSpace:'nowrap'}}>{c.val}</div>
             </div>
           </div>
@@ -577,6 +585,80 @@ export default function StatusPage(){
         </div>
       </div>
 
+      {/* ══════════════════════════════════════════
+          QUICK DIAGNOSIS — auto-shows when not GREEN
+          ══════════════════════════════════════════ */}
+      {alertLevel!=='GREEN'&&(
+        <div style={{
+          margin:'10px 12px 0',padding:'12px 14px',
+          background:alertLevel==='RED'?'rgba(220,20,60,0.08)':'rgba(255,215,64,0.06)',
+          border:`1px solid ${alertLevel==='RED'?C.red+'40':C.yellow+'30'}`,
+          borderRadius:10,display:'flex',flexDirection:'column',gap:8
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{width:10,height:10,borderRadius:'50%',background:alertLevel==='RED'?C.red:C.yellow,animation:'pulse 1.5s infinite',flexShrink:0}}/>
+            <span style={{fontSize:12,fontWeight:800,color:alertLevel==='RED'?C.red:C.yellow,letterSpacing:'0.04em'}}>
+              {alertLevel==='RED'?'DIAGNOSTIC — CRITICAL':'DIAGNOSTIC — WARNING'}
+            </span>
+          </div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {/* Show down APIs */}
+            {apiSources.filter(s=>s.status==='DOWN'||s.status==='ERROR').map(s=>(
+              <div key={s.name} style={{
+                display:'flex',alignItems:'center',gap:6,padding:'6px 10px',
+                background:'rgba(220,20,60,0.1)',border:`1px solid ${C.red}30`,borderRadius:6
+              }}>
+                <div style={{width:6,height:6,borderRadius:'50%',background:C.red}}/>
+                <span style={{fontSize:11,fontWeight:700,color:C.red}}>{s.name} DOWN</span>
+                {s.critical&&<span style={{fontSize:9,fontWeight:800,color:'#fff',background:C.red,padding:'1px 5px',borderRadius:3}}>CRITICAL</span>}
+              </div>
+            ))}
+            {dash?.killSwitch?.engaged&&(
+              <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'rgba(220,20,60,0.1)',border:`1px solid ${C.red}30`,borderRadius:6}}>
+                <span style={{fontSize:11,fontWeight:700,color:C.red}}>KILL SWITCH ENGAGED</span>
+                <span style={{fontSize:10,color:C.mutedLight}}>{dash.killSwitch.reason}</span>
+              </div>
+            )}
+            {connectionStatus!=='connected'&&(
+              <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'rgba(255,215,64,0.08)',border:`1px solid ${C.yellow}30`,borderRadius:6}}>
+                <span style={{fontSize:11,fontWeight:700,color:C.yellow}}>SSE DISCONNECTED</span>
+              </div>
+            )}
+          </div>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={refreshAll} style={{
+              padding:'6px 12px',minHeight:36,background:C.surfaceAlt,border:`1px solid ${C.borderAlt}`,
+              color:C.text,borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'
+            }}>↺ Refresh All</button>
+            <button onClick={()=>setDashTab('system')} style={{
+              padding:'6px 12px',minHeight:36,background:'transparent',border:`1px solid ${C.borderAlt}`,
+              color:C.mutedLight,borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'
+            }}>→ System Details</button>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+          TAB NAV — groups 15 sections into 4 tabs
+          ══════════════════════════════════════════ */}
+      <div style={{display:'flex',gap:4,margin:'10px 12px 0',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+        {([
+          {id:'terminal' as DashTab,label:'TERMINAL'},
+          {id:'commands' as DashTab,label:'COMMANDS'},
+          {id:'strategy' as DashTab,label:'STRATEGY'},
+          {id:'system' as DashTab,label:'SYSTEM'},
+        ]).map(t=>(
+          <button key={t.id} onClick={()=>setDashTab(t.id)} style={{
+            padding:'8px 16px',minHeight:44,borderRadius:8,border:`1px solid ${dashTab===t.id?C.gold+'50':C.border}`,
+            background:dashTab===t.id?C.gold+'14':'transparent',color:dashTab===t.id?C.gold:C.mutedLight,
+            fontSize:11,fontWeight:700,letterSpacing:'0.06em',cursor:'pointer',whiteSpace:'nowrap',
+            fontFamily:'inherit',transition:'all 0.15s',touchAction:'manipulation'
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* ═══ TAB: TERMINAL ═══ */}
+      {dashTab==='terminal'&&<>
       {/* ══════════════════════════════════════════
           1. LIVE TERMINAL
           ══════════════════════════════════════════ */}
@@ -607,6 +689,10 @@ export default function StatusPage(){
         </div>
       </Section>
 
+      </>}
+
+      {/* ═══ TAB: COMMANDS ═══ */}
+      {dashTab==='commands'&&<>
       {/* ══════════════════════════════════════════
           2. MANUAL COMMANDS
           ══════════════════════════════════════════ */}
@@ -703,7 +789,7 @@ export default function StatusPage(){
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
                       <span style={{fontSize:11,fontWeight:700,color:C.white}}>{s.signalType}</span>
-                      <span style={{fontSize:8,color:C.mutedLight,padding:'1px 5px',borderRadius:3,background:C.surfaceAlt}}>{s.source}</span>
+                      <span style={{fontSize:10,color:C.mutedLight,padding:'1px 5px',borderRadius:3,background:C.surfaceAlt}}>{s.source}</span>
                     </div>
                     <span style={{fontSize:12,fontWeight:700,color:wrCol}}>{wr.toFixed(1)}% WR</span>
                   </div>
@@ -760,6 +846,10 @@ export default function StatusPage(){
         )}
       </Section>
 
+      </>}
+
+      {/* ═══ TAB: STRATEGY ═══ */}
+      {dashTab==='strategy'&&<>
       {/* ══════════════════════════════════════════
           5. CHARTS — Equity, PnL, Memory, Errors
           ══════════════════════════════════════════ */}
@@ -773,79 +863,79 @@ export default function StatusPage(){
         <div style={{padding:'10px 12px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
           {/* Equity Curve */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>EQUITY CURVE</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>EQUITY CURVE</div>
             <Sparkline data={equityData} color={C.green}/>
             {equityData.length>0&&<div style={{fontSize:9,color:C.green,fontWeight:700,marginTop:4}}>${equityData[equityData.length-1]?.toFixed(0)}</div>}
           </div>
           {/* PnL Trend */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>PnL TREND</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>PnL TREND</div>
             <Sparkline data={pnlData} color={C.blue}/>
             {pnlData.length>0&&<div style={{fontSize:9,color:pnlData[pnlData.length-1]>=0?C.green:C.red,fontWeight:700,marginTop:4}}>{pnlData[pnlData.length-1]?.toFixed(2)}%</div>}
           </div>
           {/* Memory Usage */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>MEMORY (RSS)</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>MEMORY (RSS)</div>
             <Sparkline data={historyMem} color={C.yellow}/>
             {diag?.system&&<div style={{fontSize:9,color:C.text,fontWeight:700,marginTop:4}}>{diag.system.memoryUsageMB.rss} MB</div>}
           </div>
           {/* Error Rate */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>ERROR RATE</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>ERROR RATE</div>
             <Sparkline data={historyErrors} color={C.red}/>
             {dash?.logs&&<div style={{fontSize:9,color:errorCount>0?C.red:C.green,fontWeight:700,marginTop:4}}>{dash.logs.errorCount1h} /hr</div>}
           </div>
           {/* Latency */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>LATENCY</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>LATENCY</div>
             {diag?.supabase&&diag?.mexc?(
               <BarChart data={[diag.supabase.roundtripMs,diag.mexc.latencyMs,health?.api?.binance?.latencyMs||0]} labels={['Supabase','MEXC','Binance']} colors={[C.blue,C.purple,C.yellow]} height={50}/>
             ):<div style={{color:C.mutedLight,fontSize:9}}>No data</div>}
           </div>
           {/* Win Rate Trend */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>WIN RATE</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>WIN RATE</div>
             {strategies.length>0?(
               <BarChart data={strategies.slice(0,5).map((s:{winRate:number})=>Math.round(s.winRate*100))} labels={strategies.slice(0,5).map((s:{signalType:string})=>s.signalType.slice(0,6))} colors={[C.green,C.blue,C.yellow,C.purple,C.orange]} height={50}/>
             ):<div style={{color:C.mutedLight,fontSize:9}}>No data</div>}
           </div>
           {/* Drawdown */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>DRAWDOWN</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>DRAWDOWN</div>
             <div style={{fontSize:18,fontWeight:700,color:(diag?.equity?.maxDrawdownPercent??0)>10?C.red:(diag?.equity?.maxDrawdownPercent??0)>5?C.yellow:C.green}}>
               {pct(diag?.equity?.maxDrawdownPercent)}
             </div>
-            <div style={{fontSize:8,color:C.mutedLight,marginTop:2}}>Max Drawdown</div>
+            <div style={{fontSize:10,color:C.mutedLight,marginTop:2}}>Max Drawdown</div>
           </div>
           {/* Connection Uptime */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>UPTIME</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>UPTIME</div>
             <div style={{fontSize:18,fontWeight:700,color:C.green}}>{uptime(diag?.system?.uptimeSeconds||0)}</div>
-            <div style={{fontSize:8,color:C.mutedLight,marginTop:2}}>{updateCount} SSE updates</div>
+            <div style={{fontSize:10,color:C.mutedLight,marginTop:2}}>{updateCount} SSE updates</div>
           </div>
           {/* Feed Freshness */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>FEED FRESHNESS</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>FEED FRESHNESS</div>
             {apiSources.length>0?(
               <BarChart data={apiSources.slice(0,5).map(s=>s.status==='OK'?100:s.status==='DOWN'?0:50)} labels={apiSources.slice(0,5).map(s=>s.name.slice(0,6))} colors={apiSources.slice(0,5).map(s=>s.status==='OK'?C.green:s.status==='DOWN'?C.red:C.yellow)} height={50}/>
             ):<div style={{color:C.mutedLight,fontSize:9}}>No data</div>}
           </div>
           {/* Signal Attribution */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>SIGNAL SOURCE</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>SIGNAL SOURCE</div>
             {strategies.length>0?(
               <BarChart data={strategies.slice(0,5).map((s:{totalTrades:number})=>s.totalTrades)} labels={strategies.slice(0,5).map((s:{source:string})=>(s.source||'?').slice(0,6))} colors={[C.blue,C.purple,C.green,C.orange,C.yellow]} height={50}/>
             ):<div style={{color:C.mutedLight,fontSize:9}}>No data</div>}
           </div>
           {/* Coupling */}
           <div style={{background:C.surfaceAlt,borderRadius:8,padding:10,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:6}}>COUPLING</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:6}}>COUPLING</div>
             {diag?.sentinel?(
               <>
                 <div style={{fontSize:16,fontWeight:700,color:(diag.sentinel.dailyLossPercent??0)>5?C.red:(diag.sentinel.dailyLossPercent??0)>2?C.yellow:C.green}}>
                   {pct(diag.sentinel.dailyLossPercent)}
                 </div>
-                <div style={{fontSize:8,color:C.mutedLight,marginTop:2}}>Daily Loss · {diag.sentinel.triggered?<span style={{color:C.red,fontWeight:700}}>TRIGGERED</span>:'OK'}</div>
+                <div style={{fontSize:10,color:C.mutedLight,marginTop:2}}>Daily Loss · {diag.sentinel.triggered?<span style={{color:C.red,fontWeight:700}}>TRIGGERED</span>:'OK'}</div>
               </>
             ):<div style={{color:C.mutedLight,fontSize:9}}>No sentinel data</div>}
           </div>
@@ -864,18 +954,25 @@ export default function StatusPage(){
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:1,background:C.border}}>
           {apiSources.map(s=>{
             const col=hColor(s.status);
+            const isCritDown=s.critical&&s.status!=='OK';
             return(
-              <div key={s.name} style={{background:C.surface,padding:'10px 12px',display:'flex',alignItems:'center',gap:8}}>
+              <div key={s.name} style={{
+                background:C.surface,padding:'10px 12px',display:'flex',alignItems:'center',gap:8,
+                ...(isCritDown?{border:`1px solid ${C.red}`,animation:'pulse 2s infinite',boxShadow:`inset 0 0 12px ${C.red}20`}:{})
+              }}>
                 <div style={{width:8,height:8,borderRadius:'50%',background:col,animation:s.status==='OK'?'pulse 3s infinite':'none',flexShrink:0}}/>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:10,fontWeight:700,color:C.white,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.name}</div>
-                  <div style={{fontSize:8,color:C.mutedLight}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.white,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',display:'flex',alignItems:'center',gap:4}}>
+                    {s.name}
+                    {s.critical&&<span style={{fontSize:10,fontWeight:800,color:isCritDown?C.red:C.yellow,background:isCritDown?C.redBg:`${C.yellow}14`,padding:'1px 4px',borderRadius:3,letterSpacing:'0.05em'}}>CRITICAL</span>}
+                  </div>
+                  <div style={{fontSize:10,color:C.mutedLight}}>
                     {s.latency!=null?`${s.latency}ms`:''}
                     {s.grade?` · ${s.grade}`:''}
                     {s.detail?` · ${s.detail}`:''}
                   </div>
                 </div>
-                <span style={{fontSize:8,fontWeight:700,color:col,padding:'1px 5px',borderRadius:3,background:`${col}14`}}>{s.status}</span>
+                <span style={{fontSize:10,fontWeight:700,color:col,padding:'1px 5px',borderRadius:3,background:`${col}14`}}>{s.status}</span>
               </div>
             );
           })}
@@ -909,8 +1006,8 @@ export default function StatusPage(){
             <div style={{fontSize:9,fontWeight:700,letterSpacing:'0.08em',color:C.mutedLight,textTransform:'uppercase',marginBottom:4}}>DB Latency</div>
             {diag?.supabase?(
               <div style={{display:'flex',gap:10,marginTop:2}}>
-                <div><div style={{fontSize:8,color:C.mutedLight}}>WRITE</div><div style={{fontSize:13,fontWeight:700,color:diag.supabase.writeLatencyMs<200?C.green:C.yellow}}>{diag.supabase.writeLatencyMs}ms</div></div>
-                <div><div style={{fontSize:8,color:C.mutedLight}}>READ</div><div style={{fontSize:13,fontWeight:700,color:diag.supabase.readLatencyMs<150?C.green:C.yellow}}>{diag.supabase.readLatencyMs}ms</div></div>
+                <div><div style={{fontSize:10,color:C.mutedLight}}>WRITE</div><div style={{fontSize:13,fontWeight:700,color:diag.supabase.writeLatencyMs<200?C.green:C.yellow}}>{diag.supabase.writeLatencyMs}ms</div></div>
+                <div><div style={{fontSize:10,color:C.mutedLight}}>READ</div><div style={{fontSize:13,fontWeight:700,color:diag.supabase.readLatencyMs<150?C.green:C.yellow}}>{diag.supabase.readLatencyMs}ms</div></div>
               </div>
             ):<div style={{fontSize:14,fontWeight:700,color:C.mutedLight}}>—</div>}
           </div>
@@ -986,8 +1083,8 @@ export default function StatusPage(){
                     <div style={{display:'flex',alignItems:'center',gap:6}}>
                       <div style={{width:6,height:6,borderRadius:'50%',background:statusCol,animation:gIsLive?'pulse 2s infinite':'none'}}/>
                       <span style={{fontSize:11,fontWeight:700,color:C.white}}>{gName}</span>
-                      {gIsOmega&&<span style={{fontSize:8,fontWeight:700,color:C.purple,padding:'1px 5px',borderRadius:3,background:C.purpleBg}}>OMEGA</span>}
-                      <span style={{fontSize:8,fontWeight:700,color:statusCol,padding:'1px 5px',borderRadius:3,background:`${statusCol}14`}}>{gStatus}</span>
+                      {gIsOmega&&<span style={{fontSize:10,fontWeight:700,color:C.purple,padding:'1px 5px',borderRadius:3,background:C.purpleBg}}>OMEGA</span>}
+                      <span style={{fontSize:10,fontWeight:700,color:statusCol,padding:'1px 5px',borderRadius:3,background:`${statusCol}14`}}>{gStatus}</span>
                     </div>
                     <div style={{display:'flex',gap:10,alignItems:'center'}}>
                       <span style={{fontSize:10,fontWeight:700,color:gWinRate>=0.6?C.green:gWinRate>=0.45?C.yellow:C.red}}>{(gWinRate*100).toFixed(1)}%</span>
@@ -1009,6 +1106,10 @@ export default function StatusPage(){
         </Section>
       )}
 
+      </>}
+
+      {/* ═══ TAB: SYSTEM ═══ */}
+      {dashTab==='system'&&<>
       {/* ══════════════════════════════════════════
           10. LIVE CONSOLE (backend logs)
           ══════════════════════════════════════════ */}
@@ -1026,7 +1127,7 @@ export default function StatusPage(){
             ?<div style={{padding:'20px 12px',textAlign:'center',color:C.mutedLight,fontSize:12}}>No log entries</div>
             :filteredLogs.slice(0,40).map((log:{ts:string;level:string;msg:string},i:number)=>(
               <div key={i} className="log-row">
-                <div style={{fontSize:8,fontWeight:800,color:lColor(log.level),minWidth:30,paddingTop:1,letterSpacing:'0.04em'}}>{log.level?.toUpperCase().slice(0,4)}</div>
+                <div style={{fontSize:10,fontWeight:800,color:lColor(log.level),minWidth:30,paddingTop:1,letterSpacing:'0.04em'}}>{log.level?.toUpperCase().slice(0,4)}</div>
                 <div style={{fontSize:9,color:C.mutedLight,whiteSpace:'nowrap',paddingTop:1}}>{ft(log.ts)}</div>
                 <div style={{fontSize:10,color:C.textDim,flex:1,wordBreak:'break-word',lineHeight:1.4}}>{log.msg}</div>
               </div>
@@ -1074,7 +1175,7 @@ export default function StatusPage(){
                       <span style={{fontSize:9,color:C.blue}}>{Math.round(audit.confidence*100)}%</span>
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:6}}>
-                      <span style={{fontSize:8,color:C.mutedLight}}>{fdt(audit.timestamp)}</span>
+                      <span style={{fontSize:10,color:C.mutedLight}}>{fdt(audit.timestamp)}</span>
                       <span style={{fontSize:10,color:C.textDim,transform:open?'rotate(90deg)':'none',transition:'transform 0.2s'}}>›</span>
                     </div>
                   </div>
@@ -1082,14 +1183,14 @@ export default function StatusPage(){
                     <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column',gap:6}}>
                       {[{name:'ARCHITECT',d:audit.architect},{name:'ORACLE',d:audit.oracle}].map(n=>(
                         <div key={n.name} style={{background:C.bg,borderRadius:6,padding:'6px 8px',border:`1px solid ${C.border}`}}>
-                          <div style={{fontSize:8,fontWeight:700,color:C.mutedLight,marginBottom:2}}>{n.name}</div>
+                          <div style={{fontSize:10,fontWeight:700,color:C.mutedLight,marginBottom:2}}>{n.name}</div>
                           <div style={{fontSize:10,fontWeight:700,color:n.d.direction==='BUY'?C.green:n.d.direction==='SELL'?C.red:C.yellow}}>{n.d.direction} · {Math.round(n.d.confidence*100)}%</div>
                           <div style={{fontSize:9,color:C.textDim,marginTop:3,lineHeight:1.4}}>{n.d.reasoning}</div>
                         </div>
                       ))}
                       {audit.nodes&&audit.nodes.map((nd,ni)=>(
                         <div key={ni} style={{background:C.bg,borderRadius:6,padding:'6px 8px',border:`1px solid ${C.border}`}}>
-                          <div style={{fontSize:8,fontWeight:700,color:C.mutedLight}}>{nd.seat}</div>
+                          <div style={{fontSize:10,fontWeight:700,color:C.mutedLight}}>{nd.seat}</div>
                           <div style={{fontSize:10,color:nd.direction==='BUY'?C.green:nd.direction==='SELL'?C.red:C.yellow}}>{nd.direction} · {Math.round(nd.confidence*100)}%</div>
                           <div style={{fontSize:9,color:C.textDim,marginTop:2}}>{nd.reasoning}</div>
                         </div>
@@ -1226,6 +1327,8 @@ export default function StatusPage(){
       <div style={{padding:'0 12px'}}>
         <IntelligencePanel defaultSector="ALL" title="Market Intelligence" />
       </div>
+
+      </>}
 
       <div style={{height:16}}/>
       <BottomNav/>

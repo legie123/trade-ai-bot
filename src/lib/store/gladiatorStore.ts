@@ -95,8 +95,8 @@ class GladiatorStore {
       .filter(g => !g.isOmega)
       .sort((a, b) => {
         // Primary: readinessScore (composite metric)
-        const scoreA = (a.stats as any).readinessScore ?? this.computeQuickScore(a);
-        const scoreB = (b.stats as any).readinessScore ?? this.computeQuickScore(b);
+        const scoreA = (a.stats as Record<string, unknown>).readinessScore as number ?? this.computeQuickScore(a);
+        const scoreB = (b.stats as Record<string, unknown>).readinessScore as number ?? this.computeQuickScore(b);
         if (scoreB !== scoreA) return scoreB - scoreA;
         // Tiebreaker: profitFactor × winRate
         return (b.stats.profitFactor * b.stats.winRate) - (a.stats.profitFactor * a.stats.winRate);

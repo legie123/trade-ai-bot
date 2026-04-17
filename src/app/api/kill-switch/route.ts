@@ -11,11 +11,17 @@ import { createLogger } from '@/lib/core/logger';
 const log = createLogger('KillSwitchRoute');
 export const dynamic = 'force-dynamic';
 
+// AUDIT FIX T4: Added try/catch for defense-in-depth
 export async function GET(request: Request) {
-  if (!isAuthenticated(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    if (!isAuthenticated(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    return NextResponse.json({ status: 'ok', killSwitch: getKillSwitchState() });
+  } catch (err) {
+    log.error('Kill switch GET error', { error: String(err) });
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
-  return NextResponse.json({ status: 'ok', killSwitch: getKillSwitchState() });
 }
 
 export async function POST(request: Request) {
@@ -33,7 +39,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ status: 'ok', engaged: false, message: 'Kill switch disengaged' });
     }
 
-    engageKillSwitch('Manual PANIC via Cockpit UI', true);
+    // AUDIT FIX T4: Await liquidation before returning success
+    await engageKillSwitch('Manual PANIC via Cockpit UI', true);
     log.warn('Kill switch ENGAGED via /api/kill-switch (PANIC)');
     return NextResponse.json({ status: 'ok', engaged: true, message: 'Kill switch engaged — all trading halted' });
   } catch (err) {

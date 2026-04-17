@@ -1491,6 +1491,12 @@ input:focus-visible {
   40% { opacity: 0.7; }
 }
 
+/* Toast slide-in animation */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 /* ═══ P0: TOUCH TARGETS — minimum 44px on mobile ═══ */
 @media (max-width: 768px) {
   button, a[role="button"], [role="button"],
@@ -1498,5 +1504,27 @@ input:focus-visible {
     min-height: 44px;
     min-width: 44px;
     touch-action: manipulation;
+  }
+}
+
+/* ═══ P1: ARENA — stack stats vertically on mobile ═══ */
+@media (max-width: 768px) {
+  .arena-stats-row {
+    gap: 16px !important;
+  }
+  .fighter-plate {
+    overflow: hidden;
+  }
+}
+
+/* ═══ P2: MINIMUM FONT SIZE — enforce readable sizes on mobile ═══ */
+/* React inline styles render as font-size: Xpx in the DOM */
+@media (max-width: 768px) {
+  .app-main [style*="font-size: 7px"],
+  .app-main [style*="font-size: 8px"] {
+    font-size: 10px !important;
+  }
+  .app-main [style*="font-size: 9px"] {
+    font-size: 11px !important;
   }
 }

@@ -24,7 +24,7 @@ export async function GET() {
     } else {
       result.openai.status = 'MISSING_KEY';
     }
-  } catch (e) {
+  } catch {
     result.openai.status = 'NETWORK_ERROR';
   }
 
@@ -46,7 +46,7 @@ export async function GET() {
     } else {
       result.deepseek.status = 'MISSING_KEY';
     }
-  } catch (e) {
+  } catch {
     result.deepseek.status = 'NETWORK_ERROR';
   }
 

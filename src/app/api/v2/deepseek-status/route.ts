@@ -4,7 +4,7 @@
  * Returns: { balance, monthlyExpense, totalTokens, apiRequests, warningLevel, topUpRecommended }
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
 const log = createLogger('DeepSeekStatus');
 
@@ -88,7 +88,7 @@ async function getDeepSeekBalance(): Promise<DeepSeekBalance | null> {
   }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check if key is configured
     if (!DEEPSEEK_API_KEY) {

@@ -7,8 +7,8 @@ import { createLogger } from '@/lib/core/logger';
 const log = createLogger('Heartbeat');
 
 // Initialize process start time on module load so uptime is accurate
-if (!(globalThis as any).__processStartTime) {
-  (globalThis as any).__processStartTime = Date.now();
+if (!(globalThis as unknown as Record<string, unknown>).__processStartTime) {
+  (globalThis as unknown as Record<string, number>).__processStartTime = Date.now();
 }
 
 export interface HealthSnapshot {
@@ -70,7 +70,7 @@ function takeSnapshot(): HealthSnapshot {
   const mem = process.memoryUsage();
   
   // AUDIT FIX BUG-4: Use real process start time instead of hardcoded genesis
-  const processStartTime = (globalThis as any).__processStartTime || Date.now();
+  const processStartTime = (globalThis as unknown as Record<string, number>).__processStartTime || Date.now();
   const realUptimeSeconds = (Date.now() - processStartTime) / 1000;
 
   // Get scan loop state

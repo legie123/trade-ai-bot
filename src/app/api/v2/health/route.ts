@@ -3,7 +3,6 @@
 // GET /api/v2/health — complete system readiness report
 // ============================================================
 
-import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { getTradingModeSummary } from '@/lib/core/tradingMode';
@@ -59,10 +58,7 @@ async function checkSupabase(): Promise<SystemStatus> {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-    // Diagnostic logging
-    console.log('[SUPABASE_DIAG] URL exists:', !!url, 'URL length:', url.length);
-    console.log('[SUPABASE_DIAG] Key exists:', !!key, 'Key length:', key.length);
-    console.log('[SUPABASE_DIAG] URL starts with https:', url.startsWith('https://'));
+    // AUDIT FIX T5.4: Removed diagnostic logs that leaked key metadata
 
     if (!url || !key) {
       const latency = Date.now() - start;
@@ -78,7 +74,7 @@ async function checkSupabase(): Promise<SystemStatus> {
     const supabase = createClient(url, key);
     console.log('[SUPABASE_DIAG] Client created, querying json_store...');
 
-    const { data, error } = await supabase.from('json_store').select('id').limit(1);
+    const { error } = await supabase.from('json_store').select('id').limit(1);
     const latency = Date.now() - start;
 
     if (error) {

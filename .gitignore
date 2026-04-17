@@ -78,3 +78,11 @@ scripts/test-forge.ts
 # Claude autonomous deploy credentials (NEVER COMMIT)
 .claude-creds
 .gcp-key.json
+
+# Secret/credential files (never commit)
+env_vars_*.yaml
+prod_env.json
+prod_literals.txt
+prod_secrets.txt
+*.command
+/tmp/

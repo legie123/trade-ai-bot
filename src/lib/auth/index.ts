@@ -1,7 +1,6 @@
 // ============================================================
 // Auth Middleware — Simple JWT-based dashboard protection
 // ============================================================
-import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
 const AUTH_SECRET = process.env.AUTH_SECRET || 'trading-ai-secret-2026';
@@ -14,14 +13,12 @@ const WEAK_PASSWORD = DASHBOARD_PASSWORD === 'admin123' || DASHBOARD_PASSWORD.le
 const WEAK_SECRET = AUTH_SECRET === 'trading-ai-secret-2026' || AUTH_SECRET.length < 24;
 
 if (WEAK_PASSWORD) {
-  // eslint-disable-next-line no-console
   console.warn(
     '[AUTH] DASHBOARD_PASSWORD is weak or default. Set a strong value (>= 12 chars, no "admin123").' +
       (IS_PROD ? ' Production refuses auth with weak password.' : ' Development mode tolerates it.')
   );
 }
 if (WEAK_SECRET) {
-  // eslint-disable-next-line no-console
   console.warn('[AUTH] AUTH_SECRET is weak or default. Set a strong random value (>= 24 chars).');
 }
 

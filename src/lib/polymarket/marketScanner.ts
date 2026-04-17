@@ -45,8 +45,6 @@ function getEdgeFloor(division?: string): number {
   }
   return EDGE_THRESHOLD_DEFAULT;
 }
-// Back-compat alias for any external import (kept as default constant value)
-const EDGE_THRESHOLD = EDGE_THRESHOLD_DEFAULT;
 const MAX_PRICE_HISTORY = 100; // Max snapshots per market
 const PRICE_HISTORY_KEY_PREFIX = 'poly_ph_'; // Supabase json_store key prefix
 
@@ -160,7 +158,6 @@ function scoreMispricing(market: PolyMarket): number {
   if (outcomes.length < 2) return 0;
 
   const yesPrice = outcomes[0].price;
-  const noPrice = outcomes[1]?.price || (1 - yesPrice);
   const vol = market.volume24h || 0;
 
   let score = 0;
@@ -182,7 +179,6 @@ function scoreMispricing(market: PolyMarket): number {
   }
 
   // Price far from consensus (0.3-0.7 band) suggests mispricing
-  const consensusBand = 0.4; // Fair value usually clusters 0.4-0.6
   if (yesPrice < 0.15 || yesPrice > 0.85) {
     score += 15; // Outside normal distribution
   }
@@ -211,7 +207,6 @@ function scoreVolumeAnomaly(market: PolyMarket): number {
 // ─── Momentum (20% weight) ────────────────────────────────
 // Real momentum: track price velocity from history; gracefully degrade if unavailable
 async function scoreMomentum(market: PolyMarket): Promise<number> {
-  const yesPrice = market.outcomes[0]?.price || 0.5;
   const vol = market.volume24h || 0;
   let score = 0;
 

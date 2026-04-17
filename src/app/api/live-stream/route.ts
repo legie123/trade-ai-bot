@@ -12,7 +12,6 @@
 // This route does NOT introduce new external calls. It only surfaces
 // state already tracked by existing modules.
 // ============================================================
-import { NextRequest } from 'next/server';
 import { getFreshHealthSnapshot } from '@/lib/core/heartbeat';
 import { getTradingModeSummary } from '@/lib/core/tradingMode';
 import { createLogger } from '@/lib/core/logger';
@@ -31,13 +30,28 @@ function sseEvent(name: string, data: unknown): string {
   return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET() {
   const encoder = new TextEncoder();
   const startedAt = Date.now();
 
+  // AUDIT FIX T4: Lift cleanup state to outer scope so cancel() can access it
+  let closed = false;
+  let interval: ReturnType<typeof setInterval> | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let shutdownTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const cleanup = () => {
+    closed = true;
+    if (interval) clearInterval(interval);
+    if (heartbeat) clearInterval(heartbeat);
+    if (shutdownTimer) clearTimeout(shutdownTimer);
+    interval = null;
+    heartbeat = null;
+    shutdownTimer = null;
+  };
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      let closed = false;
       const safeEnqueue = (chunk: string) => {
         if (closed) return;
         try {
@@ -99,30 +113,20 @@ export async function GET(_req: NextRequest) {
       // Fire first update immediately for snappy UI
       await tick();
 
-      const interval = setInterval(tick, TICK_MS);
+      interval = setInterval(tick, TICK_MS);
       // Heartbeat comment every 15s to keep intermediaries happy
-      const heartbeat = setInterval(() => safeEnqueue(':hb\n\n'), 15000);
+      heartbeat = setInterval(() => safeEnqueue(':hb\n\n'), 15000);
 
-      // Cleanup on cancel — Next will call cancel when client disconnects
-      // ReadableStream has no direct "on close" but we rely on enqueue failures flipping `closed`.
-      const shutdownTimer = setTimeout(() => {
-        closed = true;
-        clearInterval(interval);
-        clearInterval(heartbeat);
+      // Max duration safety net
+      shutdownTimer = setTimeout(() => {
+        cleanup();
         try { controller.close(); } catch { /* noop */ }
       }, MAX_DURATION_MS + 1000);
-
-      // Attach a cleanup attribute (best-effort)
-      (controller as unknown as { __cleanup?: () => void }).__cleanup = () => {
-        closed = true;
-        clearInterval(interval);
-        clearInterval(heartbeat);
-        clearTimeout(shutdownTimer);
-      };
     },
     cancel() {
-      // Called when client disconnects
-      log.info('live-stream client disconnected');
+      // AUDIT FIX T4: Properly clean up all intervals on client disconnect
+      cleanup();
+      log.info('live-stream client disconnected — intervals cleared');
     },
   });
 

@@ -28,7 +28,6 @@ function TradingViewChartInner({ symbol = 'BINANCE:BTCUSDT', height = 400, showT
       scriptRef.current = null;
     }
     containerRef.current.innerHTML = '';
-    setStatus('loading');
 
     const script = document.createElement('script');
     script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
@@ -71,6 +70,8 @@ function TradingViewChartInner({ symbol = 'BINANCE:BTCUSDT', height = 400, showT
   }, [symbol, height, showToolbar, retryCount]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Setting loading state before async widget load is intentional
+    setStatus('loading');
     loadWidget();
 
     // Timeout fallback: if still loading after 10s, mark as ready (widget loaded silently)

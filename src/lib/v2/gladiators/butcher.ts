@@ -1,4 +1,4 @@
-import { getGladiatorsFromDb, saveGladiatorsToDb } from '@/lib/store/db';
+import { saveGladiatorsToDb } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { createLogger } from '@/lib/core/logger';
 import { Gladiator } from '../../types/gladiator';
@@ -47,7 +47,7 @@ export class TheButcher {
       // Judgment Criteria (OR logic — fail ANY condition = elimination)
       const failsWinRate = g.stats.winRate < 40;
       const failsProfitFactor = g.stats.profitFactor < 1.0;
-      const failsPnL = (g.stats as any).totalPnlPercent !== undefined && (g.stats as any).totalPnlPercent < -5;
+      const failsPnL = (g.stats as Record<string, unknown>).totalPnlPercent !== undefined && ((g.stats as Record<string, unknown>).totalPnlPercent as number) < -5;
 
       // Eliminate if FAILS win rate OR profit factor (Darwinian selection)
       const isWeak = failsWinRate || failsProfitFactor || failsPnL;

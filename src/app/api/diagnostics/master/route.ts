@@ -1,5 +1,4 @@
 // GET /api/diagnostics/master — Omega-Route Master Diagnostics
-import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
 import { successResponse } from '@/lib/api-response';
 

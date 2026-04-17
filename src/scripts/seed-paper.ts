@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { initDB, saveBotConfig, addDecision, clearSystemHealthData, recalculatePerformance } from '../lib/store/db';
+import type { DecisionSnapshot } from '../lib/types/radar';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
@@ -41,7 +42,7 @@ async function seedPaper() {
        pnlPercent: parseFloat(pnlPercent.toFixed(2)),
        outcome: isWin ? 'WIN' : 'LOSS',
        evaluatedAt: new Date(now - ((i + 1) * 3600000) + 1800000).toISOString()
-     } as any);
+     } as Partial<DecisionSnapshot> as DecisionSnapshot);
   }
   
   recalculatePerformance();

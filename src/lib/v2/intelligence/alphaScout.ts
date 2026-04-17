@@ -47,17 +47,17 @@ export class AlphaScout {
     this.wsManager.subscribe(streams);
 
     // Listen to all messages
-    this.wsManager.on('message', (payload: any) => {
+    this.wsManager.on('message', (payload: { stream: string; data: unknown }) => {
       const streamName: string = payload.stream;
       if (streamName.includes('@kline_1m')) {
-        this.processKline(payload.data);
+        this.processKline(payload.data as { s: string; k?: { x: boolean; c: string; v: string } });
       } else if (streamName.includes('@depth')) {
-        this.processDepth(payload.data);
+        this.processDepth(payload.data as { s: string; b?: string[][]; a?: string[][] });
       }
     });
   }
 
-  private processKline(data: any) {
+  private processKline(data: { s: string; k?: { x: boolean; c: string; v: string } }) {
     const sym = data.s.toLowerCase();
     const k = data.k;
     if (!k) return;
@@ -70,7 +70,7 @@ export class AlphaScout {
     }
   }
 
-  private processDepth(data: any) {
+  private processDepth(data: { s: string; b?: string[][]; a?: string[][] }) {
     const sym = data.s.toLowerCase();
     const bids = data.b || [];
     const asks = data.a || [];

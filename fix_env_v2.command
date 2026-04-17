@@ -4,7 +4,7 @@
 # ============================================================
 
 PROJECT="evident-trees-453923-f9"
-SERVICE="antigravity-trade"
+SERVICE="trade-ai"
 REGION="europe-west1"
 
 cd "/Users/user/Desktop/BUSSINES/Antigraity/TRADE AI"
@@ -20,6 +20,10 @@ echo "[1/2] Citesc .env si construiesc comanda..."
 
 # Build env vars string from .env file (skip comments and empty lines)
 ENV_VARS=""
+
+# Write to a temp YAML file (avoids all parsing issues)
+TMPFILE=$(mktemp /tmp/env_vars_XXXXXX.yaml)
+
 while IFS= read -r line; do
     # Skip comments and empty lines
     [[ "$line" =~ ^#.*$ ]] && continue
@@ -35,38 +39,17 @@ while IFS= read -r line; do
     # Skip empty keys
     [[ -z "$KEY" ]] && continue
 
-    if [ -z "$ENV_VARS" ]; then
-        ENV_VARS="$KEY=$VALUE"
-    else
-        ENV_VARS="$ENV_VARS,$KEY=$VALUE"
-    fi
-done < .env
-
-echo "  Gasit $(echo "$ENV_VARS" | tr ',' '\n' | wc -l | tr -d ' ') variabile"
-echo ""
-
-echo "[2/2] Setez env vars pe Cloud Run (via --env-vars-file)..."
-
-# Write to a temp YAML file (avoids all parsing issues)
-TMPFILE=$(mktemp /tmp/env_vars_XXXXXX.yaml)
-
-while IFS= read -r line; do
-    [[ "$line" =~ ^#.*$ ]] && continue
-    [[ -z "$line" ]] && continue
-
-    KEY=$(echo "$line" | cut -d'=' -f1)
-    VALUE=$(echo "$line" | cut -d'=' -f2- | sed 's/^"//;s/"$//')
-
-    [[ "$KEY" == "PORT" ]] && continue
-    [[ -z "$KEY" ]] && continue
-
     echo "$KEY: \"$VALUE\"" >> "$TMPFILE"
 done < .env
 
+echo "  Gasit $(wc -l < "$TMPFILE") variabile"
 echo "  YAML file: $TMPFILE"
 echo ""
 
+echo "[2/2] Setez env vars pe Cloud Run..."
+
 gcloud run services update "$SERVICE" \
+    --project="$PROJECT" \
     --region="$REGION" \
     --env-vars-file="$TMPFILE" \
     --quiet 2>&1
@@ -88,8 +71,7 @@ if [ $? -eq 0 ]; then
     echo "=========================================="
 else
     echo ""
-    echo "  EROARE. Incearca manual:"
-    echo "  gcloud run services update $SERVICE --region=$REGION --env-vars-file=$TMPFILE"
+    echo "  EROARE."
 fi
 
 rm -f "$TMPFILE"

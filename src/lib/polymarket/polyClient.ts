@@ -24,8 +24,6 @@ const log = createLogger('PolyClient');
 
 const CLOB_URL = () => process.env.POLYMARKET_CLOB_URL || 'https://clob.polymarket.com';
 const GAMMA_URL = () => process.env.POLYMARKET_GAMMA_URL || 'https://gamma-api.polymarket.com';
-const API_KEY = () => process.env.POLYMARKET_API_KEY || '';
-
 // Rate limiter: 100ms between requests
 let lastRequestTime = 0;
 const RATE_LIMIT_MS = 100;
@@ -124,7 +122,7 @@ export async function getMarketPrices(tokenId: string): Promise<{ yes: number; n
 }
 
 // ─── Get order book ───────────────────────────────────────
-export async function getOrderBook(tokenId: string): Promise<{ bids: any[]; asks: any[] } | null> {
+export async function getOrderBook(tokenId: string): Promise<{ bids: [number, number][]; asks: [number, number][] } | null> {
   try {
     const res = await fetchWithRetry(`${CLOB_URL()}/book?token_id=${tokenId}`);
     if (!res.ok) return null;
@@ -135,7 +133,7 @@ export async function getOrderBook(tokenId: string): Promise<{ bids: any[]; asks
 }
 
 // ─── Get recent trades ────────────────────────────────────
-export async function getRecentTrades(conditionId: string, limit = 20): Promise<any[]> {
+export async function getRecentTrades(conditionId: string, limit = 20): Promise<Record<string, unknown>[]> {
   try {
     const res = await fetchWithRetry(
       `${CLOB_URL()}/trades?condition_id=${conditionId}&limit=${limit}`,
@@ -194,7 +192,29 @@ export async function testPolymarketConnection(): Promise<{ clob: boolean; gamma
 }
 
 // ─── Map Gamma API response to PolyMarket ──────────────────
-function mapGammaMarket(raw: any): PolyMarket {
+interface GammaRawMarket {
+  id?: string;
+  conditionId?: string;
+  question?: string;
+  title?: string;
+  description?: string;
+  groupSlug?: string;
+  category?: string;
+  outcomes?: string[];
+  outcomePrices?: string;
+  clobTokenIds?: string[];
+  active?: boolean;
+  closed?: boolean;
+  endDate?: string;
+  endDateIso?: string;
+  volume24hr?: string;
+  volume24h?: string;
+  liquidity?: string;
+  createdAt?: string;
+  startDate?: string;
+}
+
+function mapGammaMarket(raw: GammaRawMarket): PolyMarket {
   const outcomes: PolyOutcome[] = [];
 
   if (raw.outcomes && Array.isArray(raw.outcomes)) {

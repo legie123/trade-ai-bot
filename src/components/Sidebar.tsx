@@ -26,7 +26,7 @@ export default function Sidebar() {
     >
       {/* Logo */}
       <div className="sidebar-logo">
-        <span className="sidebar-logo-icon"><DragonLogo size={expanded ? 32 : 26} /></span>
+        <span className="sidebar-logo-icon"><DragonLogo size={expanded ? 56 : 44} /></span>
         {expanded && <span className="sidebar-logo-text">TRADE AI</span>}
       </div>
 

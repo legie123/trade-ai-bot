@@ -34,8 +34,6 @@ async function runChecks() {
   // ── CHECK 1: seedGladiators() has zero stats ──
   const gladiatorStorePath = path.join(srcRoot, 'lib/store/gladiatorStore.ts');
   const gladiatorStoreCode = fs.readFileSync(gladiatorStorePath, 'utf-8');
-  const hasFakeStats = /winRate:\s*(?!0\b)\d+/.test(gladiatorStoreCode) &&
-    gladiatorStoreCode.includes('seedGladiators');
   // More precise: check that in the seed function, winRate is 0
   const seedSection = gladiatorStoreCode.split('seedGladiators')[1]?.split('}')[0] || '';
   const seedHasNonZeroWR = /winRate:\s*(?!0)[1-9]/.test(seedSection);

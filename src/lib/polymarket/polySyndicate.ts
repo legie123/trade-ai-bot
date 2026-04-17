@@ -515,7 +515,7 @@ function fallbackOracleOpinion(market: PolyMarket): OracleOpinion {
 function validateDirection(value: unknown): 'YES' | 'NO' | 'SKIP' {
   if (typeof value === 'string') {
     const upper = value.toUpperCase();
-    if (upper === 'YES' || upper === 'NO' || upper === 'SKIP') return upper as any;
+    if (upper === 'YES' || upper === 'NO' || upper === 'SKIP') return upper as 'YES' | 'NO' | 'SKIP';
   }
   return 'SKIP';
 }

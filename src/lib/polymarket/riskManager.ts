@@ -3,7 +3,7 @@
 // ============================================================
 
 import { PolyWallet, DivisionBalance } from './polyWallet';
-import { PolyDivision, PolyMarket, PolyOpportunity } from './polyTypes';
+import { PolyDivision, PolyOpportunity } from './polyTypes';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PolyRiskManager');
@@ -227,7 +227,12 @@ export function getPortfolioRiskSummary(
     drawdownPct: number;
     positionCount: number;
     available: boolean;
-  }> = {} as Record<PolyDivision, any>;
+  }> = {} as Record<PolyDivision, {
+    status: 'GREEN' | 'YELLOW' | 'RED';
+    drawdownPct: number;
+    positionCount: number;
+    available: boolean;
+  }>;
 
   let totalDrawdown = 0;
   let divisionCount = 0;

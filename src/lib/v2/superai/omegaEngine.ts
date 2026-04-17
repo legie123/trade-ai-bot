@@ -1,6 +1,6 @@
 import { createLogger } from '@/lib/core/logger';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
-import { BattleRecord, IntelligenceDigest } from './dnaExtractor';
+import { BattleRecord } from './dnaExtractor';
 import { getGladiatorBattles } from '@/lib/store/db';
 
 const log = createLogger('OmegaEngine');
@@ -376,9 +376,7 @@ export class OmegaEngine {
       let score = glad.stats.winRate;
 
       // ─── Regime Alignment ───
-      const longWinRate = glad.stats.winRate; // TODO: track separately if needed
-      const shortWinRate = glad.stats.winRate;
-
+      // Note: longWinRate/shortWinRate tracked separately when per-direction stats are available
       if (regime.regime === 'BULL') {
         score *= 1.1; // Boost all in bull
       } else if (regime.regime === 'BEAR') {

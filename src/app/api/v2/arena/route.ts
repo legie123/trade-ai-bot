@@ -1,5 +1,4 @@
 // GET /api/v2/arena — Full gladiator details + Omega progress + real stats
-import { NextResponse } from 'next/server';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { getGladiatorDna } from '@/lib/store/db';
 import { successResponse, errorResponse } from '@/lib/api-response';

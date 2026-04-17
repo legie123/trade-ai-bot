@@ -4,12 +4,19 @@ import { useEffect, useRef } from 'react';
 
 /**
  * GoldDust — Subtle floating gold particles on a fixed canvas.
- * Lightweight: ~40 particles, requestAnimationFrame, auto-pauses when hidden.
+ * Performance-optimized:
+ *   - 20 particles on mobile (≤768px), 40 on desktop
+ *   - Pauses animation when tab is hidden (visibilitychange)
+ *   - Disabled entirely when prefers-reduced-motion is set
+ *   - No glow pass on mobile to save GPU fill rate
  */
 export default function GoldDust() {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    // Respect reduced-motion preference — render nothing
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
     const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -18,10 +25,13 @@ export default function GoldDust() {
     let raf = 0;
     let w = 0;
     let h = 0;
+    let paused = false;
+
+    const isMobile = window.innerWidth <= 768;
+    const COUNT = isMobile ? 20 : 40;
 
     interface P { x: number; y: number; r: number; vx: number; vy: number; a: number; da: number }
     const particles: P[] = [];
-    const COUNT = 40;
 
     function resize() {
       w = canvas!.width = window.innerWidth;
@@ -45,6 +55,7 @@ export default function GoldDust() {
     }
 
     function draw() {
+      if (paused) return; // Don't schedule next frame if paused
       ctx!.clearRect(0, 0, w, h);
       for (const p of particles) {
         p.x += p.vx;
@@ -60,8 +71,8 @@ export default function GoldDust() {
         ctx!.fillStyle = `rgba(218, 165, 32, ${p.a})`;
         ctx!.fill();
 
-        // Subtle glow
-        if (p.r > 1) {
+        // Subtle glow — skip on mobile to save GPU
+        if (!isMobile && p.r > 1) {
           ctx!.beginPath();
           ctx!.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2);
           ctx!.fillStyle = `rgba(218, 165, 32, ${p.a * 0.15})`;
@@ -71,13 +82,26 @@ export default function GoldDust() {
       raf = requestAnimationFrame(draw);
     }
 
+    // Pause when tab is hidden — saves battery on mobile
+    function onVisibility() {
+      if (document.hidden) {
+        paused = true;
+        cancelAnimationFrame(raf);
+      } else {
+        paused = false;
+        raf = requestAnimationFrame(draw);
+      }
+    }
+
     init();
     draw();
     window.addEventListener('resize', resize);
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 

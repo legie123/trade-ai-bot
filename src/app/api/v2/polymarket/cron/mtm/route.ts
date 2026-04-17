@@ -1,7 +1,7 @@
 // GET /api/v2/polymarket/cron/mtm — Mark-to-market position updater
 import { NextResponse } from 'next/server';
 import { getMarket } from '@/lib/polymarket/polyClient';
-import { updatePositionPrice, calculateUnrealizedPnL } from '@/lib/polymarket/polyWallet';
+import { updatePositionPrice } from '@/lib/polymarket/polyWallet';
 import {
   ensureInitialized,
   getWallet,

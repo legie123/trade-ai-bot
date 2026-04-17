@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import { PolyDivision } from '@/lib/polymarket/polyTypes';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
-import { evaluateMarket, recordPolyOutcome } from '@/lib/polymarket/polyGladiators';
+import { evaluateMarket } from '@/lib/polymarket/polyGladiators';
 import { openPosition } from '@/lib/polymarket/polyWallet';
 import {
   ensureInitialized,

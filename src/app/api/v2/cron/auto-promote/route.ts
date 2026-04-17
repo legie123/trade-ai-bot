@@ -3,7 +3,7 @@
 // Evaluates gladiators for PHANTOM → LIVE promotion using pre-live gate
 // ============================================================
 import { NextResponse } from 'next/server';
-import { getGladiatorsFromDb, saveGladiatorsToDb, getGladiatorBattles } from '@/lib/store/db';
+import { getGladiatorsFromDb, saveGladiatorsToDb } from '@/lib/store/db';
 import { getKillSwitchState } from '@/lib/core/killSwitch';
 import { MonteCarloEngine } from '@/lib/v2/superai/monteCarloEngine';
 import { sendMessage } from '@/lib/alerts/telegram';
@@ -100,8 +100,8 @@ export async function GET(request: Request) {
     const slotsAvailable = PROMO_CRITERIA.maxLiveGladiators - liveCount;
     // AUDIT FIX BUG-3: Use canonical readinessScore for promotion ranking
     candidates.sort((a, b) => {
-      const scoreA = (a.stats as any).readinessScore ?? (a.stats.profitFactor * a.stats.winRate);
-      const scoreB = (b.stats as any).readinessScore ?? (b.stats.profitFactor * b.stats.winRate);
+      const scoreA = (a.stats as unknown as Record<string, number>).readinessScore ?? (a.stats.profitFactor * a.stats.winRate);
+      const scoreB = (b.stats as unknown as Record<string, number>).readinessScore ?? (b.stats.profitFactor * b.stats.winRate);
       return scoreB - scoreA;
     });
 

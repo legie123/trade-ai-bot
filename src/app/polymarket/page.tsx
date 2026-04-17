@@ -134,12 +134,7 @@ interface LogEntry {
 }
 
 /* ── Constants ──────────────────────────────────── */
-const C = {
-  text: '#e8ecf4', muted: '#6b7891', mutedLight: '#9aa5be',
-  green: '#00e676', red: '#ff3d57', blue: '#29b6f6',
-  yellow: '#ffd740', purple: '#c084fc', purpleDark: '#8b5cf6',
-  border: '#1a2035', borderLight: '#242d44',
-};
+import { C } from '@/lib/theme';
 const DIVISIONS = [
   'TRENDING','BREAKING','NEW','POLITICS','SPORTS','CRYPTO','ESPORTS',
   'IRAN','FINANCE','GEOPOLITICS','TECH','CULTURE','ECONOMY','WEATHER','MENTIONS','ELECTIONS'
