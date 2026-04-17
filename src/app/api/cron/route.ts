@@ -122,6 +122,15 @@ export async function GET(request: NextRequest) {
     // OMEGA OPTIMIZATION: Use Batch Price fetcher. One request, no rate-limit delay.
     let rawPriceCache: Record<string, number> = {};
     let priceError = '';
+    let directTest = '';
+    // DIRECT TEST: Try fetching BTCUSDT price raw
+    try {
+      const testResp = await fetch('https://api.mexc.com/api/v3/ticker/price?symbol=BTCUSDT', { signal: AbortSignal.timeout(5000) });
+      const testData = await testResp.json();
+      directTest = JSON.stringify(testData).slice(0, 100);
+    } catch (testErr) {
+      directTest = 'FETCH_FAIL: ' + String(testErr).slice(0, 150);
+    }
     try {
       rawPriceCache = await getMexcPrices(mexcSymbols);
     } catch (pErr) {
@@ -221,7 +230,7 @@ export async function GET(request: NextRequest) {
       mainDecisionsEvaluated,
       livePositionsUpdated,
       pricesFetched: Object.keys(priceCache).length,
-      _debug: { pendingCount: pending.length, eligibleCount: eligibleDecisions.length, mexcSymbols: mexcSymbols.join(','), rawPriceKeys: Object.keys(rawPriceCache).slice(0,5).join(','), priceError },
+      _debug: { pendingCount: pending.length, eligibleCount: eligibleDecisions.length, mexcSymbols: mexcSymbols.join(','), rawPriceKeys: Object.keys(rawPriceCache).slice(0,5).join(','), priceError, directTest },
       forgeProgress: forgeStats.progressPercent,
       timestamp: new Date().toISOString(),
     });
