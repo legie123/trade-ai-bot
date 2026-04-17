@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
       return elapsedMin > 10;
     });
 
+    log.info(\`[CronDebug] pending=\${pending.length}, eligible=\${eligibleDecisions.length}, symbols=\${eligibleDecisions.map(d=>d.symbol).slice(0,5).join(',')}\`);
     const uniqueSymbols = [...new Set(eligibleDecisions.map(d => d.symbol))];
 
     // Fetch all unique prices in parallel for decisions and live positions
@@ -121,6 +122,7 @@ export async function GET(request: NextRequest) {
     // OMEGA OPTIMIZATION: Use Batch Price fetcher. One request, no rate-limit delay.
     const rawPriceCache = await getMexcPrices(mexcSymbols);
 
+    log.info(\`[CronDebug] mexcSymbols=\${mexcSymbols.join(',')}, rawPriceCount=\${Object.keys(rawPriceCache).length}\`);
     // Build dual-key cache: both 'BTCUSDT' and 'BTC' point to the same price
     const priceCache: Record<string, number> = {};
     for (const [mexcSym, price] of Object.entries(rawPriceCache)) {
