@@ -90,7 +90,8 @@ export async function GET() {
 
   // ─── 3. Equity Curve Snapshot ───
   try {
-    const { getEquityCurve, getDecisions, getBotConfig } = await import('@/lib/store/db');
+    const { getEquityCurve, getDecisions, getBotConfig, initDB } = await import('@/lib/store/db');
+    await initDB();
     const config = getBotConfig();
     const curve = getEquityCurve();
     const decisions = getDecisions();

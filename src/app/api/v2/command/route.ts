@@ -52,13 +52,21 @@ async function internalFetch(url: URL, init?: RequestInit): Promise<unknown> {
   return res.json();
 }
 
+// FIX 2026-04-18: Comenzile read-only (status/diag) sunt exceptate de auth cookie pentru ca UI-ul
+// să poată afișa diagnostic chiar când sesiunea user a expirat. Mutațiile (engage/set/evaluate) rămân auth-ed.
+// Motiv: UI raporta FAIL Unauthorized pe omega:status / diag:full / diag:signal-quality după expirarea sesiunii.
+const READ_ONLY_COMMANDS = new Set<string>([
+  'omega:status',
+  'diag:full',
+  'diag:signal-quality',
+  'arena:status',
+  'agents:status',
+  'killswitch:status',
+  'heartbeat:status',
+]);
+
 export async function POST(request: Request): Promise<NextResponse<CommandResult>> {
   const start = Date.now();
-
-  // Auth check — httpOnly cookie is sent automatically by the browser
-  if (!isAuthenticated(request)) {
-    return NextResponse.json({ ok: false, command: '?', message: 'Unauthorized', durationMs: Date.now() - start }, { status: 401 });
-  }
 
   let body: { command: string; params?: Record<string, unknown> };
   try {
@@ -68,6 +76,11 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
   }
 
   const { command, params } = body;
+
+  // Auth check — gated după ce știm ce comandă a fost cerută; read-only poate trece fără cookie.
+  if (!READ_ONLY_COMMANDS.has(command) && !isAuthenticated(request)) {
+    return NextResponse.json({ ok: false, command, message: 'Unauthorized', durationMs: Date.now() - start }, { status: 401 });
+  }
   log.info(`[CMD] Executing: ${command}`, { params });
 
   const baseUrl = new URL(request.url).origin;

@@ -4,7 +4,7 @@ import { getWatchdogState, watchdogPing } from '@/lib/core/watchdog';
 import { getFreshHealthSnapshot, startHeartbeat } from '@/lib/core/heartbeat';
 import { getKillSwitchState } from '@/lib/core/killSwitch';
 import { getRecentLogs } from '@/lib/core/logger';
-import { getDecisions, getSyncQueueStats, getLivePositions, getBotConfig, getEquityCurve } from '@/lib/store/db';
+import { getDecisions, getSyncQueueStats, getLivePositions, getBotConfig, getEquityCurve, initDB } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { getMoltbookTelemetry } from '@/lib/moltbook/moltbookClient';
 
@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Self-init for serverless: ensure heartbeat & watchdog are alive on THIS instance
+    // Self-init for serverless: ensure DB cache is hydrated from Supabase on THIS instance
+    await initDB();
     startHeartbeat();
     watchdogPing();
     // Also mark scan loop active on this instance

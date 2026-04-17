@@ -86,3 +86,4 @@ prod_literals.txt
 prod_secrets.txt
 *.command
 /tmp/
+.gcp-sa-key.json
