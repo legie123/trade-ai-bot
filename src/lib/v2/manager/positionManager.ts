@@ -6,6 +6,7 @@ import { createLogger } from '@/lib/core/logger';
 import { postActivity } from '@/lib/moltbook/moltbookClient';
 import { DNAExtractor } from '../superai/dnaExtractor';
 import { isLiveTradingEnabled } from '@/lib/core/tradingMode';
+import { isKillSwitchEngaged } from '@/lib/core/killSwitch';
 
 const log = createLogger('PositionManager');
 
@@ -32,6 +33,12 @@ export class PositionManager {
   public async evaluateLivePositions() {
     if (!isLiveTradingEnabled()) {
       log.info('[PositionManager] Skipped — TRADING_MODE=PAPER. No live position evaluation.');
+      return;
+    }
+
+    // CRITICAL FIX: Kill switch must block position management orders too
+    if (isKillSwitchEngaged()) {
+      log.warn('[PositionManager] BLOCKED — Kill switch is engaged. No orders will be placed.');
       return;
     }
     const openPositions = getLivePositions().filter(p => p.status === 'OPEN');

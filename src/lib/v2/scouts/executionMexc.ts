@@ -1,6 +1,7 @@
 import { getMexcPrice, placeMexcLimitOrder, getMexcBalances, getMexcExchangeInfo, placeMexcStopLossOrder } from '@/lib/exchange/mexcClient';
 import { sendMessage } from '@/lib/alerts/telegram';
 import { createLogger } from '@/lib/core/logger';
+import { assertLiveTradingAllowed } from '@/lib/core/tradingMode';
 
 const log = createLogger('ExecutionMexc');
 
@@ -79,6 +80,16 @@ export async function executeMexcTrade(
   usdAmount?: number,
   dryRun: boolean = false
 ): Promise<MexcTradeResult> {
+  // CRITICAL SAFETY: Block real orders if kill switch engaged or PAPER mode
+  if (!dryRun) {
+    try {
+      assertLiveTradingAllowed('executeMexcTrade');
+    } catch (err) {
+      log.warn(`[ExecutionMexc] Blocked: ${(err as Error).message}`);
+      return { symbol, side, price: 0, quantity: 0, usdAmount: 0, executed: false, error: (err as Error).message };
+    }
+  }
+
   try {
     const mexcSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
     
