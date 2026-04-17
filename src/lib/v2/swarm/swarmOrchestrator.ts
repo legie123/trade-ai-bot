@@ -14,6 +14,7 @@
 
 import { createLogger } from '@/lib/core/logger';
 import { omegaExtractor } from '@/lib/v2/superai/omegaExtractor';
+import { omegaEngine } from '@/lib/v2/superai/omegaEngine';
 import { logDecision } from '@/lib/v2/audit/decisionLog';
 import { DebateEngine } from '@/lib/v2/debate/debateEngine';
 import type { DebateVerdict } from '@/lib/v2/audit/decisionLog';
@@ -196,7 +197,7 @@ export class SwarmOrchestrator {
           symbol,
           proposedDirection: candidateDirection as 'LONG' | 'SHORT',
           confidence: finalConfidence,
-          regime: null,  // TODO: wire regime from marketRegime agent
+          regime: omegaEngine.getRegime().regime || null,
           indicators: context.indicators as Record<string, number> || {},
           recentWinRate: context.currentWinRate,
           recentLossStreak: context.currentLossStreak,

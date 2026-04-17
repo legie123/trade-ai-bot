@@ -87,7 +87,7 @@ interface HealthData {
   status:string; version:string; systemMode:string; uptimeSecs:number;
   coreMonitor:{heartbeat:string;watchdog:string;killSwitch:string};
   trading:{autoSelectEnabled:boolean;totalGladiators:number;decisionsToday:number;forgeProgress:number};
-  api:{binance:{ok:boolean;mode:string;latencyMs:number};dexScreener:{ok:boolean};coinGecko:{ok:boolean}};
+  api:{binance:{ok:boolean;mode:string;latencyMs:number};dexScreener?:{ok:boolean}|undefined;coinGecko?:{ok:boolean}|undefined};
   timestamp:string;
 }
 interface DiagData {
@@ -338,10 +338,13 @@ export default function StatusPage(){
             decisionsToday:tm.decisionsToday||0,
             forgeProgress:tm.forgeProgress||0,
           },
+          // FIX 2026-04-18: /api/v2/health returnează doar: polymarket/supabase/binance/deepseek/telegram.
+          // DexScreener și CoinGecko NU există ca health-check endpoint → marcate undefined (nu false).
+          // UI va sări peste sursele undefined în loc să afișeze DOWN artificial.
           api:{
             binance:{ok:sys.mexc?.status==='OK'||sys.binance?.status==='OK',mode:tm.mode||'PAPER',latencyMs:sys.mexc?.latency_ms||sys.binance?.latency_ms||0},
-            dexScreener:{ok:sys.dexscreener?.status==='OK'},
-            coinGecko:{ok:sys.coingecko?.status==='OK'},
+            dexScreener: sys.dexscreener ? {ok:sys.dexscreener.status==='OK'} : undefined,
+            coinGecko: sys.coingecko ? {ok:sys.coingecko.status==='OK'} : undefined,
           },
           timestamp:raw.timestamp||new Date().toISOString(),
         });
@@ -440,8 +443,10 @@ export default function StatusPage(){
     // Health API systems
     if(health?.api){
       sources.push({name:'Binance',status:health.api.binance?.ok?'OK':'DOWN',latency:health.api.binance?.latencyMs,detail:health.api.binance?.mode});
-      sources.push({name:'DexScreener',status:health.api.dexScreener?.ok?'OK':'DOWN'});
-      sources.push({name:'CoinGecko',status:health.api.coinGecko?.ok?'OK':'DOWN'});
+      // FIX 2026-04-18: Adăugăm DexScreener/CoinGecko DOAR dacă endpoint-ul a returnat efectiv status pentru ele.
+      // Fără fallback-ul la DOWN când sistemele nu sunt prezente în payload — elimina alertă RED artificială.
+      if(health.api.dexScreener) sources.push({name:'DexScreener',status:health.api.dexScreener.ok?'OK':'DOWN'});
+      if(health.api.coinGecko) sources.push({name:'CoinGecko',status:health.api.coinGecko.ok?'OK':'DOWN'});
     }
     // Exchanges
     if(exchanges?.exchanges){
@@ -461,9 +466,12 @@ export default function StatusPage(){
       sources.push({name:'Supabase',status:diag.supabase.status,latency:diag.supabase.roundtripMs,grade:diag.supabase.healthGrade});
     }
     // AI
+    // FIX 2026-04-18: Backend /api/diagnostics/credits returnează 'ACTIVE' (uppercase) iar UI aștepta 'ok'.
+    // Mismatch → afișa DOWN artificial. Acum acceptăm ACTIVE/OK/ok și orice status ce nu e error-like.
     if(credits){
-      sources.push({name:'OpenAI',status:credits.openai?.status==='ok'?'OK':'DOWN',detail:credits.openai?.balance});
-      sources.push({name:'DeepSeek',status:credits.deepseek?.status==='ok'?'OK':'DOWN',detail:credits.deepseek?.balance});
+      const okStatus = (s?: string) => !!s && /^(active|ok|ready|up|healthy)$/i.test(s);
+      sources.push({name:'OpenAI',status:okStatus(credits.openai?.status)?'OK':'DOWN',detail:credits.openai?.balance});
+      sources.push({name:'DeepSeek',status:okStatus(credits.deepseek?.status)?'OK':'DOWN',detail:credits.deepseek?.balance});
     }
     // Heartbeat providers
     if(dash?.heartbeat?.providers){

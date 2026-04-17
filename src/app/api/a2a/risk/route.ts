@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { calculateAdaptiveSize } from '@/lib/v2/safety/adaptiveSizing';
+import { omegaEngine } from '@/lib/v2/superai/omegaEngine';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,10 +110,10 @@ export async function POST(request: Request) {
   const confidenceScaledRisk = baseRisk * confidence;
 
   // Adaptive sizing: adjust based on regime, drawdown, volatility, streak
-  // TODO: Wire real regime from marketRegime agent when available in request body
+  const currentRegime = body.regime || omegaEngine.getRegime().regime || 'unknown';
   const adaptiveResult = calculateAdaptiveSize({
     baseRiskFraction: confidenceScaledRisk,
-    regime: body.regime || 'unknown',
+    regime: currentRegime,
     currentMDD: body.currentMDD || 0,
     volatilityScore: body.volatilityScore || 50,
     consecutiveLosses: currentLossStreak,
