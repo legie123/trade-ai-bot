@@ -72,10 +72,10 @@ export async function GET(request: NextRequest) {
       const { GET: runSolana } = await import('@/app/api/solana-signals/route');
       const { GET: runMeme } = await import('@/app/api/meme-signals/route');
       
-      runBtc().catch(() => null);
-      runSolana().catch(() => null);
-      runMeme().catch(() => null);
-      log.info(`[Market Scanners] Background TA & Meme sweep triggered via direct function calls`);
+      // CRITICAL: await scanners — Cloud Run freezes process after response.
+      // Fire-and-forget promises never complete on serverless.
+      await Promise.allSettled([runBtc(), runSolana(), runMeme()]);
+      log.info(`[Market Scanners] TA & Meme sweep completed via direct function calls`);
     } catch (e) {
       log.error('Failed to trigger background scanners', { error: String(e) });
     }
