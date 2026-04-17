@@ -140,7 +140,7 @@ export async function getMexcPrice(symbol: string): Promise<number> {
     if (errMsg.includes('400') || errMsg.includes('Invalid symbol') || errMsg.includes('not found')) {
       addInvalidSymbol(symbol);
     } else {
-      log.warn(\`[MEXC] Transient error for \${symbol}, NOT blacklisting: \${errMsg.slice(0, 100)}\`);
+      log.warn(`[MEXC] Transient error for ${symbol}, NOT blacklisting: ${errMsg.slice(0, 100)}`);
     }
     return 0;
   }
