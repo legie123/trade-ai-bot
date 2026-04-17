@@ -5,6 +5,7 @@ import { startHeartbeat } from '@/lib/core/heartbeat';
 import { createLogger } from '@/lib/core/logger';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 import { DNAExtractor } from '@/lib/v2/superai/dnaExtractor';
+import { initDB } from '@/lib/store/db';
 
 const log = createLogger('CronLoop');
 
@@ -24,6 +25,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized. Set x-cron-secret header.' }, { status: 401 });
   }
   try {
+    // CRITICAL: Load Supabase cache (gladiators, decisions, etc.) before anything runs
+    await initDB();
+
     // Ensure heartbeat is running
     if (!loopStarted) {
       startHeartbeat();
