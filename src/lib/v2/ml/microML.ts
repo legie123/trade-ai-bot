@@ -254,8 +254,9 @@ export class MicroML {
   private async checkOnnxAvailable(): Promise<boolean> {
     if (this.onnxAvailable !== null) return this.onnxAvailable;
     try {
-      // @ts-expect-error — onnxruntime-node is an optional dependency
-      await import('onnxruntime-node');
+      // Use eval to hide from Turbopack static analysis — onnxruntime-node is optional
+      const _require = eval('require') as NodeRequire;
+      _require('onnxruntime-node');
       this.onnxAvailable = true;
       log.info('[ML] ONNX Runtime available');
     } catch {
@@ -285,8 +286,9 @@ export class MicroML {
         return null;
       }
 
-      // @ts-expect-error — onnxruntime-node is an optional dependency
-      const ort = await import('onnxruntime-node');
+      // Use eval to hide from Turbopack static analysis
+      const _require = eval('require') as NodeRequire;
+      const ort = _require('onnxruntime-node');
       const session = await ort.InferenceSession.create(modelPath);
 
       const model: CachedModel = {
@@ -308,8 +310,9 @@ export class MicroML {
   private async onnxInference(
     model: CachedModel, features: MLFeatures, t0: number,
   ): Promise<MLPrediction> {
-    // @ts-expect-error — onnxruntime-node is an optional dependency
-    const ort = await import('onnxruntime-node');
+    // Use eval to hide from Turbopack static analysis
+    const _require = eval('require') as NodeRequire;
+    const ort = _require('onnxruntime-node');
     const featureVec = buildFeatureVector(features);
 
     // Create input tensor [1, FEATURE_COUNT]
