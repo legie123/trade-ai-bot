@@ -58,10 +58,6 @@ export default function Sidebar() {
 
       {/* Bottom section */}
       <div className="sidebar-footer">
-        <div className={`sidebar-item`} style={{ cursor: 'default', opacity: 0.5 }}>
-          <span className="sidebar-item-icon">⚙️</span>
-          {expanded && <span className="sidebar-item-label">Settings</span>}
-        </div>
         <div className="sidebar-status">
           <span className="status-dot dot-green" />
           {expanded && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>PAPER MODE</span>}
