@@ -133,10 +133,15 @@ export async function getMexcPrice(symbol: string): Promise<number> {
   try {
     const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol }, false);
     return parseFloat(data.price as string) || 0;
-  } catch {
-    // Blacklist any symbol that consistently fails (timeout, invalid, network error)
-    // This prevents retry flooding on garbage symbols
-    addInvalidSymbol(symbol);
+  } catch (err) {
+    // SAFETY: Only blacklist on 400-level client errors (symbol genuinely invalid).
+    // Transient errors (timeout, 5xx, network) must NOT blacklist valid symbols like BTCUSDT.
+    const errMsg = String(err);
+    if (errMsg.includes('400') || errMsg.includes('Invalid symbol') || errMsg.includes('not found')) {
+      addInvalidSymbol(symbol);
+    } else {
+      log.warn(\`[MEXC] Transient error for \${symbol}, NOT blacklisting: \${errMsg.slice(0, 100)}\`);
+    }
     return 0;
   }
 }
