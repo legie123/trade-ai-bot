@@ -56,10 +56,23 @@ async function getDeepSeekBalance(): Promise<DeepSeekBalance | null> {
     }
 
     const data = await response.json();
+    log.info('DeepSeek raw balance response', { data: JSON.stringify(data) });
 
-    // Extract balance info
-    const balance = data.available_balance || data.balance || 0;
-    const monthlyExpense = data.used_tokens_this_month || 0;
+    // DeepSeek API returns: { is_available, balance_infos: [{ currency, total_balance, granted_balance, topped_up_balance }] }
+    let balance = 0;
+    if (data.balance_infos && Array.isArray(data.balance_infos)) {
+      // Sum all balances (could be CNY or USD entries)
+      for (const info of data.balance_infos) {
+        const total = parseFloat(info.total_balance) || 0;
+        balance += total;
+      }
+    } else {
+      // Fallback for legacy/alternative response shapes
+      balance = parseFloat(data.available_balance) || parseFloat(data.balance) || parseFloat(data.total_balance) || 0;
+    }
+
+    const isAvailable = data.is_available !== false;
+    const monthlyExpense = parseFloat(data.used_tokens_this_month) || 0;
     const totalTokens = data.total_usage || 0;
     const apiRequests = data.total_requests || 0;
 

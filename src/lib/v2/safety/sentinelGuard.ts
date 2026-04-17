@@ -1,7 +1,9 @@
 import { createLogger } from '@/lib/core/logger';
-import { getBotConfig, saveBotConfig, getDecisions, getEquityCurve } from '@/lib/store/db';
+import { getBotConfig, saveBotConfig, getDecisions, getEquityCurve, getLivePositions } from '@/lib/store/db';
 import { DualConsensus } from '@/lib/types/gladiator';
 import { Signal, DecisionSnapshot } from '@/lib/types/radar';
+import { checkCorrelation } from '@/lib/v2/safety/correlationGuard';
+import { emitSentinelVeto, emitKillSwitch } from '@/lib/v2/alerts/eventHub';
 
 const log = createLogger('SentinelGuard');
 
@@ -26,6 +28,14 @@ export class SentinelGuard {
    * Returns true if the signal is safe to proceed.
    */
   public async check(signal: Signal, consensus: DualConsensus): Promise<{ safe: boolean; reason?: string }> {
+    const result = await this._evaluate(signal, consensus);
+    if (!result.safe && result.reason) {
+      emitSentinelVeto(result.reason, { symbol: signal.symbol }).catch(() => {/* non-blocking */});
+    }
+    return result;
+  }
+
+  private async _evaluate(signal: Signal, consensus: DualConsensus): Promise<{ safe: boolean; reason?: string }> {
     const config = getBotConfig();
 
     // 1. System Status Check
@@ -68,6 +78,23 @@ export class SentinelGuard {
     const dailyCheck = this.checkDailyLoss();
     if (!dailyCheck.safe) {
       return { safe: false, reason: dailyCheck.reason };
+    }
+
+    // 5. Correlation Guard (Step 1.2) — Prevent highly correlated positions
+    try {
+      const openPositions = getLivePositions().filter(p => p.status === 'OPEN');
+      if (openPositions.length > 0) {
+        const corrCheck = checkCorrelation(
+          signal.symbol,
+          openPositions.map(p => ({ symbol: p.symbol, side: p.side })),
+        );
+        if (!corrCheck.allowed) {
+          return { safe: false, reason: corrCheck.reason || 'Correlated position blocked' };
+        }
+      }
+    } catch (corrErr) {
+      // Fail-open: if correlation check errors, don't block the trade
+      log.warn(`🛡️ [Sentinel] Correlation check error (fail-open): ${corrErr}`);
     }
 
     log.info(`🛡️ [Sentinel] Signal ${signal.id} for ${signal.symbol} APPROVED. Consensus: ${consensus.finalDirection}`);
@@ -252,6 +279,7 @@ export class SentinelGuard {
 
   public async triggerKillSwitch(reason: string): Promise<void> {
     log.error(`🚨 [KILL SWITCH] Activated! Reason: ${reason}`);
+    emitKillSwitch(reason, { source: 'SentinelGuard' }).catch(() => {/* non-blocking */});
     
     // 1. Set Cooldown (4 hours)
     const cooldownMs = 4 * 60 * 60 * 1000;

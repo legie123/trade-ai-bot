@@ -14,6 +14,8 @@
 
 import { createLogger } from '@/lib/core/logger';
 import { omegaExtractor } from '@/lib/v2/superai/omegaExtractor';
+import { logDecision } from '@/lib/v2/audit/decisionLog';
+import { emitTradeExecuted } from '@/lib/v2/alerts/eventHub';
 
 const log = createLogger('SwarmOrchestrator');
 
@@ -195,6 +197,51 @@ export class SwarmOrchestrator {
       `omega=${omegaMod}x consensus=${(consensusRatio * 100).toFixed(0)}% ` +
       `exec=${executionTriggered}`
     );
+
+    // ── Decision Audit Trail (Step 1.1) ──
+    const action = executionTriggered
+      ? (candidateDirection === 'LONG' ? 'EXECUTE_LONG' : 'EXECUTE_SHORT')
+      : 'SKIP';
+
+    logDecision({
+      timestamp: Date.now(),
+      symbol,
+      gladiatorId: context.gladiatorId ?? null,
+      mode: context.executeLive ? 'LIVE' : 'PAPER',
+      alphaQuantVote: alphaQuant,
+      sentimentVote: sentimentArena,
+      riskVote: risk ? {
+        approved: risk.approved,
+        positionSize: risk.positionSize,
+        riskPercent: risk.riskPercent,
+        stopLossPercent: risk.stopLossPercent,
+        denialReasons: risk.denialReasons,
+      } : null,
+      regime: null,              // will be enriched when regime agent is wired
+      omegaModifier: omegaMod,
+      consensusRatio,
+      debateVerdict: null,       // Step 2.1 — will populate after DebateEngine
+      sentinelSafe: riskApproved,
+      sentinelReason: (risk && !risk.approved) ? risk.denialReasons.join(', ') : null,
+      action: action as 'EXECUTE_LONG' | 'EXECUTE_SHORT' | 'SKIP',
+      skipReason: !executionTriggered
+        ? (risk && !risk.approved ? risk.denialReasons.join(', ') : 'No execution triggered')
+        : null,
+      slippage: null,
+      fillPrice: null,
+      latencyMs: null,
+      experienceInsight: null,   // Step 3.2 — will populate after ExperienceMemory
+    });
+
+    // EventHub emit (fire-and-forget)
+    if (executionTriggered) {
+      emitTradeExecuted(
+        symbol,
+        candidateDirection || 'UNKNOWN',
+        context.executeLive ? 'LIVE' : 'PAPER',
+        { consensusRatio, omegaMod, gladiatorId: context.gladiatorId ?? 'unknown' },
+      ).catch(() => {/* non-blocking */});
+    }
 
     return result;
   }

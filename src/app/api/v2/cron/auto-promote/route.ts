@@ -8,6 +8,7 @@ import { getKillSwitchState } from '@/lib/core/killSwitch';
 import { MonteCarloEngine } from '@/lib/v2/superai/monteCarloEngine';
 import { sendMessage } from '@/lib/alerts/telegram';
 import { requireCronAuth } from '@/lib/core/cronAuth';
+import { emitPromotion } from '@/lib/v2/alerts/eventHub';
 
 export const dynamic = 'force-dynamic';
 
@@ -166,7 +167,14 @@ export async function GET(request: Request) {
           },
         });
 
-        // Telegram notification
+        // EventHub + Telegram notification
+        await emitPromotion(candidate.name, {
+          arena: candidate.arena,
+          winRate: candidate.stats.winRate,
+          profitFactor: candidate.stats.profitFactor,
+          totalTrades: candidate.stats.totalTrades,
+          ruinProbability: mc.ruinProbability,
+        });
         await sendMessage(
           `🏆 *GLADIATOR PROMOTED TO LIVE*\n` +
           `Name: ${candidate.name}\n` +

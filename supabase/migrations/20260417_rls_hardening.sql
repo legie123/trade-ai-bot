@@ -23,7 +23,7 @@ DROP POLICY IF EXISTS "service_all" ON syndicate_audits;
 CREATE POLICY "anon_read" ON syndicate_audits
   FOR SELECT USING (true);
 CREATE POLICY "service_write" ON syndicate_audits
-  FOR INSERT USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
 -- ─── gladiator_battles ───
 ALTER TABLE IF EXISTS gladiator_battles ENABLE ROW LEVEL SECURITY;
@@ -31,7 +31,7 @@ DROP POLICY IF EXISTS "service_all" ON gladiator_battles;
 CREATE POLICY "anon_read" ON gladiator_battles
   FOR SELECT USING (true);
 CREATE POLICY "service_write" ON gladiator_battles
-  FOR INSERT USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
 -- ─── live_positions (SENSITIVE — real money) ───
 ALTER TABLE IF EXISTS live_positions ENABLE ROW LEVEL SECURITY;
@@ -46,7 +46,7 @@ DROP POLICY IF EXISTS "service_all" ON equity_history;
 CREATE POLICY "anon_read" ON equity_history
   FOR SELECT USING (true);
 CREATE POLICY "service_write" ON equity_history
-  FOR INSERT USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
 -- ─── trade_locks (SENSITIVE — prevents double-execution) ───
 ALTER TABLE IF EXISTS trade_locks ENABLE ROW LEVEL SECURITY;
@@ -59,25 +59,25 @@ CREATE POLICY "service_only" ON trade_locks
 DROP POLICY IF EXISTS "service_all" ON poly_paper_signals;
 CREATE POLICY "anon_read" ON poly_paper_signals FOR SELECT USING (true);
 CREATE POLICY "service_write" ON poly_paper_signals
-  FOR INSERT USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
 -- poly_backtest_snapshots
 DROP POLICY IF EXISTS "service_all" ON poly_backtest_snapshots;
 CREATE POLICY "anon_read" ON poly_backtest_snapshots FOR SELECT USING (true);
 CREATE POLICY "service_write" ON poly_backtest_snapshots
-  FOR INSERT USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
 -- poly_backtest_snapshots_division
 DROP POLICY IF EXISTS "service_all" ON poly_backtest_snapshots_division;
 CREATE POLICY "anon_read" ON poly_backtest_snapshots_division FOR SELECT USING (true);
 CREATE POLICY "service_write" ON poly_backtest_snapshots_division
-  FOR INSERT USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
 -- poly_ranker_config
 DROP POLICY IF EXISTS "service_all" ON poly_ranker_config;
 CREATE POLICY "anon_read" ON poly_ranker_config FOR SELECT USING (true);
 CREATE POLICY "service_write" ON poly_ranker_config
-  FOR INSERT USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
 -- poly_ranker_active
 DROP POLICY IF EXISTS "service_all" ON poly_ranker_active;

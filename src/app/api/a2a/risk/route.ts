@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+import { calculateAdaptiveSize } from '@/lib/v2/safety/adaptiveSizing';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,10 @@ interface RiskRequest {
   dailyLossCount?: number;       // How many losses today (for daily limit)
   currentWinRate?: number;       // Current session WR
   currentLossStreak?: number;    // Consecutive losses
+  // Step 1.3: Adaptive sizing inputs (optional — defaults to safe values)
+  regime?: string;               // Market regime (BULL/BEAR/RANGE/etc)
+  currentMDD?: number;           // Current max drawdown (0-1)
+  volatilityScore?: number;      // Volatility 0-100
 }
 
 // Sentinel thresholds (mirroring SentinelGuard hardcoded limits)
@@ -99,10 +104,22 @@ export async function POST(request: Request) {
     ? liveGladiators.reduce((s, g) => s + g.stats.winRate, 0) / liveGladiators.length
     : 0;
 
-  // ── Position sizing ──
+  // ── Position sizing (Step 1.3: Regime-Adaptive) ──
   // Base risk: 2% of equity, scaled by confidence
   const baseRisk = SENTINEL.maxRiskPerTrade;
-  const scaledRisk = parseFloat((baseRisk * confidence).toFixed(4));
+  const confidenceScaledRisk = baseRisk * confidence;
+
+  // Adaptive sizing: adjust based on regime, drawdown, volatility, streak
+  // TODO: Wire real regime from marketRegime agent when available in request body
+  const adaptiveResult = calculateAdaptiveSize({
+    baseRiskFraction: confidenceScaledRisk,
+    regime: body.regime || 'unknown',
+    currentMDD: body.currentMDD || 0,
+    volatilityScore: body.volatilityScore || 50,
+    consecutiveLosses: currentLossStreak,
+  });
+
+  const scaledRisk = parseFloat(adaptiveResult.adjustedFraction.toFixed(4));
   const positionSize = parseFloat((currentEquity * scaledRisk).toFixed(2));
 
   // Stop-loss: 1.5× ATR proxy — simplified as 1.5% of entry price
@@ -123,6 +140,13 @@ export async function POST(request: Request) {
     denialReasons,
     liveGladiators: liveGladiators.length,
     avgLiveWinRate: parseFloat(avgLiveWR.toFixed(2)),
+    adaptiveSizing: {
+      regimeMultiplier: adaptiveResult.regimeMultiplier,
+      drawdownMultiplier: adaptiveResult.drawdownMultiplier,
+      volatilityPenalty: adaptiveResult.volatilityPenalty,
+      streakPenalty: adaptiveResult.streakPenalty,
+      reasoning: adaptiveResult.reasoning,
+    },
     timestamp: Date.now(),
   });
 }
