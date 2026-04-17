@@ -76,9 +76,11 @@ export async function GET() {
          
          if (gladiator) {
            log.info(`[V2 TRIGGER] Processing internal BTC signal with Gladiator: ${gladiator.name}`);
-           manager.processSignal(gladiator, routed).catch(err => {
-             log.error('[V2 CRITICAL] Phoenix Process Error (BTC)', { error: err.message });
-           });
+           try {
+             await manager.processSignal(gladiator, routed);
+           } catch (err) {
+             log.error('[V2 CRITICAL] Phoenix Process Error (BTC)', { error: (err as Error).message });
+           }
          }
       }
     }

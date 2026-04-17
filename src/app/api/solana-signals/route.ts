@@ -62,9 +62,11 @@ export async function GET() {
              
              if (gladiator) {
                log.info(`[V2 TRIGGER] Processing internal SOL signal with Gladiator: ${gladiator.name}`);
-               manager.processSignal(gladiator, routed).catch((err: unknown) => {
+               try {
+                 await manager.processSignal(gladiator, routed);
+               } catch (err) {
                  log.error('[V2 CRITICAL] Phoenix Process Error (SOL)', { error: (err as Error).message });
-               });
+               }
              }
          }
       }

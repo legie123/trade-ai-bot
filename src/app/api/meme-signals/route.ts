@@ -29,9 +29,11 @@ export async function GET() {
           const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
           if (gladiator) {
             log.info(`[MEME TRIGGER] Processing MEME signal with Gladiator: ${gladiator.name}`);
-            manager.processSignal(gladiator, routed).catch((err: unknown) => {
+            try {
+              await manager.processSignal(gladiator, routed);
+            } catch (err) {
               log.error('[MEME CRITICAL] Phoenix Process Error', { error: (err as Error).message });
-            });
+            }
           }
         }
       }
