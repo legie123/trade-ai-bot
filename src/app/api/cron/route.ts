@@ -120,21 +120,28 @@ export async function GET(request: NextRequest) {
     const mexcSymbols = allSymbols.map(toMexc);
 
     // OMEGA OPTIMIZATION: Use Batch Price fetcher. One request, no rate-limit delay.
-    let rawPriceCache: Record<string, number> = {};
+    // DIRECT PRICE FETCH: bypass getMexcPrices entirely — fetch each symbol raw
+    const rawPriceCache: Record<string, number> = {};
     let priceError = '';
-    let directTest = '';
-    // DIRECT TEST: Try fetching BTCUSDT price raw
-    try {
-      const testResp = await fetch('https://api.mexc.com/api/v3/ticker/price?symbol=BTCUSDT', { signal: AbortSignal.timeout(5000) });
-      const testData = await testResp.json();
-      directTest = JSON.stringify(testData).slice(0, 100);
-    } catch (testErr) {
-      directTest = 'FETCH_FAIL: ' + String(testErr).slice(0, 150);
-    }
-    try {
-      rawPriceCache = await getMexcPrices(mexcSymbols);
-    } catch (pErr) {
-      priceError = String(pErr).slice(0, 200);
+    const directTest = '';
+    const fetchOne = async (sym: string) => {
+      try {
+        const resp = await fetch(
+          'https://api.mexc.com/api/v3/ticker/price?symbol=' + encodeURIComponent(sym),
+          { signal: AbortSignal.timeout(5000) }
+        );
+        const d = await resp.json() as { symbol?: string; price?: string };
+        if (d.price) {
+          const p = parseFloat(d.price);
+          if (!isNaN(p) && p > 0) rawPriceCache[sym] = p;
+        }
+      } catch (err) {
+        priceError += sym + ':' + String(err).slice(0, 50) + '; ';
+      }
+    };
+    // Fetch sequentially to avoid rate limits
+    for (const sym of mexcSymbols) {
+      await fetchOne(sym);
     }
 
     log.info(`[CronDebug] mexcSymbols=${mexcSymbols.join(',')}, rawPriceCount=${Object.keys(rawPriceCache).length}`);
