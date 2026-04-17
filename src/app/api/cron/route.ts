@@ -120,7 +120,13 @@ export async function GET(request: NextRequest) {
     const mexcSymbols = allSymbols.map(toMexc);
 
     // OMEGA OPTIMIZATION: Use Batch Price fetcher. One request, no rate-limit delay.
-    const rawPriceCache = await getMexcPrices(mexcSymbols);
+    let rawPriceCache: Record<string, number> = {};
+    let priceError = '';
+    try {
+      rawPriceCache = await getMexcPrices(mexcSymbols);
+    } catch (pErr) {
+      priceError = String(pErr).slice(0, 200);
+    }
 
     log.info(`[CronDebug] mexcSymbols=${mexcSymbols.join(',')}, rawPriceCount=${Object.keys(rawPriceCache).length}`);
     // Build dual-key cache: both 'BTCUSDT' and 'BTC' point to the same price
@@ -215,7 +221,7 @@ export async function GET(request: NextRequest) {
       mainDecisionsEvaluated,
       livePositionsUpdated,
       pricesFetched: Object.keys(priceCache).length,
-      _debug: { pendingCount: pending.length, eligibleCount: eligibleDecisions.length, mexcSymbols: mexcSymbols.join(','), rawPriceKeys: Object.keys(rawPriceCache).slice(0,5).join(',') },
+      _debug: { pendingCount: pending.length, eligibleCount: eligibleDecisions.length, mexcSymbols: mexcSymbols.join(','), rawPriceKeys: Object.keys(rawPriceCache).slice(0,5).join(','), priceError },
       forgeProgress: forgeStats.progressPercent,
       timestamp: new Date().toISOString(),
     });
