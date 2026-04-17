@@ -155,12 +155,26 @@ export async function getMexcTicker24h(symbol: string): Promise<Record<string, u
  * Bypasses the 60ms individual rate-limiter.
  */
 export async function getMexcPrices(symbols?: string[]): Promise<Record<string, number>> {
+  // STRATEGY: If we have a small set of symbols, fetch each individually.
+  // The ALL-tickers endpoint returns ~2500 items and often times out on Cloud Run (8s limit).
+  if (symbols && symbols.length > 0 && symbols.length <= 30) {
+    const results: Record<string, number> = {};
+    const fetches = symbols.map(async (sym) => {
+      try {
+        const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol: sym }, false);
+        const price = parseFloat(data.price as string);
+        if (!isNaN(price) && price > 0) results[sym] = price;
+      } catch {
+        // Skip failed individual fetches silently
+      }
+    });
+    await Promise.allSettled(fetches);
+    return results;
+  }
+
+  // Fallback: fetch ALL tickers (for large sets or no filter)
   try {
-    // If we call without symbols, MEXC returns ALL. 
-    // If we have a few symbols, it's often faster to just get all and filter locally 
-    // than to make individual calls with rate-limiting.
     const data = await mexcRequest('GET', '/api/v3/ticker/price', {}, false) as unknown as { symbol: string; price: string }[];
-    
     const results: Record<string, number> = {};
     if (Array.isArray(data)) {
       data.forEach(item => {
