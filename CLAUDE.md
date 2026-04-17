@@ -27,7 +27,7 @@ NU schimb endpoint-uri API/Supabase fara aprobare.
 NU force-deploy / force-push peste pipeline existent.
 
 ## 5. DEPLOYMENT HARD-LOCK
-`TRADE AI/` → `trade-ai-657910053930`. Safe-check `pwd` inainte de deploy. Mismatch → BLOCKED.
+`TRADE AI/` → GCP project `evident-trees-453923-f9`, Cloud Run service `trade-ai`, region `europe-west1`. Safe-check `pwd` inainte de deploy. Mismatch → BLOCKED.
 
 ## 6. FORMAT RASPUNS
 **Implementare:** STATUS → FINDINGS → ACTION → VALIDATION → NEXT
