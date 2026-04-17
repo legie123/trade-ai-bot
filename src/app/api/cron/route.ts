@@ -107,7 +107,6 @@ export async function GET(request: NextRequest) {
       return elapsedMin > 10;
     });
 
-    log.info(`[CronDebug] pending=${pending.length}, eligible=${eligibleDecisions.length}, symbols=${eligibleDecisions.map(d=>d.symbol).slice(0,5).join(',')}`);
     const uniqueSymbols = [...new Set(eligibleDecisions.map(d => d.symbol))];
 
     // Fetch all unique prices in parallel for decisions and live positions
@@ -123,7 +122,6 @@ export async function GET(request: NextRequest) {
     // DIRECT PRICE FETCH: bypass getMexcPrices entirely — fetch each symbol raw
     const rawPriceCache: Record<string, number> = {};
     let priceError = '';
-    const directTest = '';
     const fetchOne = async (sym: string) => {
       try {
         const resp = await fetch(
@@ -144,7 +142,6 @@ export async function GET(request: NextRequest) {
       await fetchOne(sym);
     }
 
-    log.info(`[CronDebug] mexcSymbols=${mexcSymbols.join(',')}, rawPriceCount=${Object.keys(rawPriceCache).length}`);
     // Build dual-key cache: both 'BTCUSDT' and 'BTC' point to the same price
     const priceCache: Record<string, number> = {};
     for (const [mexcSym, price] of Object.entries(rawPriceCache)) {
@@ -237,7 +234,6 @@ export async function GET(request: NextRequest) {
       mainDecisionsEvaluated,
       livePositionsUpdated,
       pricesFetched: Object.keys(priceCache).length,
-      _debug: { pendingCount: pending.length, eligibleCount: eligibleDecisions.length, mexcSymbols: mexcSymbols.join(','), rawPriceKeys: Object.keys(rawPriceCache).slice(0,5).join(','), priceError, directTest },
       forgeProgress: forgeStats.progressPercent,
       timestamp: new Date().toISOString(),
     });
