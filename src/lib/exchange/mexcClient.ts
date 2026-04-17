@@ -164,11 +164,12 @@ export async function getMexcPrices(symbols?: string[]): Promise<Record<string, 
         const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol: sym }, false);
         const price = parseFloat(data.price as string);
         if (!isNaN(price) && price > 0) results[sym] = price;
-      } catch {
-        // Skip failed individual fetches silently
+      } catch (fetchErr) {
+        log.warn(`[MEXC] Individual price fetch failed for ${sym}: ${String(fetchErr).slice(0, 100)}`);
       }
     });
     await Promise.allSettled(fetches);
+    log.info(`[MEXC] Individual fetch: ${symbols.length} requested, ${Object.keys(results).length} returned`);
     return results;
   }
 
