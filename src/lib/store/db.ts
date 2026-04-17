@@ -280,7 +280,10 @@ export function addDecision(snapshot: DecisionSnapshot): void {
   if (cache.decisions.some((d) => d.signalId === snapshot.signalId)) return;
 
   // Calibration #13: Final confidence floor — reject garbage signals at DB level
-  if (snapshot.confidence < 65 && snapshot.signal !== 'NEUTRAL') {
+  // PAPER mode: lower floor to 20% to collect training data. LIVE: strict 65%.
+  const isPaperMode = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+  const CONFIDENCE_FLOOR = isPaperMode ? 20 : 65;
+  if (snapshot.confidence < CONFIDENCE_FLOOR && snapshot.signal !== 'NEUTRAL') {
     return; // Silent drop — engine should have caught this
   }
   
