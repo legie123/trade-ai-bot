@@ -15,16 +15,31 @@ export async function GET() {
     status: 'RUNNING',
   };
 
-  // ─── 1. MEXC Latency Test ───
+  // ─── 1. MEXC Connectivity Test ───
   try {
     const { getMexcServerTime, getMexcBalances } = await import('@/lib/exchange/mexcClient');
+    const { isPaperMode } = await import('@/lib/core/tradingMode');
     const mexcStart = Date.now();
     const serverTime = await getMexcServerTime();
     const mexcLatency = Date.now() - mexcStart;
-    
-    const balances = await getMexcBalances();
-    const usdtBalance = balances.find(b => b.asset === 'USDT')?.free || 0;
-    const totalAssets = balances.length;
+
+    // In PAPER mode, only test public endpoints (prices). Private endpoints (balances) need valid API keys + IP whitelist.
+    let usdtBalance = 0;
+    let totalAssets = 0;
+    let balanceNote: string | undefined;
+
+    if (isPaperMode()) {
+      balanceNote = 'PAPER mode — private endpoints skipped (not needed)';
+    } else {
+      try {
+        const balances = await getMexcBalances();
+        usdtBalance = balances.find(b => b.asset === 'USDT')?.free || 0;
+        totalAssets = balances.length;
+      } catch (balErr) {
+        // In LIVE mode, balance failure is still just a warning, not a full MEXC failure
+        balanceNote = `Balance check failed: ${(balErr as Error).message}`;
+      }
+    }
 
     report.mexc = {
       status: 'OK',
@@ -34,6 +49,7 @@ export async function GET() {
       usdtBalance: parseFloat(usdtBalance.toFixed(2)),
       totalAssets,
       healthGrade: mexcLatency < 500 ? 'A' : mexcLatency < 1500 ? 'B' : 'C',
+      ...(balanceNote ? { note: balanceNote } : {}),
     };
   } catch (err) {
     report.mexc = { status: 'ERROR', error: (err as Error).message };
