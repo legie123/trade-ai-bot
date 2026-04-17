@@ -357,7 +357,7 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
     if (!vwap.confirmed) {
       confirmedSignals.push({
         signal: 'NEUTRAL',
-        reason: `${sig.reason} — REJECTED by VWAP (Vol ${vwap.volumeRatio}x, need 1.2x)`,
+        reason: `${sig.reason} — REJECTED by VWAP (Vol ${vwap.volumeRatio}x)`,
       });
       log.info(`BTC signal ${sig.signal} rejected by VWAP`, { ratio: vwap.volumeRatio });
       continue;

@@ -114,8 +114,8 @@ export async function checkVWAP(
   // PAPER mode uses relaxed thresholds to generate training data for gladiators.
   // LIVE mode uses strict institutional thresholds.
   const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
-  const TREND_VOL_THRESHOLD = isPaper ? 0.3 : 1.5;      // Paper: any activity ok | Live: need 1.5x surge
-  const MEAN_REV_VOL_THRESHOLD = isPaper ? 0.2 : 1.2;   // Paper: minimal ok     | Live: need 1.2x
+  const TREND_VOL_THRESHOLD = isPaper ? 0.1 : 1.5;      // Paper: near-zero floor | Live: need 1.5x surge
+  const MEAN_REV_VOL_THRESHOLD = isPaper ? 0.05 : 1.2;  // Paper: near-zero floor | Live: need 1.2x
   const volumeSurge = volumeRatio >= TREND_VOL_THRESHOLD;
 
   // 5. Final confirmation logic
