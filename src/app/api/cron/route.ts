@@ -215,6 +215,7 @@ export async function GET(request: NextRequest) {
       mainDecisionsEvaluated,
       livePositionsUpdated,
       pricesFetched: Object.keys(priceCache).length,
+      _debug: { pendingCount: pending.length, eligibleCount: eligibleDecisions.length, mexcSymbols: mexcSymbols.join(','), rawPriceKeys: Object.keys(rawPriceCache).slice(0,5).join(',') },
       forgeProgress: forgeStats.progressPercent,
       timestamp: new Date().toISOString(),
     });
