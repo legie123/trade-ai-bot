@@ -6,6 +6,10 @@
 import { NextRequest } from 'next/server';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { captureSnapshot, recentSnapshots, snapshotStats } from '@/lib/polymarket/backtestSnapshots';
+// FIX 2026-04-18: Cron auth pe POST (captureSnapshot = mutatie + operatie costisitoare).
+// PUBLIC_PREFIXES include /api/v2/polymarket → subrutele erau deschise. Restrictionam POST
+// la CRON_SECRET ca sa blocam DoS + mutatii neautorizate. GET ramane public (observability).
+import { requireCronAuth } from '@/lib/core/cronAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +32,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    // FIX 2026-04-18: Gate CRON_SECRET. GET observability ramane public.
+    const authError = requireCronAuth(req);
+    if (authError) return authError;
+
     const { searchParams } = new URL(req.url);
     const minEdge = parseInt(searchParams.get('minEdge') || '50', 10);
     const notional = parseInt(searchParams.get('notional') || '100', 10);

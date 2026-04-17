@@ -12,6 +12,10 @@ import {
   refreshActiveConfig,
   promoteFloor,
 } from '@/lib/polymarket/rankerConfig';
+// FIX 2026-04-18: Protectie auth pe POST (mutatie runtime). PUBLIC_PREFIXES din middleware
+// include /api/v2/polymarket prin startsWith → orice subruta e public. POST promoteFloor
+// era accesibil oricui dacă POLY_EDGE_AUTOPROMOTE=true. Single consumer HTTP: UI cookie.
+import { isAuthenticated } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +35,10 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    // FIX 2026-04-18: Auth gate — altfel oricine poate apela promoteFloor daca env-ul e pornit.
+    if (!isAuthenticated(req)) {
+      return errorResponse('UNAUTHORIZED', 'Valid auth token required for ranker config mutation', 401);
+    }
     const body = (await req.json().catch(() => ({}))) as {
       global?: number;
       perDivision?: Record<string, number>;
