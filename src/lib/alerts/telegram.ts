@@ -54,6 +54,7 @@ export async function sendAlert(alert: TelegramAlert): Promise<boolean> {
     const res = await fetch(`${BASE_URL()}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(5000),
       body: JSON.stringify({
         chat_id: CHAT_ID(),
         text,
@@ -89,6 +90,7 @@ export async function sendMessage(text: string): Promise<boolean> {
     const res = await fetch(`${BASE_URL()}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(5000),
       body: JSON.stringify({
         chat_id: CHAT_ID(),
         text,
@@ -128,7 +130,7 @@ export async function testTelegram(): Promise<{ ok: boolean; botName?: string; e
   if (!BOT_TOKEN()) return { ok: false, error: 'Bot token not set' };
 
   try {
-    const res = await fetch(`${BASE_URL()}/getMe`);
+    const res = await fetch(`${BASE_URL()}/getMe`, { signal: AbortSignal.timeout(5000) });
     const data = await res.json();
     if (data.ok) {
       return { ok: true, botName: data.result?.username };

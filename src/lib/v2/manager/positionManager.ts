@@ -11,6 +11,12 @@ import { experienceMemory } from '@/lib/v2/memory/experienceMemory';
 
 const log = createLogger('PositionManager');
 
+/** Safe PnL calculation — guards against division by zero on entryPrice */
+function calcPnlPercent(currentPrice: number, entryPrice: number, isLong: boolean): number {
+  if (!entryPrice || entryPrice <= 0) return 0;
+  return ((currentPrice - entryPrice) / entryPrice) * 100 * (isLong ? 1 : -1);
+}
+
 /**
  * Step 3.2 wiring: Record trade outcome to Experience Memory.
  * Called after every position close (TP, trailing exit, SL).
@@ -144,7 +150,7 @@ export class PositionManager {
           });
 
           // DNA LEARNING: Log partial TP as a WIN to the RL loop
-          const pnl = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100 * (isLong ? 1 : -1);
+          const pnl = calcPnlPercent(currentPrice, pos.entryPrice, isLong);
           await DNAExtractor.getInstance().logBattle({
             id: `live_tp_${pos.id}`,
             gladiatorId: pos.id.replace('pos_', ''),
@@ -212,7 +218,7 @@ export class PositionManager {
             });
 
             // DNA LEARNING: Log trailing exit
-            const trailPnl = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100 * (isLong ? 1 : -1);
+            const trailPnl = calcPnlPercent(currentPrice, pos.entryPrice, isLong);
             await DNAExtractor.getInstance().logBattle({
               id: `live_trail_${pos.id}`,
               gladiatorId: pos.id.replace('pos_', ''),
@@ -272,7 +278,7 @@ export class PositionManager {
             });
 
             // DNA LEARNING: Log stop loss as LOSS — critical for RL
-            const slPnl = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100 * (isLong ? 1 : -1);
+            const slPnl = calcPnlPercent(currentPrice, pos.entryPrice, isLong);
             await DNAExtractor.getInstance().logBattle({
               id: `live_sl_${pos.id}`,
               gladiatorId: pos.id.replace('pos_', ''),

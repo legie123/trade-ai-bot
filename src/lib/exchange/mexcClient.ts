@@ -159,8 +159,9 @@ export async function getMexcPrices(symbols?: string[]): Promise<Record<string, 
     const results: Record<string, number> = {};
     if (Array.isArray(data)) {
       data.forEach(item => {
-        if (!symbols || symbols.includes(item.symbol)) {
-          results[item.symbol] = parseFloat(item.price);
+        if ((!symbols || symbols.includes(item.symbol)) && item.price != null) {
+          const parsed = parseFloat(item.price);
+          if (!isNaN(parsed)) results[item.symbol] = parsed;
         }
       });
     }

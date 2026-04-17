@@ -83,18 +83,16 @@ async function hydrateFromSupabase(): Promise<void> {
 // Fire-and-forget hydration at module load
 hydrateFromSupabase().catch(() => {});
 
-function persistState(): void {
+async function persistState(): Promise<void> {
   if (!supabase) {
     log.warn('Kill switch state NOT persisted — Supabase not configured');
     return;
   }
-  supabase
+  const { error } = await supabase
     .from('json_store')
-    .upsert({ id: 'kill_switch', data: { ...state }, updated_at: new Date().toISOString() })
-    .then(({ error }) => {
-      if (error) log.error('Failed to persist kill switch to Supabase', { error: error.message });
-      else log.debug('Kill switch state persisted to Supabase');
-    });
+    .upsert({ id: 'kill_switch', data: { ...state }, updated_at: new Date().toISOString() });
+  if (error) log.error('Failed to persist kill switch to Supabase', { error: error.message });
+  else log.debug('Kill switch state persisted to Supabase');
 }
 
 // ─── Engage kill switch ─────────────────────────────
@@ -104,7 +102,7 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
   state.reason = reason;
   state.autoEngaged = auto;
   state.manualOverride = !auto;
-  persistState();
+  await persistState();
 
   log.fatal(`KILL SWITCH ENGAGED: ${reason}`, { auto, reason });
 
@@ -182,7 +180,7 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
 }
 
 // ─── Disengage kill switch ──────────────────────────
-export function disengageKillSwitch(): void {
+export async function disengageKillSwitch(): Promise<void> {
   state.engaged = false;
   state.engagedAt = null;
   state.reason = null;
@@ -190,7 +188,7 @@ export function disengageKillSwitch(): void {
   state.manualOverride = false;
   state.dailyLossTriggered = false;
   state.maxExposureTriggered = false;
-  persistState();
+  await persistState();
 
   log.info('Kill switch disengaged');
 }
@@ -285,7 +283,7 @@ export function getKillSwitchState(): KillSwitchState {
 }
 
 // ─── Reset daily triggers (call at start of new day) ─
-export function resetDailyTriggers(): void {
+export async function resetDailyTriggers(): Promise<void> {
   state.dailyLossTriggered = false;
   state.maxExposureTriggered = false;
   state.velocityTriggered = false;
@@ -296,8 +294,8 @@ export function resetDailyTriggers(): void {
     velocityWindow.shift();
   }
   if (state.autoEngaged && !state.manualOverride) {
-    disengageKillSwitch();
+    await disengageKillSwitch();
     log.info('Kill switch auto-disengaged on new day');
   }
-  persistState();
+  await persistState();
 }

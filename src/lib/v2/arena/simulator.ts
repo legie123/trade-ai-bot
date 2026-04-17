@@ -95,7 +95,7 @@ export class ArenaSimulator {
       
       // Calculate real PnL based on signal direction
       const isLongSignal = trade.signal === 'BUY' || trade.signal === 'LONG';
-      const rawPnl = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+      const rawPnl = trade.entryPrice > 0 ? ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100 : 0;
       const pnlPercent = isLongSignal ? rawPnl : -rawPnl;
       
       // Eligibility rules: HIT Take-Profit, HIT Stop-Loss, or EXPIRED (stale)
