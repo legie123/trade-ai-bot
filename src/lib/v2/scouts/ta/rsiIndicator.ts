@@ -108,14 +108,17 @@ export function analyzeRSI(
   const BUY_RSI_MIN = isPaper ? 35 : 45;   // Paper: accept weaker momentum | Live: need 45+
   const SELL_RSI_MAX = isPaper ? 65 : 55;   // Paper: accept higher RSI sells | Live: need <55
 
+  // PAPER mode: relax overbought cap to 80 for training data. LIVE: strict 70.
+  const BUY_RSI_MAX = isPaper ? 80 : 70;
+
   if (proposedSignal === 'BUY') {
-    if (rsi > BUY_RSI_MIN && rsi < 70) {
+    if (rsi > BUY_RSI_MIN && rsi < BUY_RSI_MAX) {
       confirmsSignal = true;
       reason = `RSI ${Math.round(rsi)} — Bullish momentum, room to run`;
     } else if (rsi <= 30) {
       confirmsSignal = true;
       reason = `RSI ${Math.round(rsi)} — Oversold bounce potential`;
-    } else if (rsi >= 70) {
+    } else if (rsi >= BUY_RSI_MAX) {
       confirmsSignal = false;
       reason = `RSI ${Math.round(rsi)} — OVERBOUGHT, BUY risky`;
     } else {

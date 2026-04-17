@@ -153,14 +153,26 @@ export class ManagerVizionar {
 
     log.info(`[RL] ${intelligence.gladiatorId}: confidence ${(consensus.weightedConfidence * 100).toFixed(1)}% → ${(final * 100).toFixed(1)}% (mod: ${mod}, symPen: ${symbolPenalty}, cap: ${confidenceCap})`);
 
+    // PAPER MODE: Lower FLAT threshold to generate training data (0.25 vs 0.5 for LIVE)
+    const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+    const FLAT_THRESHOLD = isPaper ? 0.25 : 0.5;
+
     return {
       ...consensus,
       weightedConfidence: final,
-      finalDirection: final < 0.5 ? 'FLAT' : consensus.finalDirection,
+      finalDirection: final < FLAT_THRESHOLD ? 'FLAT' : consensus.finalDirection,
     };
   }
 
   private async routeSignal(gladiator: Gladiator, payload: Signal, consensus: DualConsensus) {
+    // PAPER MODE: All gladiators execute via shadow mode (no MEXC, no position locks)
+    const isPaperMode = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+    if (isPaperMode) {
+      log.info(`[PAPER ROUTE] ${gladiator.id} → shadow execution for ${payload.symbol} (paper mode active)`);
+      await this.executeShadowMode(gladiator.id, payload, consensus);
+      return;
+    }
+
     // ═══ GLADIATOR MIN WR GATE: Block underperforming gladiators from live execution ═══
     if (gladiator.isLive) {
       const dna = this.dnaExtractor.extractIntelligence(gladiator.id);
