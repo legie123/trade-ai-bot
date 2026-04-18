@@ -57,11 +57,14 @@ export async function GET() {
     const rsiValue = rsiMatch ? parseInt(rsiMatch[1], 10) : 50;
     const rsiZone = rsiValue >= 70 ? 'OVERBOUGHT' : rsiValue <= 30 ? 'OVERSOLD' : 'NEUTRAL';
 
-    // VWAP estimate from BTC price (simplified with volume scaling)
-    const vwapValue = btcPrice * 0.985; // conservative estimate (VWAP typically near but below price in uptrend)
-    const volumeRatio = 1.5 + Math.random() * 1.5; // will be replaced with real volume data
-    
-    // Bollinger Bands estimate as percentage around price
+    // VWAP estimate from BTC price (simplified — NOT real VWAP, flagged isEstimate)
+    const vwapValue = btcPrice * 0.985;
+    // FIX 2026-04-18 (DAILY-AUDIT W1): eliminate Math.random volumeRatio.
+    // No real volume feed wired here. Return null + isEstimate=true so UI shows N/A instead of fake data.
+    // Downstream conviction scoring uses its own volumeRatio computed from real engines — this route is UI-only.
+    const volumeRatio: number | null = null;
+
+    // Bollinger Bands estimate as percentage around price (still estimate, flagged)
     const bbSpread = btcPrice * 0.025;
     
     // Derive regime from signals
@@ -73,12 +76,14 @@ export async function GET() {
       regime,
       fearGreed,
       rsi: { value: rsiValue, zone: rsiZone },
-      vwap: { value: Math.round(vwapValue * 100) / 100, volumeRatio: volumeRatio.toFixed(2), volumeSurge: volumeRatio > 2.5 },
+      // volumeRatio intentionally null — no real volume feed; consumers must treat as N/A.
+      vwap: { value: Math.round(vwapValue * 100) / 100, volumeRatio, volumeSurge: false, isEstimate: true },
       bollingerBands: {
         upper: Math.round((btcPrice + bbSpread) * 100) / 100,
         middle: btcPrice,
         lower: Math.round((btcPrice - bbSpread) * 100) / 100,
         bandwidth: ((bbSpread * 2) / btcPrice * 100).toFixed(2),
+        isEstimate: true,
       },
       btcPrice,
       timestamp: new Date().toISOString(),

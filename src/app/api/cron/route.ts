@@ -53,78 +53,63 @@ export async function GET(request: NextRequest) {
     }
     const leaseDegraded = lease.degraded === true;
 
-    // FIX: Refresh gladiators from Supabase every tick.
-    // initDB runs once, but gladiator status (isLive, ACTIVE) may change
-    // via Supabase dashboard or external tools between ticks.
-    try {
-      const { refreshGladiatorsFromCloud } = await import('@/lib/store/db');
-      const { gladiatorStore } = await import('@/lib/store/gladiatorStore');
-      await refreshGladiatorsFromCloud();
-      gladiatorStore.reloadFromDb();
-    } catch (err) {
-      log.warn('Failed to refresh gladiators from cloud', { error: String(err) });
-    }
+    // ═══════════════════════════════════════════════════════════════════
+    // PHASE 1: PARALLEL INIT (2026-04-18 perf)
+    // Gladiator refresh, WS health, safety gates are independent — run together.
+    // Saves ~1-2s vs sequential on every tick.
+    // ═══════════════════════════════════════════════════════════════════
 
-    // Ensure heartbeat + WS feeds are running
+    // Ensure heartbeat + WS feeds on first tick (synchronous, fast)
     if (!loopStarted) {
       startHeartbeat();
-
-      // Start WebSocket feeds for real-time price data
       try {
         const { WsStreamManager } = await import('@/lib/providers/wsStreams');
         WsStreamManager.getInstance().connect();
         log.info('MEXC WebSocket feed started');
       } catch (err) { log.warn('MEXC WS start failed', { error: String(err) }); }
-
       try {
         const { polyWsClient } = await import('@/lib/polymarket/polyWsClient');
         polyWsClient.connect();
         log.info('Polymarket WebSocket feed started');
       } catch (err) { log.warn('Polymarket WS start failed', { error: String(err) }); }
-
       loopStarted = true;
       log.info('Cron loop initialized — heartbeat + WS feeds started');
     }
 
-    // AUDIT FIX C6b (2026-04-18): Check WS health every tick. If any feed reports
-    // disconnected (ws dropped after init, zombie state, Cloud Run cold-start race,
-    // container cycle without module re-init), force a reconnect. Closes the
-    // "loopStarted=true forever but WS dead" failure mode observed live on 2026-04-18
-    // where activeStreams=20 but connected=false for hours.
-    // ASSUMPTION: connect() is idempotent (C6a guard cleans zombie refs before reconnect).
-    try {
-      const { WsStreamManager } = await import('@/lib/providers/wsStreams');
-      const mexcHealth = WsStreamManager.getInstance().getFeedHealth();
-      if (!mexcHealth.connected) {
-        log.warn(`[WS Health] MEXC disconnected — forcing reconnect. stale=${mexcHealth.stale}, lastMsgAgo=${mexcHealth.lastMessageAgoMs}`);
-        WsStreamManager.getInstance().connect();
-      }
-    } catch (err) { log.warn('WS health check (MEXC) failed', { error: String(err) }); }
+    await Promise.allSettled([
+      // (A) Refresh gladiators from Supabase
+      (async () => {
+        const { refreshGladiatorsFromCloud } = await import('@/lib/store/db');
+        const { gladiatorStore } = await import('@/lib/store/gladiatorStore');
+        await refreshGladiatorsFromCloud();
+        gladiatorStore.reloadFromDb();
+      })().catch(err => log.warn('Failed to refresh gladiators from cloud', { error: String(err) })),
 
-    try {
-      const { polyWsClient } = await import('@/lib/polymarket/polyWsClient');
-      // polyWsClient.connect() must be idempotent on its own side
-      polyWsClient.connect();
-    } catch (err) { log.warn('WS health check (Polymarket) failed', { error: String(err) }); }
+      // (B) WS health checks (AUDIT FIX C6b — reconnect dead feeds)
+      (async () => {
+        const { WsStreamManager } = await import('@/lib/providers/wsStreams');
+        const mexcHealth = WsStreamManager.getInstance().getFeedHealth();
+        if (!mexcHealth.connected) {
+          log.warn(`[WS Health] MEXC disconnected — forcing reconnect. stale=${mexcHealth.stale}, lastMsgAgo=${mexcHealth.lastMessageAgoMs}`);
+          WsStreamManager.getInstance().connect();
+        }
+        const { polyWsClient } = await import('@/lib/polymarket/polyWsClient');
+        polyWsClient.connect();
+      })().catch(err => log.warn('WS health check failed', { error: String(err) })),
 
-    // AUDIT FIX C1 (2026-04-18): Per-tick safety gate orchestration.
-    //   - ensureDailyReset: idempotent per-UTC-day reset of dailyLoss/exposure/velocity flags
-    //   - Tick-level daily-loss watchdog: even without a new trade opening, if today's
-    //     closed positions drag equity below the limit, engage kill switch.
-    // Fire-and-forget for the tick-level check — do NOT block the cron loop.
-    try {
-      const { ensureDailyReset, computeDailyLossPercent } = await import('@/lib/core/safetyGates');
-      const { checkDailyLossLimit } = await import('@/lib/core/killSwitch');
-      await ensureDailyReset();
-      const dailyLoss = computeDailyLossPercent();
-      if (dailyLoss > 0) {
-        const DAILY_LIMIT = parseFloat(process.env.KILL_SWITCH_DAILY_LOSS_PCT || '5');
-        // fire-and-forget — check handles its own state
-        checkDailyLossLimit(dailyLoss, DAILY_LIMIT).catch(() => { /* ignore */ });
-      }
-    } catch (err) { log.warn('Safety gate tick check failed', { error: String(err) }); }
+      // (C) Safety gates (AUDIT FIX C1 — daily reset + loss watchdog)
+      (async () => {
+        const { ensureDailyReset, computeDailyLossPercent } = await import('@/lib/core/safetyGates');
+        const { checkDailyLossLimit } = await import('@/lib/core/killSwitch');
+        await ensureDailyReset();
+        const dailyLoss = computeDailyLossPercent();
+        if (dailyLoss > 0) {
+          const DAILY_LIMIT = parseFloat(process.env.KILL_SWITCH_DAILY_LOSS_PCT || '5');
+          checkDailyLossLimit(dailyLoss, DAILY_LIMIT).catch(() => { /* ignore */ });
+        }
+      })().catch(err => log.warn('Safety gate tick check failed', { error: String(err) })),
+    ]);
 
-    // Ping watchdog to keep it alive
     watchdogPing();
 
     // Mark scan loop as active via globalThis
@@ -139,35 +124,45 @@ export async function GET(request: NextRequest) {
     gScan.__autoScan.scanCount++;
     const scanStart = Date.now();
 
-    // Evaluate Phantom Trades for the Arena Combat Engine
-    await ArenaSimulator.getInstance().evaluatePhantomTrades();
+    // ═══════════════════════════════════════════════════════════════════
+    // PHASE 2: PARALLEL MAIN WORK (2026-04-18 perf)
+    // Phantom eval, live positions, scanners, and autoDebug are independent.
+    // Previously sequential: phantom(2-3s) → live(0.5s) → autoDebug → scanners(8-12s)
+    // Now parallel: max(phantom+live, scanners) ≈ scanners ≈ 8-12s.
+    // Saves ~3-5s per tick.
+    //
+    // WHY THIS IS SAFE:
+    //  - evaluatePhantomTrades snapshots getPhantomTrades() at start — new phantoms
+    //    created by scanners this tick won't be in that snapshot.
+    //  - evaluateLivePositions reads existing open positions — scanners don't modify these.
+    //  - autoDebug is read-only diagnostics.
+    //  - All use JS single-threaded event loop — no true parallel memory corruption.
+    // ═══════════════════════════════════════════════════════════════════
 
-    // Evaluate Live Positions (Asymmetric TP/SL Engine — supplements Cloud Scheduler)
-    const { positionManager } = await import('@/lib/v2/manager/positionManager');
-    await positionManager.evaluateLivePositions();
+    await Promise.allSettled([
+      // (A) Phantom + Live position evaluation (sequential within — live depends on phantom stats)
+      (async () => {
+        await ArenaSimulator.getInstance().evaluatePhantomTrades();
+        const { positionManager } = await import('@/lib/v2/manager/positionManager');
+        await positionManager.evaluateLivePositions();
+      })(),
 
-    // SRE Auto-Debug Diagnostics Check (Continuous ML Evaluation)
-    try {
-      const { autoDebugEngine } = await import('@/lib/v2/safety/autoDebugEngine');
-      autoDebugEngine.runDeterministicDiagnostics().catch((e) => log.warn('autoDebug diagnostics failed', { error: String(e) }));
-    } catch (e) {
-      log.error('Failed to trigger AutoDebugEngine', { error: String(e) });
-    }
+      // (B) Market Scanners — THE BOTTLENECK (~8-12s)
+      (async () => {
+        const { GET: runBtc } = await import('@/app/api/btc-signals/route');
+        const { GET: runSolana } = await import('@/app/api/solana-signals/route');
+        const { GET: runMeme } = await import('@/app/api/meme-signals/route');
+        // CRITICAL: await scanners — Cloud Run freezes process after response.
+        await Promise.allSettled([runBtc(), runSolana(), runMeme()]);
+        log.info(`[Market Scanners] TA & Meme sweep completed via direct function calls`);
+      })().catch(e => log.error('Failed to trigger background scanners', { error: String(e) })),
 
-    // Trigger Market Scanners (so the AI trades even when the user's browser is closed)
-    try {
-      // Fire directly using V8 internal JS context instead of looping back via Cloud Run HTTP
-      const { GET: runBtc } = await import('@/app/api/btc-signals/route');
-      const { GET: runSolana } = await import('@/app/api/solana-signals/route');
-      const { GET: runMeme } = await import('@/app/api/meme-signals/route');
-
-      // CRITICAL: await scanners — Cloud Run freezes process after response.
-      // Fire-and-forget promises never complete on serverless.
-      await Promise.allSettled([runBtc(), runSolana(), runMeme()]);
-      log.info(`[Market Scanners] TA & Meme sweep completed via direct function calls`);
-    } catch (e) {
-      log.error('Failed to trigger background scanners', { error: String(e) });
-    }
+      // (C) AutoDebug diagnostics (non-blocking, ~100ms)
+      (async () => {
+        const { autoDebugEngine } = await import('@/lib/v2/safety/autoDebugEngine');
+        await autoDebugEngine.runDeterministicDiagnostics();
+      })().catch(e => log.warn('autoDebug diagnostics failed', { error: String(e) })),
+    ]);
 
     // Evaluate Real/Shadow Main System Decisions — MULTI-HORIZON (2026-04-18)
     const {

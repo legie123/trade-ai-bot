@@ -16,8 +16,6 @@ async function getCachedPrice(symbol: string): Promise<number> {
 export class ArenaSimulator {
   private static instance: ArenaSimulator;
   private dnaBank: DNAExtractor;
-  private lastGladiatorRefresh: number = 0;
-  private static readonly REFRESH_TTL_MS = 60_000; // 60 seconds between cloud refreshes
 
   private constructor() {
     this.dnaBank = DNAExtractor.getInstance();
@@ -68,14 +66,10 @@ export class ArenaSimulator {
     const activePhantoms = getPhantomTrades();
     if (!activePhantoms.length) return;
 
-    // Refresh Memory from True Source — but with TTL to prevent unnecessary Supabase reads
     const now = Date.now();
-    if (now - this.lastGladiatorRefresh > ArenaSimulator.REFRESH_TTL_MS) {
-      const { refreshGladiatorsFromCloud, getGladiatorsFromDb } = await import('@/lib/store/db');
-      await refreshGladiatorsFromCloud();
-      gladiatorStore.hydrate(getGladiatorsFromDb());
-      this.lastGladiatorRefresh = now;
-    }
+    // NOTE: Gladiator refresh removed from here (2026-04-18 perf).
+    // Cron route does refreshGladiatorsFromCloud() before calling this method.
+    // Daily rotation must do its own refresh before calling evaluatePhantomTrades().
 
     // FIX 2026-04-18 (QW-7): Rebalansare TP/SL — era 0.3/-1.0 (R:R 1:3.33 → gladiatorul
     // avea nevoie de WR >78% doar ca să fie break-even — matematic improbabil sustained).

@@ -20,6 +20,10 @@ export async function runDailyRotation() {
   try {
     // 1. Force evaluate any lingering Phantom Trades
     log.info('🛡️ [1/3] Evaluare Phantom Trades Curente...');
+    // Refresh gladiators from Supabase (simulator no longer does its own refresh)
+    const { refreshGladiatorsFromCloud } = await import('@/lib/store/db');
+    await refreshGladiatorsFromCloud();
+    gladiatorStore.reloadFromDb();
     await ArenaSimulator.getInstance().evaluatePhantomTrades();
 
     // 2. Absolute Execution of Weaklings (The Butcher)

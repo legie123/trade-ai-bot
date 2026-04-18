@@ -1,6 +1,7 @@
 // GET /api/v2/polymarket — Polymarket sector status, scanner, wallet
 // POST /api/v2/polymarket — Manual actions (open_position, close_position, etc.)
 import { successResponse, errorResponse } from '@/lib/api-response';
+import { isAuthenticated } from '@/lib/auth';
 import { PolyDivision } from '@/lib/polymarket/polyTypes';
 import { testPolymarketConnection, getMarketsByCategory, getMarket } from '@/lib/polymarket/polyClient';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
@@ -207,6 +208,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    // FIX 2026-04-18 (DAILY-AUDIT): Auth gate — mutates wallet/positions (open/close/reset).
+    // Blast radius: UI consumers already route via authenticated GET flows;
+    // no internal POST call detected in src/ grep. Blocks anonymous wallet mutation.
+    if (!isAuthenticated(request)) {
+      return errorResponse('UNAUTHORIZED', 'Valid auth token required for polymarket mutations', 401);
+    }
+
     ensureInitialized();
     await waitForInit();
 
