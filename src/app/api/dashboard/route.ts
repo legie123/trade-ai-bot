@@ -106,7 +106,15 @@ export async function GET() {
     // Calculate trading stats
     const decisions = getDecisions();
     const today = new Date().toISOString().split('T')[0];
-    const todayDecisions = decisions.filter(d => d.timestamp.startsWith(today) && d.outcome !== 'PENDING');
+    // C15 fix (2026-04-18): guard against decisions with missing/null timestamp
+    // (seen on cold instances where json_store returns partial rows). Previously
+    // crashed the whole dashboard route with "Cannot read properties of undefined
+    // (reading 'startsWith')".
+    const todayDecisions = decisions.filter(d =>
+      typeof d.timestamp === 'string' &&
+      d.timestamp.startsWith(today) &&
+      d.outcome !== 'PENDING'
+    );
 
     const dailyPnlPercent = todayDecisions.reduce((acc, curr) => acc + (curr.pnlPercent || 0), 0);
     const pendingDecisions = decisions.filter(d => d.outcome === 'PENDING').length;
