@@ -331,8 +331,15 @@ export function addDecision(snapshot: DecisionSnapshot): void {
   if (snapshot.confidence < CONFIDENCE_FLOOR && snapshot.signal !== 'NEUTRAL') {
     return; // Silent drop — engine should have caught this
   }
-  
-  // AUDIT FIX T2.2: Mutex-protected read-merge-write to prevent data loss
+
+  // FIX 2026-04-18: Insert into cache SYNCHRONOUSLY so getPendingDecisions()
+  // sees the new decision in the same tick. Previously the insert was inside
+  // an async IIFE → cache was empty when cron evaluated pending decisions
+  // → on Cloud Run the process froze before the async IIFE completed → decisions lost.
+  cache.decisions.unshift(snapshot);
+  if (cache.decisions.length > 1000) cache.decisions.length = 1000;
+
+  // Async: merge remote decisions + sync to Supabase (background, non-blocking)
   (async () => {
     const release = await decisionMutex.acquire();
     try {
@@ -349,11 +356,6 @@ export function addDecision(snapshot: DecisionSnapshot): void {
             if (cache.decisions.length > 1000) cache.decisions.length = 1000;
           }
         } catch (err) { log.warn('Failed to merge remote decisions before insert', { error: String(err) }); }
-      }
-
-      if (!cache.decisions.some((d) => d.signalId === snapshot.signalId)) {
-        cache.decisions.unshift(snapshot);
-        if (cache.decisions.length > 1000) cache.decisions.length = 1000;
       }
 
       syncToCloud('decisions', cache.decisions);
