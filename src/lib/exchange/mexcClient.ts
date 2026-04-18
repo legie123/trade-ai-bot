@@ -151,15 +151,33 @@ export async function getMexcTicker24h(symbol: string): Promise<Record<string, u
 }
 
 /**
- * Batch Price Fetch: Drastically reduces latency by fetching all prices in ONE request.
- * Bypasses the 60ms individual rate-limiter.
+ * Parallel Price Fetch (HARDENED 2026-04-18):
+ *   - Dropped the ALL-tickers fallback — it returns ~2500 items and times out on
+ *     Cloud Run. Any caller that relied on it was masking a Cloud-Run timeout as
+ *     "no prices returned".
+ *   - Now ALWAYS fetches individually with bounded concurrency, regardless of
+ *     symbol count. Concurrency cap (default 8) prevents MEXC rate-limit bans
+ *     on large batches.
+ *   - If called with no symbols, we refuse — bulk "all prices" is not supported.
+ *
+ * ASSUMPTIONS that invalidate this function if they break:
+ *   - MEXC endpoint /api/v3/ticker/price is reachable from IP 149.174.89.163
+ *   - Each individual fetch completes in <1s (otherwise batches exceed cron timeout)
+ *   - Caller does NOT expect every requested symbol to return — missing = blacklisted/invalid
  */
 export async function getMexcPrices(symbols?: string[]): Promise<Record<string, number>> {
-  // STRATEGY: If we have a small set of symbols, fetch each individually.
-  // The ALL-tickers endpoint returns ~2500 items and often times out on Cloud Run (8s limit).
-  if (symbols && symbols.length > 0 && symbols.length <= 30) {
-    const results: Record<string, number> = {};
-    const fetches = symbols.map(async (sym) => {
+  if (!symbols || symbols.length === 0) {
+    log.warn('[MEXC] getMexcPrices called without symbols — refusing all-tickers fetch (Cloud Run timeout risk)');
+    return {};
+  }
+
+  const CONCURRENCY = 8;
+  const results: Record<string, number> = {};
+
+  // Bounded parallel fetch — prevent MEXC rate-limit on large symbol sets.
+  for (let i = 0; i < symbols.length; i += CONCURRENCY) {
+    const batch = symbols.slice(i, i + CONCURRENCY);
+    await Promise.allSettled(batch.map(async (sym) => {
       try {
         const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol: sym }, false);
         const price = parseFloat(data.price as string);
@@ -167,29 +185,11 @@ export async function getMexcPrices(symbols?: string[]): Promise<Record<string, 
       } catch (fetchErr) {
         log.warn(`[MEXC] Individual price fetch failed for ${sym}: ${String(fetchErr).slice(0, 100)}`);
       }
-    });
-    await Promise.allSettled(fetches);
-    log.info(`[MEXC] Individual fetch: ${symbols.length} requested, ${Object.keys(results).length} returned`);
-    return results;
+    }));
   }
 
-  // Fallback: fetch ALL tickers (for large sets or no filter)
-  try {
-    const data = await mexcRequest('GET', '/api/v3/ticker/price', {}, false) as unknown as { symbol: string; price: string }[];
-    const results: Record<string, number> = {};
-    if (Array.isArray(data)) {
-      data.forEach(item => {
-        if ((!symbols || symbols.includes(item.symbol)) && item.price != null) {
-          const parsed = parseFloat(item.price);
-          if (!isNaN(parsed)) results[item.symbol] = parsed;
-        }
-      });
-    }
-    return results;
-  } catch (err) {
-    log.error('[MEXC] Batch price fetch failed', { error: (err as Error).message });
-    return {};
-  }
+  log.info(`[MEXC] Parallel fetch: ${symbols.length} requested, ${Object.keys(results).length} returned (concurrency=${CONCURRENCY})`);
+  return results;
 }
 
 export async function getMexcOrderbook(symbol: string, limit = 10): Promise<Record<string, unknown>> {
