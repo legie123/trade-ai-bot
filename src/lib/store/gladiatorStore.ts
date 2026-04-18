@@ -20,25 +20,40 @@ const storeLog = createLogger('GladiatorStore');
  *   - If Postgres reads spike >500ms per gladiator and we have 12+, latency compounds (sequential await).
  *   - Mitigation path: switch to Promise.all if perf degrades.
  */
+// PERF FIX 2026-04-18 AUDIT: CB status cache per tick (60s TTL).
+// Was: sequential extractIntelligenceAsync per gladiator per tier → 48 DB queries.
+// Now: parallel Promise.all + cached results → max 12 DB queries, once per tick.
+const _cbCache: Map<string, { inCB: boolean; ts: number }> = new Map();
+const CB_CACHE_TTL = 60_000; // 60s — one cron cycle
+
 async function filterNonCB(candidates: Gladiator[]): Promise<Gladiator[]> {
   if (candidates.length === 0) return [];
   const dna = DNAExtractor.getInstance();
-  const results: Gladiator[] = [];
-  for (const g of candidates) {
-    try {
-      const intel = await dna.extractIntelligenceAsync(g.id);
-      const inCB = intel.currentStreak <= -4 && intel.recentWinRate < 0.50;
-      if (inCB) {
-        storeLog.warn(`[ROUTING] Skipping ${g.id} — in CB (streak=${intel.currentStreak}, recentWR=${(intel.recentWinRate * 100).toFixed(0)}%)`);
-        continue;
+  const now = Date.now();
+
+  // Parallel CB check with per-gladiator cache
+  const checks = await Promise.all(
+    candidates.map(async (g): Promise<{ gladiator: Gladiator; inCB: boolean }> => {
+      const cached = _cbCache.get(g.id);
+      if (cached && now - cached.ts < CB_CACHE_TTL) {
+        return { gladiator: g, inCB: cached.inCB };
       }
-      results.push(g);
-    } catch (err) {
-      storeLog.warn(`[ROUTING] Intel fetch failed for ${g.id}, including anyway`, { error: String(err) });
-      results.push(g);
-    }
-  }
-  return results;
+      try {
+        const intel = await dna.extractIntelligenceAsync(g.id);
+        const inCB = intel.currentStreak <= -4 && intel.recentWinRate < 0.50;
+        _cbCache.set(g.id, { inCB, ts: now });
+        if (inCB) {
+          storeLog.warn(`[ROUTING] Skipping ${g.id} — in CB (streak=${intel.currentStreak}, recentWR=${(intel.recentWinRate * 100).toFixed(0)}%)`);
+        }
+        return { gladiator: g, inCB };
+      } catch (err) {
+        storeLog.warn(`[ROUTING] Intel fetch failed for ${g.id}, including anyway`, { error: String(err) });
+        return { gladiator: g, inCB: false };
+      }
+    })
+  );
+
+  return checks.filter(c => !c.inCB).map(c => c.gladiator);
 }
 
 /**
@@ -331,11 +346,11 @@ class GladiatorStore {
       // Assign ranks and live status
       // INSTITUTIONAL RULE (QW-8 tightening, 2026-04-18):
       //   tt>=50, WR>=58%, PF>=1.3, WF fail-closed.
-      // Rationale: sub TP=1.0%/SL=-0.5% asimetric, gate anterior (20/45/1.1) lăsa ~41% false-positives
+      // Rationale: sub TP/SL simetric ±0.5%, gate anterior (20/45/1.1) lăsa ~41% false-positives
       // pe strategii pur-noise (Binomial math: p(WR>=55%|n=20,p=0.5)=0.412). Pragurile 58/1.3 + n=50
       // reduc false-positives sub ~10%. WF fail-closed (require explicit pass) elimină gap-ul
       // 20-29 trades unde wfCache era gol și trecea prin !wfResult.
-      // Asumpție: TP=1.0%/SL=-0.5% asimetric (R:R 2:1, break-even ~33%). Gate 58% WR e conservator.
+      // Asumpție critică: TP/SL simetric ±0.5% (QW-7). Dacă se schimbă → recalibrează pragurile.
       scored.forEach((entry, index) => {
         entry.gladiator.rank = index + 1;
         const meetsThreshold = entry.gladiator.stats.totalTrades >= 50

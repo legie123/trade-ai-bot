@@ -214,7 +214,15 @@ export class ExperienceMemory {
 
   private constructor() {
     if (!DISABLED) {
-      this.flushTimer = setInterval(() => this.flush(), FLUSH_INTERVAL_MS);
+      // FIX 2026-04-18 AUDIT: Only flush when there's pending data.
+      // Prevents keeping event loop alive on Cloud Run when idle.
+      this.flushTimer = setInterval(() => {
+        if (this.pendingFlush.length > 0) this.flush();
+      }, FLUSH_INTERVAL_MS);
+      // Allow Cloud Run to shut down gracefully even with timer running
+      if (this.flushTimer && typeof this.flushTimer === 'object' && 'unref' in this.flushTimer) {
+        (this.flushTimer as NodeJS.Timeout).unref();
+      }
     }
   }
 
@@ -233,6 +241,11 @@ export class ExperienceMemory {
     if (DISABLED) return;
 
     this.cache.add(entry);
+    // FIX 2026-04-18 AUDIT: Cap pendingFlush to prevent unbounded growth
+    // if Supabase is persistently down. Drop oldest on overflow.
+    if (this.pendingFlush.length >= 500) {
+      this.pendingFlush.splice(0, this.pendingFlush.length - 499);
+    }
     this.pendingFlush.push(entry);
 
     log.info(

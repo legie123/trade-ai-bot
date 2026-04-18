@@ -97,6 +97,7 @@ const READ_ONLY_COMMANDS = new Set<string>([
   'agents:status',
   'killswitch:status',
   'heartbeat:status',
+  'gladiators:status',
 ]);
 
 // FIX 2026-04-18 FAZA 6: Commands that accept CRON_SECRET as alternative auth.
@@ -116,31 +117,7 @@ function isCronAuthenticated(request: Request): boolean {
   if (!cronSecret) return false;
   const provided = request.headers.get('x-cron-secret')
     || request.headers.get('authorization')?.replace('Bearer ', '');
-  if (provided === cronSecret) return true;
-
-  // FIX 2026-04-18: Accept GCP identity tokens from deploy SA.
-  // GitHub Actions workflow uses `gcloud auth print-identity-token` which produces
-  // a GCP OIDC token. Verify by decoding JWT payload and checking email claim.
-  // This is NOT cryptographic verification — Cloud Run already validated the token
-  // at infra level if IAM is enabled. For public services, we trust the SA email.
-  const TRUSTED_SA = 'claude-deploy@evident-trees-453923-f9.iam.gserviceaccount.com';
-  const authHeader = request.headers.get('authorization');
-  if (authHeader?.startsWith('Bearer ')) {
-    try {
-      const token = authHeader.slice(7);
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-        if (payload.email === TRUSTED_SA && payload.exp && payload.exp > Date.now() / 1000) {
-          log.info(`[CMD] GCP identity auth accepted for SA: ${payload.email}`);
-          return true;
-        }
-      }
-    } catch {
-      // Not a valid GCP token, fall through
-    }
-  }
-  return false;
+  return provided === cronSecret;
 }
 
 export async function POST(request: Request): Promise<NextResponse<CommandResult>> {
@@ -177,7 +154,8 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
         return ok(command, 'Kill switch ENGAGED. All positions being liquidated.', getKillSwitchState(), start);
       }
       case 'killswitch:disengage': {
-        disengageKillSwitch();
+        // FIX 2026-04-18 AUDIT: was not awaited → state lost if instance shuts down before persist
+        await disengageKillSwitch();
         return ok(command, 'Kill switch disengaged. Trading can resume.', getKillSwitchState(), start);
       }
       case 'killswitch:status': {
@@ -306,7 +284,8 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
 
       // ─── RESET / MAINTENANCE (direct function calls) ───
       case 'reset:daily-triggers': {
-        resetDailyTriggers();
+        // FIX 2026-04-18 AUDIT: was not awaited → state lost on rapid instance shutdown
+        await resetDailyTriggers();
         return ok(command, 'Daily triggers reset', getKillSwitchState(), start);
       }
 
