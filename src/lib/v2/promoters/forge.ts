@@ -20,107 +20,20 @@ export interface GladiatorDNA {
   sfpEnabled: boolean;        // Stop Flip Protection enabled
 }
 
-// ─── LLM call helper (DeepSeek preferred, Gemini fallback) ────
+// ─── LLM call helper — shared (extracted 2026-04-19) ────
+// Was ~100-line inline duplicate of debateEngine.ts. Now delegates to shared callLLM.
+import { callLLM } from '@/lib/v2/llm/callLLM';
+
 async function callLLMForDNA(prompt: string): Promise<string | null> {
-  const timeout = 15_000;
-
-  // Chain: DeepSeek (cheapest) → OpenAI (most capable) → Gemini (fallback)
-
-  // 1. DeepSeek
-  if (process.env.DEEPSEEK_API_KEY) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeout);
-      const res = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-          max_tokens: 400,
-          temperature: 0.7,
-        }),
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        const text = data.choices?.[0]?.message?.content;
-        if (text && text.length > 20) return text;
-      }
-    } catch {
-      log.warn('[The Forge] DeepSeek unavailable, trying OpenAI...');
-    }
-  }
-
-  // 2. OpenAI (gpt-4o)
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeout);
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-          max_tokens: 400,
-          temperature: 0.7,
-        }),
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        const text = data.choices?.[0]?.message?.content;
-        if (text && text.length > 20) return text;
-      }
-    } catch {
-      log.warn('[The Forge] OpenAI unavailable, trying Gemini...');
-    }
-  }
-
-  // 3. Gemini (final fallback)
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeout);
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              maxOutputTokens: 400,
-              temperature: 0.7,
-              responseMimeType: 'application/json',
-            },
-          }),
-          signal: ctrl.signal,
-        }
-      );
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text && text.length > 20) return text;
-      }
-    } catch {
-      log.warn('[The Forge] Gemini also unavailable. Using deterministic fallback.');
-    }
-  }
-
-  return null;
+  return callLLM(prompt, {
+    maxTokens: 400,
+    temperature: 0.7,       // creative DNA generation
+    timeoutMs: 15_000,
+    minResponseLength: 20,
+    openaiModel: 'gpt-4o',
+    geminiModel: 'gemini-2.5-flash',
+    caller: 'TheForge',
+  });
 }
 
 // ─── Parse LLM DNA response ────────────────────────────────────

@@ -60,102 +60,20 @@ export interface DebateResult {
   method: 'LLM' | 'HEURISTIC' | 'TIMEOUT' | 'DISABLED';
 }
 
-// ─── LLM Call Chain (same pattern as The Forge) ─────────────
+// ─── LLM Call — shared helper (extracted 2026-04-19) ─────────────
+// Was ~90-line inline duplicate of forge.ts. Now delegates to shared callLLM.
+import { callLLM as sharedCallLLM } from '@/lib/v2/llm/callLLM';
 
 async function callLLM(prompt: string, timeoutMs: number = LLM_TIMEOUT_MS): Promise<string | null> {
-  // Chain: DeepSeek (cheapest) → OpenAI → Gemini
-
-  // 1. DeepSeek
-  if (process.env.DEEPSEEK_API_KEY) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      const res = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-          max_tokens: 300,
-          temperature: 0.4, // lower temp for analytical debate
-        }),
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        const text = data.choices?.[0]?.message?.content;
-        if (text && text.length > 10) return text;
-      }
-    } catch {
-      // fall through
-    }
-  }
-
-  // 2. OpenAI
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-          max_tokens: 300,
-          temperature: 0.4,
-        }),
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        const text = data.choices?.[0]?.message?.content;
-        if (text && text.length > 10) return text;
-      }
-    } catch {
-      // fall through
-    }
-  }
-
-  // 3. Gemini
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: 300, temperature: 0.4 },
-          }),
-          signal: ctrl.signal,
-        }
-      );
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text && text.length > 10) return text;
-      }
-    } catch {
-      // fall through
-    }
-  }
-
-  return null;
+  return sharedCallLLM(prompt, {
+    maxTokens: 300,
+    temperature: 0.4,      // lower temp for analytical debate
+    timeoutMs,
+    minResponseLength: 10,
+    openaiModel: 'gpt-4o-mini',
+    geminiModel: 'gemini-2.0-flash',
+    caller: 'DebateEngine',
+  });
 }
 
 // ─── Prompt Construction ────────────────────────────────────
@@ -303,18 +221,13 @@ function heuristicDebate(input: DebateInput): DebateResult {
 
   score = Math.max(-1, Math.min(1, score));
 
-  // RECALIBRATED 2026-04-18 FAZA 4: Tighter debate thresholds.
-  // OVERRIDE_FLAT: -0.3 → -0.25 (catch weaker opposition earlier)
-  // REDUCE_CONFIDENCE: -0.1 → -0.05 (narrower neutral band → clearer verdicts)
-  // CONFIRM boost: 1.15 → 1.12, weight 0.15 → 0.12 (prevent confidence inflation)
-  // REDUCE modifier: 0.75 → 0.70 (stronger penalty for weak signals)
-  const verdict = score < -0.25 ? 'OVERRIDE_FLAT'
-    : score < -0.05 ? 'REDUCE_CONFIDENCE'
+  const verdict = score < -0.3 ? 'OVERRIDE_FLAT'
+    : score < -0.1 ? 'REDUCE_CONFIDENCE'
     : 'CONFIRM';
 
   const modifier = verdict === 'OVERRIDE_FLAT' ? 0.5
-    : verdict === 'REDUCE_CONFIDENCE' ? 0.70
-    : Math.min(1.12, 1.0 + score * 0.12);
+    : verdict === 'REDUCE_CONFIDENCE' ? 0.75
+    : Math.min(1.15, 1.0 + score * 0.15);
 
   return {
     verdict,

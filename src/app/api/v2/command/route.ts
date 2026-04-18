@@ -30,6 +30,9 @@ import { GET as autoPromoteGET } from '../cron/auto-promote/route';
 import { GET as polyScanGET } from '../polymarket/cron/scan/route';
 import { GET as polyMtmGET } from '../polymarket/cron/mtm/route';
 import { GET as cronGET } from '../../cron/route';
+// FIX 2026-04-19: omega:status + arena:status in-process (was self-fetch HTTP, failed on Cloud Run)
+import { GET as omegaStatusGET } from '../omega-status/route';
+import { GET as arenaStatusGET } from '../arena/route';
 
 export const dynamic = 'force-dynamic';
 const log = createLogger('CommandCenter');
@@ -286,7 +289,8 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
         return ok(command, 'Auto-promote cycle triggered', res, start);
       }
       case 'arena:status': {
-        const res = await internalFetch(new URL('/api/v2/arena', baseUrl)).catch(() => ({ error: 'failed' }));
+        // FIX 2026-04-19: in-process invoke (was self-fetch HTTP)
+        const res = await invokeInProcess(arenaStatusGET, new URL('/api/v2/arena', baseUrl)).catch(() => ({ error: 'failed' }));
         return ok(command, 'Arena status retrieved', res, start);
       }
 
@@ -320,9 +324,19 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       }
 
       // ─── OMEGA STATUS (GET — no auth) ───
+      // FIX 2026-04-19: in-process invoke (was self-fetch HTTP, failed on Cloud Run loopback)
       case 'omega:status': {
-        const res = await internalFetch(new URL('/api/v2/omega-status', baseUrl)).catch(() => ({ error: 'failed' }));
+        const res = await invokeInProcess(omegaStatusGET, new URL('/api/v2/omega-status', baseUrl)).catch(() => ({ error: 'failed' }));
         return ok(command, 'Omega status retrieved', res, start);
+      }
+
+      // ─── GLADIATORS STATUS (direct in-process — no fetch needed) ───
+      case 'gladiators:status': {
+        const leaderboard = gladiatorStore.getLeaderboard().map(g => ({
+          id: g.id, name: g.name, tier: g.status, isLive: g.isLive,
+          tt: g.stats.totalTrades, wr: g.stats.winRate, pf: g.stats.profitFactor,
+        }));
+        return ok(command, `${leaderboard.length} gladiators`, { leaderboard }, start);
       }
 
       case 'cron:kick': {
