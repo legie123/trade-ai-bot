@@ -8,6 +8,7 @@ import { Signal } from '@/lib/types/radar';
 import { routeSignal } from '@/lib/router/signalRouter';
 import { signalStore } from '@/lib/store/signalStore';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
+import { initDB } from '@/lib/store/db';
 
 const log = createLogger('SolanaSignalsRoute');
 const manager = ManagerVizionar.getInstance();
@@ -20,6 +21,9 @@ const CACHE_TTL_MS = 15_000;
 
 export async function GET() {
   try {
+    // COLD-START FIX (2026-04-18): Hydrate gladiatorStore before findBestGladiator().
+    await initDB();
+
     const now = Date.now();
 
     // 1. Return Cache if valid
@@ -38,7 +42,10 @@ export async function GET() {
 
     cache = { data: responseData, expiresAt: now + CACHE_TTL_MS };
 
-    // 2. Trigger Phoenix V2 Manager
+    // 2. Trigger Phoenix V2 Manager — PARALLEL per signal (each is independent)
+    // PERF FIX 2026-04-18: processSignal was sequential per signal → 5 LLM calls × ~4s each = 20s.
+    // Parallel: max(all LLM calls) ≈ 4-8s. Rate-limit safe: LLM providers handle concurrent requests.
+    const signalTasks: Promise<void>[] = [];
     for (const coin of result.coins) {
       for (const rawSig of coin.signals) {
          if (rawSig.signal !== 'NEUTRAL') {
@@ -53,24 +60,25 @@ export async function GET() {
                source: 'Solana Scout V2',
                message: rawSig.reason,
              };
-             
+
              const routed = routeSignal(signalPayload);
              signalStore.addSignal(routed);
              ArenaSimulator.getInstance().distributeSignalToGladiators(routed);
-             
+
              const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
-             
+
              if (gladiator) {
                log.info(`[V2 TRIGGER] Processing internal SOL signal with Gladiator: ${gladiator.name}`);
-               try {
-                 await manager.processSignal(gladiator, routed);
-               } catch (err) {
-                 log.error('[V2 CRITICAL] Phoenix Process Error (SOL)', { error: (err as Error).message });
-               }
+               signalTasks.push(
+                 manager.processSignal(gladiator, routed).catch(err => {
+                   log.error('[V2 CRITICAL] Phoenix Process Error (SOL)', { error: (err as Error).message });
+                 })
+               );
              }
          }
       }
     }
+    if (signalTasks.length > 0) await Promise.allSettled(signalTasks);
 
     return NextResponse.json(responseData);
   } catch (err) {

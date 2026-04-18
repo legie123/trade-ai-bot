@@ -8,6 +8,7 @@ import { Signal } from '@/lib/types/radar';
 import { routeSignal } from '@/lib/router/signalRouter';
 import { signalStore } from '@/lib/store/signalStore';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
+import { initDB } from '@/lib/store/db';
 
 const log = createLogger('BtcSignalsRoute');
 const manager = ManagerVizionar.getInstance();
@@ -20,6 +21,9 @@ const CACHE_TTL_MS = 15_000;
 
 export async function GET() {
   try {
+    // COLD-START FIX (2026-04-18): Hydrate gladiatorStore before findBestGladiator().
+    await initDB();
+
     const now = Date.now();
 
     // 1. Return Cache if valid
@@ -49,41 +53,39 @@ export async function GET() {
 
     cache = { data: responseData, expiresAt: now + CACHE_TTL_MS };
 
-    // 3. Phoenix V2 Auto-Trigger
+    // 3. Phoenix V2 Auto-Trigger — PARALLEL per signal
+    const signalTasks: Promise<void>[] = [];
     for (const rawSig of analysis.signals) {
       if (rawSig.signal !== 'NEUTRAL') {
          const signalId = `btc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
          const signalPayload: Signal = {
            id: signalId,
            symbol: 'BTC',
-           timeframe: '1h', // Defaulting from analyzeBTC
+           timeframe: '1h',
            signal: rawSig.signal as Signal['signal'],
            price: analysis.price,
            timestamp: analysis.timestamp,
            source: 'BTC Scout V2',
            message: rawSig.reason,
          };
-         
+
          const routed = routeSignal(signalPayload);
-         
-         // Register the signal in the store for Today's Activity count
          signalStore.addSignal(routed);
-         
-         // Deploy signal to all Gladiators via Phantom Trade Combat Engine
          ArenaSimulator.getInstance().distributeSignalToGladiators(routed);
-         
+
          const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
-         
+
          if (gladiator) {
            log.info(`[V2 TRIGGER] Processing internal BTC signal with Gladiator: ${gladiator.name}`);
-           try {
-             await manager.processSignal(gladiator, routed);
-           } catch (err) {
-             log.error('[V2 CRITICAL] Phoenix Process Error (BTC)', { error: (err as Error).message });
-           }
+           signalTasks.push(
+             manager.processSignal(gladiator, routed).catch(err => {
+               log.error('[V2 CRITICAL] Phoenix Process Error (BTC)', { error: (err as Error).message });
+             })
+           );
          }
       }
     }
+    if (signalTasks.length > 0) await Promise.allSettled(signalTasks);
 
     return NextResponse.json(responseData);
   } catch (err) {
