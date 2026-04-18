@@ -188,7 +188,13 @@ export async function GET(request: NextRequest) {
         const { GET: runMeme } = await import('@/app/api/meme-signals/route');
         // CRITICAL: await scanners — Cloud Run freezes process after response.
         const _st = Date.now();
-        const scanResults = await Promise.allSettled([runBtc(), runSolana(), runMeme()]);
+        const _tBtc = Date.now();
+        const pBtc = runBtc().finally(() => { _p2Timing.scanBtc = Date.now() - _tBtc; });
+        const _tSol = Date.now();
+        const pSol = runSolana().finally(() => { _p2Timing.scanSol = Date.now() - _tSol; });
+        const _tMeme = Date.now();
+        const pMeme = runMeme().finally(() => { _p2Timing.scanMeme = Date.now() - _tMeme; });
+        const scanResults = await Promise.allSettled([pBtc, pSol, pMeme]);
         _p2Timing.scanners = Date.now() - _st;
         _p2Timing.scannersWithImport = Date.now() - _t;
         log.info(`[Market Scanners] completed`, { btc: scanResults[0].status, sol: scanResults[1].status, meme: scanResults[2].status, ms: _p2Timing.scanners });
