@@ -167,35 +167,44 @@ export async function GET(request: NextRequest) {
     //  - All use JS single-threaded event loop — no true parallel memory corruption.
     // ═══════════════════════════════════════════════════════════════════
 
+    const _p2Start = Date.now();
+    const _p2Timing: Record<string, number> = {};
+
     await Promise.allSettled([
       // (A) Phantom + Live position evaluation (sequential within — live depends on phantom stats)
       (async () => {
+        const _t = Date.now();
         await ArenaSimulator.getInstance().evaluatePhantomTrades();
         const { positionManager } = await import('@/lib/v2/manager/positionManager');
         await positionManager.evaluateLivePositions();
+        _p2Timing.phantomEval = Date.now() - _t;
       })(),
 
-      // (B) Market Scanners — THE BOTTLENECK (~8-12s)
+      // (B) Market Scanners — THE BOTTLENECK
       (async () => {
+        const _t = Date.now();
         const { GET: runBtc } = await import('@/app/api/btc-signals/route');
         const { GET: runSolana } = await import('@/app/api/solana-signals/route');
         const { GET: runMeme } = await import('@/app/api/meme-signals/route');
         // CRITICAL: await scanners — Cloud Run freezes process after response.
-        await Promise.allSettled([runBtc(), runSolana(), runMeme()]);
-        log.info(`[Market Scanners] TA & Meme sweep completed via direct function calls`);
+        const _st = Date.now();
+        const scanResults = await Promise.allSettled([runBtc(), runSolana(), runMeme()]);
+        _p2Timing.scanners = Date.now() - _st;
+        _p2Timing.scannersWithImport = Date.now() - _t;
+        log.info(`[Market Scanners] completed`, { btc: scanResults[0].status, sol: scanResults[1].status, meme: scanResults[2].status, ms: _p2Timing.scanners });
       })().catch(e => log.error('Failed to trigger background scanners', { error: String(e) })),
 
       // (C) AutoDebug diagnostics (non-blocking, ~100ms)
       (async () => {
+        const _t = Date.now();
         const { autoDebugEngine } = await import('@/lib/v2/safety/autoDebugEngine');
         await autoDebugEngine.runDeterministicDiagnostics();
+        _p2Timing.autoDebug = Date.now() - _t;
       })().catch(e => log.warn('autoDebug diagnostics failed', { error: String(e) })),
 
       // (D) Decision eval + MEXC price fetch + live position updates
-      // PERF FIX 2026-04-18: Was sequential AFTER scanners → added 6-10s to tick.
-      // Decision eval processes OLD decisions (already in cache), independent of
-      // scanner results from this tick. Running parallel saves ~5-8s.
       (async () => {
+        const _t = Date.now();
         const uniqueSymbols = [...new Set(eligibleDecisions.map(d => d.symbol))];
         const livePos = getLivePositions().filter(p => p.status === 'OPEN');
         const allSymbols = [...new Set([...uniqueSymbols, ...livePos.map(p => p.symbol)])];
@@ -322,8 +331,10 @@ export async function GET(request: NextRequest) {
             livePositionsUpdated++;
           }
         }
+        _p2Timing.decisionEval = Date.now() - _t;
       })().catch(e => log.error('Decision eval / price fetch failed', { error: String(e) })),
     ]);
+    _p2Timing.phase2Total = Date.now() - _p2Start;
 
     if (mainDecisionsEvaluated > 0) {
       recalculatePerformance();
@@ -340,8 +351,10 @@ export async function GET(request: NextRequest) {
     // FIX: Cloud Run freezes process after HTTP response. All fire-and-forget
     // Supabase syncs (gladiator stats, phantom trades, DNA) must complete
     // BEFORE we return — otherwise stats are lost on instance restart/scale-down.
+    const _flushStart = Date.now();
     const { flushPendingSyncs } = await import('@/lib/store/db');
     const flushResult = await flushPendingSyncs(4000);
+    _p2Timing.flush = Date.now() - _flushStart;
     if (flushResult.timedOut) {
       log.warn('flushPendingSyncs timed out — some data may not have persisted');
     }
@@ -370,6 +383,7 @@ export async function GET(request: NextRequest) {
       forgeProgress: forgeStats.progressPercent,
       leaseOwner: getInstanceId(),
       leaseDegraded,
+      timing: _p2Timing,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
