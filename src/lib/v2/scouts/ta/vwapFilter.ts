@@ -124,11 +124,11 @@ export async function checkVWAP(
   const priceBelowVWAP = currentPrice < vwap;
 
   // 4. Volume surge = recent 3-bar average vs 20-bar average
-  // PAPER mode uses relaxed thresholds to generate training data for gladiators.
-  // LIVE mode uses strict institutional thresholds.
-  const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
-  const TREND_VOL_THRESHOLD = isPaper ? 0.1 : 1.5;      // Paper: near-zero floor | Live: need 1.5x surge
-  const MEAN_REV_VOL_THRESHOLD = isPaper ? 0.05 : 1.2;  // Paper: near-zero floor | Live: need 1.2x
+  // FIX 2026-04-18: PAPER=LIVE parity. Previous relaxed PAPER thresholds
+  // produced garbage training data (everything passed → WR artifacts).
+  // Unified: PAPER stats now predict LIVE performance accurately.
+  const TREND_VOL_THRESHOLD = 1.5;
+  const MEAN_REV_VOL_THRESHOLD = 1.2;
   const volumeSurge = volumeRatio >= TREND_VOL_THRESHOLD;
 
   // 5. Final confirmation logic

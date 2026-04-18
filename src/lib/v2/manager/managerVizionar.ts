@@ -167,9 +167,8 @@ export class ManagerVizionar {
 
     log.info(`[RL] ${intelligence.gladiatorId}: confidence ${(consensus.weightedConfidence * 100).toFixed(1)}% → ${(final * 100).toFixed(1)}% (mod: ${mod}, symPen: ${symbolPenalty}, cap: ${confidenceCap})`);
 
-    // PAPER MODE: Lower FLAT threshold to generate training data (0.25 vs 0.5 for LIVE)
-    const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
-    const FLAT_THRESHOLD = isPaper ? 0.25 : 0.5;
+    // FIX 2026-04-18: PAPER=LIVE parity. Unified FLAT threshold.
+    const FLAT_THRESHOLD = 0.5;
 
     return {
       ...consensus,

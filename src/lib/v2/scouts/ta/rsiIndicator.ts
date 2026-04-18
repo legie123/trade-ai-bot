@@ -103,13 +103,10 @@ export function analyzeRSI(
   let confirmsSignal = false;
   let reason = '';
 
-  // PAPER mode: wider RSI bands to generate training data. LIVE: strict institutional bands.
-  const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
-  const BUY_RSI_MIN = isPaper ? 35 : 45;   // Paper: accept weaker momentum | Live: need 45+
-  const SELL_RSI_MAX = isPaper ? 65 : 55;   // Paper: accept higher RSI sells | Live: need <55
-
-  // PAPER mode: relax overbought cap to 80 for training data. LIVE: strict 70.
-  const BUY_RSI_MAX = isPaper ? 80 : 70;
+  // FIX 2026-04-18: PAPER=LIVE parity. Unified RSI thresholds.
+  const BUY_RSI_MIN = 45;
+  const SELL_RSI_MAX = 55;
+  const BUY_RSI_MAX = 70;
 
   if (proposedSignal === 'BUY') {
     if (rsi > BUY_RSI_MIN && rsi < BUY_RSI_MAX) {

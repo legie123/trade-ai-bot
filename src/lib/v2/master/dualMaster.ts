@@ -350,10 +350,40 @@ interface HallucinationReport {
   oracleAnchoring: { anchored: boolean; matchedDataPoints: number; totalDataPoints: number };
 }
 
+// ─── Consensus Cache ───────────────────────────────────────────
+// PERF FIX 2026-04-18: Same symbol+direction hits getConsensus() multiple times
+// per cron cycle (e.g. 3 BUY signals for SOL within 60s). Each call = 2 LLM
+// roundtrips (~10s). Cache by symbol+signal_direction+price_bucket avoids
+// redundant calls. TTL=120s covers one full cron cycle + margin.
+interface ConsensusCacheEntry {
+  result: DualConsensus;
+  ts: number;
+}
+const _consensusCache: Map<string, ConsensusCacheEntry> = new Map();
+const CONSENSUS_CACHE_TTL = 120_000; // 120s
+
+function consensusCacheKey(symbol: string, signalDirection: string, price: number): string {
+  // Price bucket: round to 0.2% increments to avoid cache misses on minor ticks
+  // e.g. BTC at 67832 and 67900 (0.1% diff) → same bucket
+  const bucket = price > 0 ? Math.round(price / (price * 0.002)) : 0;
+  return `${symbol}_${signalDirection}_${bucket}`;
+}
+
 export class DualMasterConsciousness {
   private timeoutMs = 45000;
 
   public async getConsensus(marketData: Record<string, unknown>, gladiatorDnaContext: Record<string, unknown>): Promise<DualConsensus> {
+    // ─── Cache check ───
+    const cacheSymbol = String(gladiatorDnaContext.symbol || marketData.symbol || '');
+    const cacheDirection = String(marketData.signal || marketData.direction || 'UNKNOWN');
+    const cachePrice = Number(marketData.price || marketData.currentPrice || 0);
+    const cKey = consensusCacheKey(cacheSymbol, cacheDirection, cachePrice);
+    const cached = _consensusCache.get(cKey);
+    if (cached && Date.now() - cached.ts < CONSENSUS_CACHE_TTL) {
+      log.info(`[DualMaster] CACHE HIT for ${cacheSymbol} ${cacheDirection} — skipping LLM calls`);
+      return cached.result;
+    }
+
     // Build a context-rich prompt that the LLM can actually reason about
     const dnaDigest = gladiatorDnaContext.digest || 'No historical data available';
     // Base RL modifier from gladiator's own DNA
@@ -418,6 +448,18 @@ export class DualMasterConsciousness {
       opinions: [architectOpinion, oracleOpinion],
       hallucinationReport,
     } as unknown as Parameters<typeof addSyndicateAudit>[0]);
+
+    // ─── Cache store ───
+    _consensusCache.set(cKey, { result: consensus, ts: Date.now() });
+    // Evict stale entries (prevent memory leak on long-running process)
+    if (_consensusCache.size > 50) {
+      const now = Date.now();
+      const keys = Array.from(_consensusCache.keys());
+      for (const k of keys) {
+        const entry = _consensusCache.get(k);
+        if (entry && now - entry.ts > CONSENSUS_CACHE_TTL) _consensusCache.delete(k);
+      }
+    }
 
     return consensus;
   }
