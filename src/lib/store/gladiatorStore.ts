@@ -331,11 +331,11 @@ class GladiatorStore {
       // Assign ranks and live status
       // INSTITUTIONAL RULE (QW-8 tightening, 2026-04-18):
       //   tt>=50, WR>=58%, PF>=1.3, WF fail-closed.
-      // Rationale: sub TP/SL simetric ±0.5%, gate anterior (20/45/1.1) lăsa ~41% false-positives
+      // Rationale: sub TP=1.0%/SL=-0.5% asimetric, gate anterior (20/45/1.1) lăsa ~41% false-positives
       // pe strategii pur-noise (Binomial math: p(WR>=55%|n=20,p=0.5)=0.412). Pragurile 58/1.3 + n=50
       // reduc false-positives sub ~10%. WF fail-closed (require explicit pass) elimină gap-ul
       // 20-29 trades unde wfCache era gol și trecea prin !wfResult.
-      // Asumpție critică: TP/SL simetric ±0.5% (QW-7). Dacă se schimbă → recalibrează pragurile.
+      // Asumpție: TP=1.0%/SL=-0.5% asimetric (R:R 2:1, break-even ~33%). Gate 58% WR e conservator.
       scored.forEach((entry, index) => {
         entry.gladiator.rank = index + 1;
         const meetsThreshold = entry.gladiator.stats.totalTrades >= 50

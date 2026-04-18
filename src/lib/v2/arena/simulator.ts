@@ -192,18 +192,18 @@ export class ArenaSimulator {
       let exitSource: 'HIT_TAKE_PROFIT' | 'HIT_STOP_LOSS' | 'TIME_EXPIRATION';
 
       if (hitTP) {
-        const tpMove = WIN_THRESHOLD_TP / 100; // 0.005
+        const tpMove = WIN_THRESHOLD_TP / 100; // 0.01 (1%)
         exitPrice = isLongSignal
           ? trade.entryPrice * (1 + tpMove)
           : trade.entryPrice * (1 - tpMove);
-        finalPnl = WIN_THRESHOLD_TP; // exactly +0.5%
+        finalPnl = WIN_THRESHOLD_TP; // exactly +1.0% (TP)
         exitSource = 'HIT_TAKE_PROFIT';
       } else if (hitSL) {
-        const slMove = Math.abs(LOSS_THRESHOLD_SL) / 100; // 0.005
+        const slMove = Math.abs(LOSS_THRESHOLD_SL) / 100; // 0.005 (0.5%)
         exitPrice = isLongSignal
           ? trade.entryPrice * (1 - slMove)
           : trade.entryPrice * (1 + slMove);
-        finalPnl = LOSS_THRESHOLD_SL; // exactly -0.5%
+        finalPnl = LOSS_THRESHOLD_SL; // exactly -0.5% (SL)
         exitSource = 'HIT_STOP_LOSS';
       } else {
         // TIME_EXPIRATION: use actual market price — legitimate mark-to-market at window close.
