@@ -3,7 +3,7 @@
 // Evaluates gladiators for PHANTOM → LIVE promotion using pre-live gate
 // ============================================================
 import { NextResponse } from 'next/server';
-import { getGladiatorsFromDb, saveGladiatorsToDb } from '@/lib/store/db';
+import { getGladiatorsFromDb, saveGladiatorsToDb, initDB, getIndependentSampleSize } from '@/lib/store/db';
 import { getKillSwitchState } from '@/lib/core/killSwitch';
 import { MonteCarloEngine } from '@/lib/v2/superai/monteCarloEngine';
 import { sendMessage } from '@/lib/alerts/telegram';
@@ -11,19 +11,22 @@ import { requireCronAuth } from '@/lib/core/cronAuth';
 import { emitPromotion } from '@/lib/v2/alerts/eventHub';
 // AUDIT FIX C3 (2026-04-18): Walk-forward validation gate
 import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
+import { gladiatorStore } from '@/lib/store/gladiatorStore';
 
 export const dynamic = 'force-dynamic';
 
-// FIX 2026-04-18 FAZA 5: Aligned with QW-8 gladiatorStore gates (50/58/1.3).
-// Previous: 20/45/1.1 — could promote gladiators that gladiatorStore would demote on next
-// recalibrate cycle, causing promotion/demotion oscillation.
+// FAZA 3/5 BATCH 2/4 (2026-04-19) — auto-promote criteria aligned with QW-8 gate.
+// PRIOR: 20/45/1.1 was dangerously loose — allowed LIVE promotion on 20 wash-contaminated
+// phantom rows (potentially = 3-5 independent signals).
+// NOW: minPhantomTrades semantic = INDEPENDENT SAMPLES (dedupe per minute+symbol+direction).
+// Thresholds match gladiatorStore QW-8: tt>=50, WR>=58%, PF>=1.3.
 const PROMO_CRITERIA = {
-  minPhantomTrades: 50,       // was 20 — need statistical significance
-  minWinRate: 58,             // was 45 — QW-8 institutional standard
-  minProfitFactor: 1.3,       // was 1.1 — must prove real edge
-  maxRuinProbability: 10,     // Monte Carlo ruin < 10%
-  maxRiskPerTrade: 1.0,       // %
-  maxLiveGladiators: 3,       // Limit concurrent LIVE gladiators
+  minPhantomTrades: 50,      // INDEPENDENT samples, not raw totalTrades
+  minWinRate: 58,
+  minProfitFactor: 1.3,
+  maxRuinProbability: 10,    // Monte Carlo ruin < 10%
+  maxRiskPerTrade: 1.0,      // %
+  maxLiveGladiators: 3,      // Limit concurrent LIVE gladiators
 };
 
 interface PromotionResult {
@@ -47,6 +50,10 @@ export async function GET(request: Request) {
   const results: PromotionResult[] = [];
 
   try {
+    // COLD-START FIX (2026-04-18): Hydrate cache from Supabase before reading gladiators.
+    // Without this, cold-start Cloud Run instances read empty/seed state and skip promotions.
+    await initDB();
+
     // 1. Kill switch check — if triggered, no promotions
     const ks = getKillSwitchState();
     if (ks.engaged || ks.velocityTriggered) {
@@ -77,13 +84,50 @@ export async function GET(request: Request) {
       });
     }
 
-    // 3. Find promotion candidates (PHANTOM with enough trades)
-    const candidates = gladiators.filter(g =>
+    // FAZA 3/5 BATCH 2/4 — Refresh global indepSampleCache so gladiatorStore.recalibrateRanks
+    // (next 5min tick) uses fresh dedup counts in its own QW-8 gate.
+    try {
+      await gladiatorStore.refreshIndependentSampleSizes();
+    } catch (refreshErr) {
+      console.warn(`[AUTO-PROMOTE] refreshIndependentSampleSizes failed: ${String(refreshErr)}`);
+    }
+
+    // 3. Find promotion candidates (PHANTOM with enough INDEPENDENT samples).
+    // FAZA 3/5 BATCH 2/4 — dedupe-aware: count unique (minute, symbol, direction) decisions.
+    // Filtered in 2 steps: first by cheap WR/PF, then by expensive DB query on indep count.
+    // ASUMPȚIE: dacă getIndependentSampleSize DB query fails → returnează 0 → gladiator exclus.
+    // Fail-closed: mai bine ratăm o promovare legitimă decât să promovăm pe wash.
+    const preliminary = gladiators.filter(g =>
       !g.isLive &&
-      g.stats.totalTrades >= PROMO_CRITERIA.minPhantomTrades &&
       g.stats.winRate >= PROMO_CRITERIA.minWinRate &&
-      g.stats.profitFactor >= PROMO_CRITERIA.minProfitFactor
+      g.stats.profitFactor >= PROMO_CRITERIA.minProfitFactor &&
+      // cheap upper bound: if raw totalTrades < threshold, indep can't exceed it
+      g.stats.totalTrades >= PROMO_CRITERIA.minPhantomTrades
     );
+    const candidates: typeof preliminary = [];
+    for (const g of preliminary) {
+      try {
+        const indepCount = await getIndependentSampleSize(g.id);
+        if (indepCount >= PROMO_CRITERIA.minPhantomTrades) {
+          candidates.push(g);
+        } else {
+          results.push({
+            gladiatorId: g.id,
+            gladiatorName: g.name,
+            action: 'SKIPPED',
+            reason: `Insufficient INDEPENDENT samples: ${indepCount} (raw ${g.stats.totalTrades}) < ${PROMO_CRITERIA.minPhantomTrades} — wash-contaminated`,
+            stats: { winRate: g.stats.winRate, profitFactor: g.stats.profitFactor, totalTrades: g.stats.totalTrades },
+          });
+        }
+      } catch {
+        results.push({
+          gladiatorId: g.id,
+          gladiatorName: g.name,
+          action: 'SKIPPED',
+          reason: 'getIndependentSampleSize failed — fail-closed',
+        });
+      }
+    }
 
     if (candidates.length === 0) {
       return NextResponse.json({
