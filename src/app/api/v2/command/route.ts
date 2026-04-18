@@ -12,6 +12,10 @@ import { engageKillSwitch, disengageKillSwitch, getKillSwitchState, resetDailyTr
 import { watchdogPing, getWatchdogState } from '@/lib/core/watchdog';
 import { startHeartbeat, getFreshHealthSnapshot } from '@/lib/core/heartbeat';
 import { isAuthenticated } from '@/lib/auth';
+// FIX 2026-04-18 (QW-5): agents:status folosea internalFetch (self-fetch HTTP) spre
+// /api/a2a/orchestrate. Cloud Run loop-back esueaza intermitent. Import direct handler-ul
+// GET si apel in-process — acelasi pattern ca fix-ul /api/health.
+import { GET as a2aOrchestrateGET } from '../../a2a/orchestrate/route';
 
 export const dynamic = 'force-dynamic';
 const log = createLogger('CommandCenter');
@@ -136,7 +140,9 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
 
       // ─── AGENT ORCHESTRATION (no auth on GET, swarm token on POST) ───
       case 'agents:status': {
-        const res = await internalFetch(new URL('/api/a2a/orchestrate', baseUrl));
+        // FIX 2026-04-18 (QW-5): in-process call vs self-fetch HTTP.
+        const response = await a2aOrchestrateGET();
+        const res = await response.json();
         return ok(command, 'Swarm orchestrator status', res, start);
       }
       case 'agents:orchestrate': {
