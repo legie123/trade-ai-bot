@@ -1,5 +1,6 @@
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { DNAExtractor } from '../superai/dnaExtractor';
+import { OmegaEngine } from '../superai/omegaEngine';
 import { createLogger } from '@/lib/core/logger';
 import { RoutedSignal } from '@/lib/router/signalRouter';
 import { addPhantomTrade, getPhantomTrades, removePhantomTrade, PhantomTrade } from '@/lib/store/db';
@@ -71,18 +72,30 @@ export class ArenaSimulator {
     // Cron route does refreshGladiatorsFromCloud() before calling this method.
     // Daily rotation must do its own refresh before calling evaluatePhantomTrades().
 
-    // FIX 2026-04-18 FAZA 3: Asymmetric TP/SL thresholds.
-    // Previous symmetric ±0.5% was hitting both TP and SL in same candle for volatile tokens.
-    // New: TP=1.0%, SL=-0.5% (R:R 2:1) → break-even @ WR ~33%. This rewards correct direction
-    // while quickly cutting losers. Volatile tokens won't simultaneously trigger both thresholds.
-    // Historical trades NOT recalculated — old stats remain, new phantoms produce realistic PF.
-    const WIN_THRESHOLD_TP = 1.0;   // Take Profit 1.0% — give winners room to run
-    const LOSS_THRESHOLD_SL = -0.5; // Stop Loss -0.5% — cut losers fast
-    const MAX_HOLD_SEC = 1800;      // Maximum 30min — doubled from 15min to let asymmetric TP breathe
+    // FIX 2026-04-18 (QW-7): Rebalansare TP/SL — era 0.3/-1.0 (R:R 1:3.33 → gladiatorul
+    // avea nevoie de WR >78% doar ca să fie break-even — matematic improbabil sustained).
+    // Nou: 0.5/-0.5 (R:R 1:1) → break-even @ WR 50%. PF-ul devine interpretabil.
+    // Asumpție care invalidează: volatility crypto > 0.5% în 15min poate lovi ambele praguri
+    // în aceeași fereastră — accept acest artifact statistic vs. artifact mai mare al R:R 1:3.33.
+    // Istoricul trades NU se recalculează — statisticile vechi rămân poluate, dar noile phantoms
+    // vor produce PF realist.
+    const WIN_THRESHOLD_TP = 0.5;  // Take Profit 0.5% (simetric)
+    const LOSS_THRESHOLD_SL = -0.5; // Stop Loss -0.5% (simetric)
+    const MAX_HOLD_SEC = 900;       // Maximum 15min — force-close stale phantoms
 
     // Batch: get unique symbols and prefetch prices in parallel
     const uniqueSymbols = [...new Set(activePhantoms.map(t => t.symbol))];
     await Promise.all(uniqueSymbols.map(sym => getCachedPrice(sym)));
+
+    // FIX 2026-04-18 (FAZA B.1) — bug #3: regime was always NULL in gladiator_battles.
+    // Snapshot once per tick (OmegaEngine.getRegime is sync; `hasLiveRegime` tells us
+    // whether we have real analysis or the emptyRegime() fallback).
+    // ASUMPȚIE: regime-ul e stabil pe durata unui tick (cron la ~1min). Dacă OmegaEngine
+    // analyze rulează între getRegime() calls concurent cu simulator, valorile pot differ
+    // micro-temporal — acceptabil (telemetry, nu decision input).
+    const omega = OmegaEngine.getInstance();
+    const regimeSnapshot = omega.getRegime();
+    const regimeIsLive = omega.hasLiveRegime();
 
     let totalClosed = 0;
 
@@ -182,6 +195,12 @@ export class ArenaSimulator {
           exitPrice,                                       // CLAMPED (was: currentPrice)
           marketPriceAtClose: currentPrice,                // Reference: actual market price
           overshoot: parseFloat((pnlPercent - finalPnl).toFixed(4)), // Gap clamped away — telemetry
+          // FIX 2026-04-18 (FAZA B.1) — log regime for regime-aware stats downstream.
+          // regimeIsFallback=true means OmegaEngine had no analysis yet (emptyRegime defaults).
+          regime: regimeSnapshot.regime,
+          regimeConfidence: parseFloat(regimeSnapshot.confidence.toFixed(4)),
+          regimeVolatilityScore: regimeSnapshot.volatilityScore,
+          regimeIsFallback: !regimeIsLive,
         }
       });
 

@@ -358,6 +358,16 @@ export class OmegaEngine {
   }
 
   /**
+   * True if OmegaEngine has performed at least one regime analysis from live data.
+   * Used by simulator.logBattle to mark whether regime in market_context is real
+   * vs fallback (emptyRegime returns 'RANGE'/0.3 defaults, indistinguishable otherwise).
+   * FIX 2026-04-18 (FAZA B.1) — bug #3: regime was always NULL in gladiator_battles.
+   */
+  public hasLiveRegime(): boolean {
+    return this.lastRegime !== null;
+  }
+
+  /**
    * Get synthesized DNA patterns
    */
   public getSynthesizedPatterns(): DNAPattern[] {
