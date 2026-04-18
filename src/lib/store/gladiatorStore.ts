@@ -277,18 +277,38 @@ class GladiatorStore {
   public findBestGladiator(symbol: string): Gladiator | undefined {
     this.ensureLoaded();
     const preferredArena: ArenaType = symbol.includes('SOL') || symbol.includes('WIF') ? 'DEEP_WEB' : 'DAY_TRADING';
-    
+    const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+
+    // Priority 1: live non-Omega in preferred arena
     const candidates = this.gladiators
       .filter(g => g.arena === preferredArena && g.isLive && !g.isOmega);
+    if (candidates.length > 0) {
+      return candidates.sort((a, b) => a.rank - b.rank)[0];
+    }
 
-    if (candidates.length === 0) {
-      // Fallback: any live gladiator
+    // Priority 2: any live non-Omega
+    const anyLive = this.gladiators
+      .filter(g => g.isLive && !g.isOmega)
+      .sort((a, b) => a.rank - b.rank);
+    if (anyLive.length > 0) return anyLive[0];
+
+    // Priority 3 (PAPER mode only): top-ranked non-Omega even if not live.
+    // This breaks the deadlock where gladiators need trades to become live,
+    // but need to be live to receive signals. In PAPER mode, all decisions
+    // are shadow-only so risk is zero.
+    if (isPaper) {
+      const paperFallback = this.gladiators
+        .filter(g => g.arena === preferredArena && !g.isOmega)
+        .sort((a, b) => a.rank - b.rank);
+      if (paperFallback.length > 0) return paperFallback[0];
+
+      // Last resort: any non-Omega
       return this.gladiators
-        .filter(g => g.isLive && !g.isOmega)
+        .filter(g => !g.isOmega)
         .sort((a, b) => a.rank - b.rank)[0];
     }
 
-    return candidates.sort((a, b) => a.rank - b.rank)[0];
+    return undefined;
   }
 
   public updateOmegaProgress(progress: number, stats?: Partial<Gladiator['stats']>): void {
