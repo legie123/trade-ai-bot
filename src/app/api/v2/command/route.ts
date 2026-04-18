@@ -33,6 +33,11 @@ import { GET as cronGET } from '../../cron/route';
 // FIX 2026-04-19: omega:status + arena:status in-process (was self-fetch HTTP, failed on Cloud Run)
 import { GET as omegaStatusGET } from '../omega-status/route';
 import { GET as arenaStatusGET } from '../arena/route';
+// FIX 2026-04-19: diag:full + diag:signal-quality in-process (self-fetch returns null on Cloud Run)
+import { GET as healthGET } from '../health/route';
+import { GET as diagMasterGET } from '../../../diagnostics/master/route';
+import { GET as diagCreditsGET } from '../../../diagnostics/credits/route';
+import { GET as diagSignalQualityGET } from '../../../diagnostics/signal-quality/route';
 
 export const dynamic = 'force-dynamic';
 const log = createLogger('CommandCenter');
@@ -199,10 +204,11 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
 
       // ─── DIAGNOSTICS (GET endpoints — no auth required) ───
       case 'diag:full': {
+        // FIX 2026-04-19: in-process (was self-fetch HTTP → null on Cloud Run)
         const [healthRes, diagRes, credRes] = await Promise.allSettled([
-          internalFetch(new URL('/api/v2/health', baseUrl)),
-          internalFetch(new URL('/api/diagnostics/master', baseUrl)),
-          internalFetch(new URL('/api/diagnostics/credits', baseUrl)),
+          healthGET().then(r => r.json()),
+          diagMasterGET().then(r => r.json()),
+          diagCreditsGET().then(r => r.json()),
         ]);
         return ok(command, 'Full diagnostics collected', {
           health: healthRes.status === 'fulfilled' ? healthRes.value : null,
@@ -211,7 +217,9 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
         }, start);
       }
       case 'diag:signal-quality': {
-        const res = await internalFetch(new URL('/api/diagnostics/signal-quality', baseUrl));
+        // FIX 2026-04-19: in-process (was self-fetch HTTP)
+        const response = await diagSignalQualityGET();
+        const res = await response.json();
         return ok(command, 'Signal quality report', res, start);
       }
 
