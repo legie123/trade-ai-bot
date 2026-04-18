@@ -124,11 +124,17 @@ export async function checkVWAP(
   const priceBelowVWAP = currentPrice < vwap;
 
   // 4. Volume surge = recent 3-bar average vs 20-bar average
-  // FIX 2026-04-18: PAPER=LIVE parity. Previous relaxed PAPER thresholds
-  // produced garbage training data (everything passed → WR artifacts).
-  // Unified: PAPER stats now predict LIVE performance accurately.
-  const TREND_VOL_THRESHOLD = 1.5;
-  const MEAN_REV_VOL_THRESHOLD = 1.2;
+  // REVERT 2026-04-19: commit 50754f8d09 "PAPER=LIVE parity" forced PAPER to
+  // LIVE thresholds (1.5x / 1.2x) — 15-24x tighter than prior PAPER (0.1/0.05).
+  // Empirical result: scouts emitted ZERO signals for 3h+, pipeline starved.
+  // The "WR artifact" it tried to fix is a measurement problem, not a gate
+  // problem — tighten gates at SENTINEL/RL layer, not at scout layer, or PAPER
+  // has nothing to learn from. PAPER exists to collect data; LIVE stays strict.
+  // ASUMPȚIE: Scout-level laxness is compensated downstream by
+  // confidence floor + Sentinel + killSwitch chain (observable in LIVE gates).
+  const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+  const TREND_VOL_THRESHOLD = isPaper ? 0.1 : 1.5;
+  const MEAN_REV_VOL_THRESHOLD = isPaper ? 0.05 : 1.2;
   const volumeSurge = volumeRatio >= TREND_VOL_THRESHOLD;
 
   // 5. Final confirmation logic

@@ -103,10 +103,14 @@ export function analyzeRSI(
   let confirmsSignal = false;
   let reason = '';
 
-  // FIX 2026-04-18: PAPER=LIVE parity. Unified RSI thresholds.
-  const BUY_RSI_MIN = 45;
-  const SELL_RSI_MAX = 55;
-  const BUY_RSI_MAX = 70;
+  // REVERT 2026-04-19: commit 50754f8d09 "PAPER=LIVE parity" narrowed PAPER
+  // RSI bands to LIVE institutional range. Combined with tightened vwap/confidence
+  // it starved PAPER pipeline (0 decisions 3h+). PAPER needs wider bands to
+  // collect training data across regimes; LIVE stays institutional.
+  const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+  const BUY_RSI_MIN = isPaper ? 35 : 45;
+  const SELL_RSI_MAX = isPaper ? 65 : 55;
+  const BUY_RSI_MAX = isPaper ? 80 : 70;
 
   if (proposedSignal === 'BUY') {
     if (rsi > BUY_RSI_MIN && rsi < BUY_RSI_MAX) {
