@@ -44,13 +44,18 @@ export async function GET(request: NextRequest) {
       status: string;
     }> : [];
 
+    // QW-8 tightening (2026-04-18): pre-live qualification sincronizat cu recalibrateRanks.
+    // Cere tt>=50, WR>=58%, PF>=1.3 — same binomial justification.
     const qualifiedGladiators = glads.filter(g =>
-      g.stats && g.stats.totalTrades >= 20 && g.stats.winRate >= 45
+      g.stats
+      && g.stats.totalTrades >= 50
+      && g.stats.winRate >= 58
+      && g.stats.profitFactor >= 1.3
     );
     checks.push({
       name: 'gladiator_qualified',
       pass: qualifiedGladiators.length >= 1,
-      detail: `${qualifiedGladiators.length} gladiator(s) with 20+ trades & WR>=45% [need >=1]`,
+      detail: `${qualifiedGladiators.length} gladiator(s) with 50+ trades, WR>=58%, PF>=1.3 [need >=1]`,
       mandatory: true,
     });
 

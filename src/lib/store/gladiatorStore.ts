@@ -217,16 +217,21 @@ class GladiatorStore {
       scored.sort((a, b) => b.score - a.score);
 
       // Assign ranks and live status
-      // INSTITUTIONAL RULE: Only gladiators with 20+ trades AND WR >= 40% AND PF >= 1.0
-      // can compete for live capital slots. Raw rank alone is insufficient.
+      // INSTITUTIONAL RULE (QW-8 tightening, 2026-04-18):
+      //   tt>=50, WR>=58%, PF>=1.3, WF fail-closed.
+      // Rationale: sub TP/SL simetric ±0.5%, gate anterior (20/45/1.1) lăsa ~41% false-positives
+      // pe strategii pur-noise (Binomial math: p(WR>=55%|n=20,p=0.5)=0.412). Pragurile 58/1.3 + n=50
+      // reduc false-positives sub ~10%. WF fail-closed (require explicit pass) elimină gap-ul
+      // 20-29 trades unde wfCache era gol și trecea prin !wfResult.
+      // Asumpție critică: TP/SL simetric ±0.5% (QW-7). Dacă se schimbă → recalibrează pragurile.
       scored.forEach((entry, index) => {
         entry.gladiator.rank = index + 1;
-        const meetsThreshold = entry.gladiator.stats.totalTrades >= 20
-          && entry.gladiator.stats.winRate >= 45   // Hardened from 40% — institutional gate
-          && entry.gladiator.stats.profitFactor >= 1.1; // Hardened from 1.0 — must prove edge
-        // Walk-Forward gate (Step 2.3): OVERFIT gladiators cannot go live
+        const meetsThreshold = entry.gladiator.stats.totalTrades >= 50
+          && entry.gladiator.stats.winRate >= 58
+          && entry.gladiator.stats.profitFactor >= 1.3;
+        // Walk-Forward gate: fail-closed — require explicit WF pass, not absence.
         const wfResult = this.wfCache.get(entry.gladiator.id);
-        const wfClean = !wfResult || wfResult.verdict !== 'OVERFIT';
+        const wfClean = wfResult !== undefined && wfResult.verdict !== 'OVERFIT';
         entry.gladiator.isLive = index < 3 && meetsThreshold && wfClean;
       });
     }

@@ -39,13 +39,15 @@ export async function runDailyRotation() {
     }
 
     // 4. Update the Leaderboard Live status
-    // INSTITUTIONAL RULE: isLive requires 20+ trades, WR >= 45%, PF >= 1.1 (hardened thresholds)
+    // INSTITUTIONAL RULE (QW-8 tightening, 2026-04-18):
+    //   isLive cere tt>=50, WR>=58%, PF>=1.3 — sincronizat cu recalibrateRanks.
+    // Rationale: reduce false-positives de la ~41% la <10% sub TP/SL simetric ±0.5%.
     const gladiators = gladiatorStore.getLeaderboard();
     gladiators.forEach((g, idx) => {
       g.rank = idx + 1;
-      const meetsThreshold = g.stats.totalTrades >= 20
-        && g.stats.winRate >= 45
-        && g.stats.profitFactor >= 1.1;
+      const meetsThreshold = g.stats.totalTrades >= 50
+        && g.stats.winRate >= 58
+        && g.stats.profitFactor >= 1.3;
       g.isLive = g.rank <= 3 && meetsThreshold;
     });
 
