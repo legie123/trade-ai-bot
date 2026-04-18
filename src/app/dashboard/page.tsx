@@ -229,6 +229,70 @@ export default function StatusPage(){
   const [activeLog,setActiveLog]=useState<'all'|'error'|'warn'>('all');
   const [expandedGlad,setExpandedGlad]=useState<Set<string>>(new Set());
   const [expandedAudits,setExpandedAudits]=useState<Set<number>>(new Set());
+
+  /* ═══ AUTH (C17) — login modal so command buttons work ═══
+     Why: /api/v2/command requires JWT cookie for non-readonly cmds. Without
+     a login UI, every operational click returned "FAIL: Unauthorized".
+     Behavior: on mount, GET /api/auth — if not authed, open modal. Modal
+     POSTs password → cookie set → modal closes → buttons work. */
+  const [authed,setAuthed]=useState<boolean>(false);
+  const [authChecked,setAuthChecked]=useState<boolean>(false);
+  const [loginOpen,setLoginOpen]=useState<boolean>(false);
+  const [loginPwd,setLoginPwd]=useState<string>('');
+  const [loginErr,setLoginErr]=useState<string>('');
+  const [loginBusy,setLoginBusy]=useState<boolean>(false);
+
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try{
+        const r=await fetch('/api/auth',{credentials:'include'});
+        const j=await r.json().catch(()=>null);
+        if(cancelled)return;
+        const ok=!!(j?.data?.authenticated ?? j?.authenticated);
+        setAuthed(ok);
+        setAuthChecked(true);
+        if(!ok)setLoginOpen(true);
+      }catch{
+        if(cancelled)return;
+        setAuthChecked(true);
+        setLoginOpen(true);
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[]);
+
+  const submitLogin=useCallback(async()=>{
+    if(loginBusy||!loginPwd)return;
+    setLoginBusy(true);setLoginErr('');
+    try{
+      const r=await fetch('/api/auth',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        credentials:'include',
+        body:JSON.stringify({password:loginPwd}),
+      });
+      if(r.ok){
+        setAuthed(true);
+        setLoginOpen(false);
+        setLoginPwd('');
+      }else{
+        const j=await r.json().catch(()=>null);
+        setLoginErr(j?.error?.message||j?.message||'Invalid password');
+      }
+    }catch(e){
+      setLoginErr((e as Error).message);
+    }finally{
+      setLoginBusy(false);
+    }
+  },[loginPwd,loginBusy]);
+
+  const logout=useCallback(async()=>{
+    try{await fetch('/api/auth',{method:'DELETE',credentials:'include'});}catch{/* noop */}
+    setAuthed(false);
+    setLoginOpen(true);
+  },[]);
+
   /* ═══ KILL SWITCH ARM/CONFIRM PATTERN ═══ */
   const [killArmed,setKillArmed]=useState(false);
   const killTimerRef=useRef<NodeJS.Timeout|null>(null);
@@ -268,6 +332,15 @@ export default function StatusPage(){
         credentials:'include',
         body:JSON.stringify({command:cmd,params}),
       });
+      // C17: detect auth expiry → re-open login modal so user can re-auth without
+      // refreshing the whole page (lose terminal scroll/state).
+      if(res.status===401){
+        setAuthed(false);
+        setLoginOpen(true);
+        termLog('error',`AUTH REQUIRED: log in to run "${cmd}"`);
+        toast('error','Login required',cmd);
+        return;
+      }
       const data:CmdResult=await res.json();
       if(data.ok){
         termLog('result',`[${data.durationMs}ms] ${data.message}`);
@@ -506,6 +579,65 @@ export default function StatusPage(){
   return(
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:C.font,paddingBottom:80,color:C.text}}>
       <ToastContainer toasts={toasts} dismiss={dismiss}/>
+
+      {/* ══════════════════════════════════════════
+          C17 LOGIN MODAL — gated access for commands
+          Shows when /api/auth reports not-authed OR a 401 happens.
+          ══════════════════════════════════════════ */}
+      {loginOpen&&(
+        <div style={{position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+          <form onSubmit={(e)=>{e.preventDefault();submitLogin();}} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:20,width:'100%',maxWidth:360,boxShadow:'0 10px 40px rgba(0,0,0,0.5)'}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:'0.1em',color:C.mutedLight,textTransform:'uppercase',marginBottom:4}}>Control Room</div>
+            <div style={{fontSize:16,fontWeight:700,color:C.white,marginBottom:12}}>Admin login required</div>
+            <div style={{fontSize:11,color:C.mutedLight,marginBottom:12}}>
+              Commands like <span style={{color:C.yellow}}>collect:positions</span> need an authenticated session. Sign in once per 24h.
+            </div>
+            <input
+              type="password"
+              autoFocus
+              value={loginPwd}
+              onChange={(e)=>setLoginPwd(e.target.value)}
+              placeholder="DASHBOARD_PASSWORD"
+              style={{width:'100%',padding:'10px 12px',background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,fontSize:13,fontFamily:'inherit',marginBottom:10}}
+            />
+            {loginErr&&(
+              <div style={{fontSize:11,color:C.red,marginBottom:10}}>{loginErr}</div>
+            )}
+            <div style={{display:'flex',gap:8}}>
+              <button
+                type="submit"
+                disabled={loginBusy||!loginPwd}
+                style={{flex:1,padding:'10px 12px',background:C.greenBg,border:`1px solid ${C.green}40`,color:C.green,borderRadius:6,fontSize:12,fontWeight:700,cursor:loginBusy?'wait':'pointer',opacity:loginBusy||!loginPwd?0.5:1,fontFamily:'inherit'}}
+              >
+                {loginBusy?'◌ ...':'LOGIN'}
+              </button>
+              <button
+                type="button"
+                onClick={()=>{setLoginOpen(false);setLoginErr('');}}
+                style={{padding:'10px 12px',background:'transparent',border:`1px solid ${C.border}`,color:C.mutedLight,borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}
+              >
+                LATER
+              </button>
+            </div>
+            <div style={{fontSize:10,color:C.muted,marginTop:10}}>
+              Status widgets stay live without login. Only mutation/admin commands require it.
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* C17 — small auth chip top-right of viewport (also surfaces logout) */}
+      {authChecked&&(
+        <div style={{position:'fixed',top:8,right:8,zIndex:60,display:'flex',alignItems:'center',gap:6,padding:'4px 8px',background:C.surface,border:`1px solid ${C.border}`,borderRadius:999,fontSize:10,fontWeight:700,color:authed?C.green:C.yellow,opacity:0.9}}>
+          <span style={{width:6,height:6,borderRadius:'50%',background:authed?C.green:C.yellow}}/>
+          {authed?'AUTHED':'GUEST'}
+          {authed
+            ?<button onClick={logout} style={{marginLeft:4,background:'none',border:'none',color:C.mutedLight,cursor:'pointer',fontSize:10,fontWeight:700,padding:'2px 4px',fontFamily:'inherit'}}>×</button>
+            :<button onClick={()=>setLoginOpen(true)} style={{marginLeft:4,background:'none',border:'none',color:C.green,cursor:'pointer',fontSize:10,fontWeight:700,padding:'2px 4px',fontFamily:'inherit'}}>LOGIN</button>
+          }
+        </div>
+      )}
+
       <style>{`
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         @keyframes spin{to{transform:rotate(360deg)}}

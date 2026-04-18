@@ -104,12 +104,31 @@ const READ_ONLY_COMMANDS = new Set<string>([
 // Enables autonomous admin operations (e.g., Claude deploy agent) without dashboard JWT.
 // CRON_SECRET is already a strong production secret — safe to trust for admin ops.
 // Only non-destructive admin commands go here. Kill switch and mode changes stay JWT-only.
+//
+// 2026-04-19 (C17): Expanded set to cover ALL operational triggers the Control Room
+// dashboard exposes. These do not change config or risk parameters — they kick existing
+// cron loops / scans / collectors. Dashboard now uses login modal for JWT, AND any
+// CLI / autonomous agent can hit them with `x-cron-secret`. Destructive ops
+// (killswitch:engage/disengage, mode:set, bot:*) stay JWT-only.
 const CRON_AUTHED_COMMANDS = new Set<string>([
   'gladiators:reset-stats',
   'cron:run',
   'cron:positions',
   'cron:sentiment',
   'cron:promote',
+  // C17 additions — all non-destructive triggers
+  'collect:positions',
+  'collect:sentiment',
+  'collect:news',
+  'arena:promote',
+  'arena:status',
+  'poly:scan',
+  'poly:mtm',
+  'cron:kick',
+  'reset:daily-triggers',
+  'watchdog:ping',
+  'heartbeat:start',
+  'agents:orchestrate',
 ]);
 
 function isCronAuthenticated(request: Request): boolean {
