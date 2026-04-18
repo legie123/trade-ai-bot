@@ -8,6 +8,13 @@ env:
   PROJECT_ID: evident-trees-453923-f9
   REGION: europe-west1
   SERVICE: trade-ai
+  # FAZA B.2 (2026-04-18) — Dual-service deploy to unify code across both
+  # Cloud Run services that share the same Supabase. Both cron schedulers
+  # were writing to gladiator_battles; only trade-ai had the fee model,
+  # causing antigravity-trade rows to miss pnlPercentNet fields.
+  # Consolidation to single service is deferred; in the meantime, ship
+  # identical image to both.
+  SECONDARY_SERVICE: antigravity-trade
 
 jobs:
   deploy:
@@ -38,7 +45,7 @@ jobs:
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
 
-      - name: Deploy to Cloud Run
+      - name: Deploy to Cloud Run (primary - trade-ai)
         run: |
           IMAGE="gcr.io/$PROJECT_ID/$SERVICE:$GITHUB_SHA"
           gcloud run deploy $SERVICE \
@@ -71,11 +78,52 @@ jobs:
               POLYMARKET_GAMMA_URL=POLYMARKET_GAMMA_URL:latest,\
               SWARM_TOKEN=SWARM_TOKEN:latest"
 
+      - name: Deploy to Cloud Run (secondary - antigravity-trade)
+        # FAZA B.2 — ships same image+config to the secondary service so both
+        # cron schedulers run identical code. --image reuse avoids second docker
+        # build. If secondary deploy fails, primary remains deployed (non-fatal).
+        # Continues on error so that primary-only rollouts are still possible
+        # if antigravity-trade is ever decommissioned.
+        continue-on-error: true
+        run: |
+          IMAGE="gcr.io/$PROJECT_ID/$SERVICE:$GITHUB_SHA"
+          gcloud run deploy $SECONDARY_SERVICE \
+            --image="$IMAGE" \
+            --region=$REGION \
+            --platform=managed \
+            --allow-unauthenticated \
+            --port=8080 \
+            --memory=1Gi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=3 \
+            --set-env-vars="NODE_ENV=production" \
+            --set-secrets="\
+              NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,\
+              NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest,\
+              SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,\
+              OPENAI_API_KEY=OPENAI_API_KEY:latest,\
+              DEEPSEEK_API_KEY=DEEPSEEK_API_KEY:latest,\
+              GEMINI_API_KEY=GEMINI_API_KEY:latest,\
+              MEXC_API_KEY=MEXC_API_KEY:latest,\
+              MEXC_API_SECRET=MEXC_API_SECRET:latest,\
+              TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,\
+              TELEGRAM_CHAT_ID=TELEGRAM_CHAT_ID:latest,\
+              DASHBOARD_PASSWORD=DASHBOARD_PASSWORD:latest,\
+              AUTH_SECRET=AUTH_SECRET:latest,\
+              CRON_SECRET=CRON_SECRET:latest,\
+              POLYMARKET_API_KEY=POLYMARKET_API_KEY:latest,\
+              POLYMARKET_CLOB_URL=POLYMARKET_CLOB_URL:latest,\
+              POLYMARKET_GAMMA_URL=POLYMARKET_GAMMA_URL:latest,\
+              SWARM_TOKEN=SWARM_TOKEN:latest"
+
       - name: Get deployed URL
         run: |
           URL=$(gcloud run services describe $SERVICE --region=$REGION --format='value(status.url)')
-          echo "✅ Deployed at: $URL"
+          echo "✅ Primary deployed at: $URL"
           echo "SERVICE_URL=$URL" >> $GITHUB_ENV
+          URL2=$(gcloud run services describe $SECONDARY_SERVICE --region=$REGION --format='value(status.url)' 2>/dev/null || echo "n/a")
+          echo "✅ Secondary deployed at: $URL2"
 
       - name: Health check
         run: |
