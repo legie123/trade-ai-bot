@@ -168,7 +168,20 @@ export async function GET(request: NextRequest) {
     // updateGladiatorStats TOATE se mută pe 1h. Stats necesită reset (F4) pentru
     // a evita mixed 15m-vechi + 60m-nou.
     const PRIMARY_HORIZON = 60;
-    const WIN_THRESHOLD = 0.3;
+    // FAZA 3/BATCH 2 (2026-04-19) — WR threshold unification (F2 fix).
+    // PRIOR BUG: horizon label used ±0.3% flat → mismatch with simulator TP=1.0%/SL=-0.5%
+    // AND with BATCH 1 net-profit stats semantic. Dashboard mixed two WR truths → incoherent.
+    // NOW: WIN = pnlPercentNet > 0 (money made after fees, matches BATCH 1 updateGladiatorStats).
+    //      NEUTRAL = |pnlPercent| < 0.25% (matches simulator NEUTRAL_ZONE).
+    //      LOSS = otherwise.
+    // Rollback: WR_THRESHOLD_UNIFY=0 → legacy ±0.3% flat label.
+    // ASSUMPTION: NEUTRAL_BAND=0.25% reflects crypto noise floor over 60m horizon.
+    // If realized volatility compresses below 0.25% per hour (dead regime), most signals
+    // become NEUTRAL → slow stats accumulation (acceptable: slow-accurate beats fast-garbage).
+    const WR_UNIFY = process.env.WR_THRESHOLD_UNIFY !== '0';
+    const LEGACY_WIN_THRESHOLD = 0.3;
+    const NEUTRAL_BAND = 0.25;
+    const WIN_THRESHOLD = LEGACY_WIN_THRESHOLD; // kept for comment ref at line 15
     const envKey = isPaper ? 'PAPER_PENDING_MIN_AGE_MIN' : 'LIVE_PENDING_MIN_AGE_MIN';
     const minAgeMin = Number(process.env[envKey]) || Math.min(...HORIZONS);
 
@@ -323,9 +336,20 @@ export async function GET(request: NextRequest) {
 
             // Horizon metric keeps RAW value (informational, may reflect real sharp moves <20%).
             const pnlPercent = rawPnlPercent;
-            const label: 'WIN' | 'LOSS' | 'NEUTRAL' =
-              pnlPercent > WIN_THRESHOLD ? 'WIN'
-              : pnlPercent < -WIN_THRESHOLD ? 'LOSS' : 'NEUTRAL';
+            // FAZA 3/BATCH 2 — unified label. WR_UNIFY=1 (default): WIN iff net>0.
+            // Rollback: WR_THRESHOLD_UNIFY=0 → legacy ±0.3% flat.
+            let label: 'WIN' | 'LOSS' | 'NEUTRAL';
+            if (WR_UNIFY) {
+              // netPnlFromGross already imported at top for shadow DNA path (BATCH 1).
+              const _netCheck = netPnlFromGross(pnlPercent);
+              label = Math.abs(pnlPercent) < NEUTRAL_BAND ? 'NEUTRAL'
+                    : _netCheck.pnlPercentNet > 0 ? 'WIN'
+                    : 'LOSS';
+            } else {
+              label = pnlPercent > WIN_THRESHOLD ? 'WIN'
+                    : pnlPercent < -WIN_THRESHOLD ? 'LOSS'
+                    : 'NEUTRAL';
+            }
 
             // Execution-convention pnl: clamped to simulator TP/SL bandwidth.
             // Used ONLY for DNA logBattle + gladiator stats (aligned w/ QW-11 simulator clamp).
