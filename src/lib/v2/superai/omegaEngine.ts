@@ -166,24 +166,27 @@ export class OmegaEngine {
     const volatilityScore = Math.min(100, stdDev * 10); // Scale 0-100
 
     // ─── Regime Classification ───
+    // RECALIBRATED 2026-04-18 FAZA 4 (re-applied after remote revert):
+    // Signal weight 0.15→0.12, WR delta 0.5→0.4, HIGH_VOL /50→/40,
+    // RANGE symmetric abs(), TRANSITION 0.3→0.25.
     let regime: MarketRegime = 'RANGE';
     let confidence = 0.5;
 
     if (volatilityScore > 60 && allWinRate > 0.5) {
       regime = 'BULL';
-      confidence = Math.min(1, 0.5 + (bullSignals * 0.15) + (allWinRate - 0.5) * 0.5);
+      confidence = Math.min(1, 0.5 + (bullSignals * 0.12) + (allWinRate - 0.5) * 0.4);
     } else if (volatilityScore > 60 && allWinRate < 0.5) {
       regime = 'BEAR';
-      confidence = Math.min(1, 0.5 + (bearSignals * 0.15) + (0.5 - allWinRate) * 0.5);
+      confidence = Math.min(1, 0.5 + (bearSignals * 0.12) + (0.5 - allWinRate) * 0.4);
     } else if (volatilityScore > 75) {
       regime = 'HIGH_VOL';
-      confidence = Math.min(1, 0.5 + (volatilityScore - 60) / 50);
+      confidence = Math.min(1, 0.5 + (volatilityScore - 60) / 40);
     } else if (Math.abs(allWinRate - 0.5) < 0.1) {
       regime = 'RANGE';
-      confidence = 1.0 - (allWinRate - 0.5) * 10; // Higher confidence near 50%
+      confidence = 1.0 - Math.abs(allWinRate - 0.5) * 10;
     } else if (this.lastRegime) {
       regime = 'TRANSITION';
-      confidence = 0.3;
+      confidence = 0.25;
     }
 
     confidence = Math.max(0.1, Math.min(1.0, confidence));

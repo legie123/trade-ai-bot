@@ -72,14 +72,14 @@ export class ArenaSimulator {
     // Cron route does refreshGladiatorsFromCloud() before calling this method.
     // Daily rotation must do its own refresh before calling evaluatePhantomTrades().
 
-    // FIX 2026-04-18 FAZA 3: Asymmetric TP/SL thresholds.
-    // Previous symmetric ±0.5% was hitting both TP and SL in same candle for volatile tokens.
-    // New: TP=1.0%, SL=-0.5% (R:R 2:1) → break-even @ WR ~33%. This rewards correct direction
-    // while quickly cutting losers. Volatile tokens won't simultaneously trigger both thresholds.
+    // FIX 2026-04-18 FAZA 3+5: Asymmetric TP/SL thresholds (applied 3x due to rebase conflicts).
+    // Previous symmetric ±0.5% hit both TP and SL in same candle for volatile tokens → PF≈0.84.
+    // New: TP=1.0%, SL=-0.5% (R:R 2:1) → break-even @ WR ~33%.
+    // MAX_HOLD 900s→1800s to let asymmetric TP breathe.
     // Historical trades NOT recalculated — old stats remain, new phantoms produce realistic PF.
-    const WIN_THRESHOLD_TP = 1.0;   // Take Profit 1.0% — give winners room to run
+    const WIN_THRESHOLD_TP = 1.0;   // Take Profit 1.0% — give winners room
     const LOSS_THRESHOLD_SL = -0.5; // Stop Loss -0.5% — cut losers fast
-    const MAX_HOLD_SEC = 1800;      // Maximum 30min — doubled from 15min to let asymmetric TP breathe
+    const MAX_HOLD_SEC = 1800;      // Maximum 30min
 
     // Batch: get unique symbols and prefetch prices in parallel
     const uniqueSymbols = [...new Set(activePhantoms.map(t => t.symbol))];

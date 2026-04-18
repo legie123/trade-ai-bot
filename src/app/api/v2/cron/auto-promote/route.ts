@@ -14,14 +14,16 @@ import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
 
 export const dynamic = 'force-dynamic';
 
-// Promotion criteria (aligned with pre-live gate)
+// FIX 2026-04-18 FAZA 5: Aligned with QW-8 gladiatorStore gates (50/58/1.3).
+// Previous: 20/45/1.1 — could promote gladiators that gladiatorStore would demote on next
+// recalibrate cycle, causing promotion/demotion oscillation.
 const PROMO_CRITERIA = {
-  minPhantomTrades: 20,
-  minWinRate: 45,
-  minProfitFactor: 1.1,
-  maxRuinProbability: 10,    // Monte Carlo ruin < 10%
-  maxRiskPerTrade: 1.0,      // %
-  maxLiveGladiators: 3,      // Limit concurrent LIVE gladiators
+  minPhantomTrades: 50,       // was 20 — need statistical significance
+  minWinRate: 58,             // was 45 — QW-8 institutional standard
+  minProfitFactor: 1.3,       // was 1.1 — must prove real edge
+  maxRuinProbability: 10,     // Monte Carlo ruin < 10%
+  maxRiskPerTrade: 1.0,       // %
+  maxLiveGladiators: 3,       // Limit concurrent LIVE gladiators
 };
 
 interface PromotionResult {

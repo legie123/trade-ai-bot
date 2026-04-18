@@ -138,9 +138,19 @@ export async function GET(request: NextRequest) {
     //  - evaluateLivePositions reads existing open positions — scanners don't modify these.
     //  - autoDebug is read-only diagnostics.
     //  - All use JS single-threaded event loop — no true parallel memory corruption.
+    //
+    // FIX 2026-04-18 FAZA 5: 120s hard timeout on Phase 2.
+    // Cloud Run default is 300s — if MEXC price fetches stall, Phase 2 could exceed
+    // that and get killed mid-flush (data loss). 120s leaves ~180s for Phase 3
+    // (horizon eval + flush). On timeout, we log but continue to Phase 3.
     // ═══════════════════════════════════════════════════════════════════
 
-    await Promise.allSettled([
+    const PHASE2_TIMEOUT_MS = 120_000;
+    const phase2Deadline = new Promise<'TIMEOUT'>((resolve) =>
+      setTimeout(() => resolve('TIMEOUT'), PHASE2_TIMEOUT_MS)
+    );
+
+    const phase2Work = Promise.allSettled([
       // (A) Phantom + Live position evaluation (sequential within — live depends on phantom stats)
       (async () => {
         await ArenaSimulator.getInstance().evaluatePhantomTrades();
@@ -164,6 +174,11 @@ export async function GET(request: NextRequest) {
         await autoDebugEngine.runDeterministicDiagnostics();
       })().catch(e => log.warn('autoDebug diagnostics failed', { error: String(e) })),
     ]);
+
+    const phase2Result = await Promise.race([phase2Work, phase2Deadline]);
+    if (phase2Result === 'TIMEOUT') {
+      log.error(`[CRON] Phase 2 TIMEOUT after ${PHASE2_TIMEOUT_MS}ms — continuing to Phase 3 (horizon eval + flush)`);
+    }
 
     // Evaluate Real/Shadow Main System Decisions — MULTI-HORIZON (2026-04-18)
     const {
