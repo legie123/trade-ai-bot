@@ -140,14 +140,22 @@ async function flushBuffer(): Promise<void> {
 
     if (error) {
       log.error(`[Audit] Supabase flush failed: ${error.message}. Re-buffering ${batch.length} entries.`);
-      // Re-add to buffer front (don't lose data)
+      // Re-add to buffer front (don't lose data) — but cap at 500 to prevent OOM on persistent outage
       buffer.unshift(...batch);
+      if (buffer.length > 500) {
+        const dropped = buffer.length - 500;
+        buffer.length = 500;
+        log.warn(`[Audit] Buffer capped at 500, dropped ${dropped} oldest entries to prevent OOM`);
+      }
     } else {
       log.info(`[Audit] Flushed ${batch.length} decisions to Supabase`);
     }
   } catch (err) {
     log.error(`[Audit] Flush exception: ${err}`);
     buffer.unshift(...batch);
+    if (buffer.length > 500) {
+      buffer.length = 500;
+    }
   }
 }
 

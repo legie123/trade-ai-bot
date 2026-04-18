@@ -47,6 +47,7 @@ const decisionMutex = new AsyncMutex();
 let _lastDecisionRemoteMerge = 0;
 let _lastGladiatorRemoteMerge = 0;
 const gladiatorMutex = new AsyncMutex();
+const phantomMutex = new AsyncMutex();
 
 // FAZA A FIX 2026-04-19: Stats persistence race.
 // saveGladiatorsToDb launches fire-and-forget IIFE awaiting gladiatorMutex.
@@ -661,27 +662,34 @@ export function getPhantomTrades(): PhantomTrade[] {
 }
 
 export function addPhantomTrade(trade: PhantomTrade): void {
+  // FIX 2026-04-19: phantomMutex prevents concurrent reads of stale localMap
+  // (was fire-and-forget IIFE with no lock → duplicates + array corruption)
   (async () => {
-    if (supabaseUrl && dbInitialized) {
-      try {
-        const { data } = await supabase.from('json_store').select('data').eq('id', 'phantom_trades').single();
-        if (data?.data) {
-          const remote = data.data as PhantomTrade[];
-          const localMap = new Map(cache.phantomTrades.map(t => [t.id, t]));
-          for (const rt of remote) {
-            if (!localMap.has(rt.id)) cache.phantomTrades.push(rt);
+    const release = await phantomMutex.acquire();
+    try {
+      if (supabaseUrl && dbInitialized) {
+        try {
+          const { data } = await supabase.from('json_store').select('data').eq('id', 'phantom_trades').single();
+          if (data?.data) {
+            const remote = data.data as PhantomTrade[];
+            const localMap = new Map(cache.phantomTrades.map(t => [t.id, t]));
+            for (const rt of remote) {
+              if (!localMap.has(rt.id)) cache.phantomTrades.push(rt);
+            }
+            cache.phantomTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           }
-          cache.phantomTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        }
-      } catch (err) { log.warn('Failed to merge remote phantom trades', { error: String(err) }); }
+        } catch (err) { log.warn('Failed to merge remote phantom trades', { error: String(err) }); }
+      }
+
+      if (!cache.phantomTrades.some(t => t.id === trade.id)) {
+        cache.phantomTrades.unshift(trade);
+        if (cache.phantomTrades.length > 500) cache.phantomTrades.length = 500;
+      }
+
+      syncToCloud('phantom_trades', cache.phantomTrades);
+    } finally {
+      release();
     }
-    
-    if (!cache.phantomTrades.some(t => t.id === trade.id)) {
-      cache.phantomTrades.unshift(trade);
-      if (cache.phantomTrades.length > 500) cache.phantomTrades.length = 500;
-    }
-    
-    syncToCloud('phantom_trades', cache.phantomTrades);
   })();
 }
 
@@ -701,18 +709,28 @@ export async function isPositionOpenStrict(symbol: string): Promise<boolean> {
   if (!supabaseUrl) {
     return cache.livePositions.some(p => p.symbol === symbol && p.status === 'OPEN');
   }
-  const { data, error } = await supabase.from('live_positions')
-    .select('id')
-    .eq('symbol', symbol)
-    .eq('status', 'OPEN')
-    .limit(1);
+  // FIX 2026-04-19: 3s timeout prevents hung DB from blocking live trade path
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000);
+  try {
+    const { data, error } = await supabase.from('live_positions')
+      .select('id')
+      .eq('symbol', symbol)
+      .eq('status', 'OPEN')
+      .limit(1)
+      .abortSignal(ctrl.signal);
 
-  if (error) {
-     log.warn('Strict position check failed, falling back to cache', { symbol, error: error.message });
-     // Safe fallback: true (assume it's open to prevent double buy)
-     return true; 
+    if (error) {
+      log.warn('Strict position check failed, falling back to cache', { symbol, error: error.message });
+      return true; // Safe fallback: assume open to prevent double buy
+    }
+    return data && data.length > 0;
+  } catch (err) {
+    log.warn('Strict position check timed out, falling back to cache', { symbol, error: String(err) });
+    return cache.livePositions.some(p => p.symbol === symbol && p.status === 'OPEN');
+  } finally {
+    clearTimeout(timer);
   }
-  return data && data.length > 0;
 }
 
 export function addLivePosition(pos: LivePosition): void {
@@ -732,6 +750,14 @@ export function updateLivePosition(id: string, updates: Partial<LivePosition>): 
       supabase.from('live_positions').update(updates).eq('id', id).then(({ error }) => {
          if (error) log.error('Failed to update live position', { id, error: error.message });
       });
+    }
+    // FIX 2026-04-19: Trim closed positions to prevent unbounded memory growth.
+    // Keep max 200 closed + all OPEN. In LIVE mode with many trades, this prevents OOM.
+    const closed = cache.livePositions.filter(p => p.status !== 'OPEN');
+    if (closed.length > 200) {
+      const openPositions = cache.livePositions.filter(p => p.status === 'OPEN');
+      const recentClosed = closed.slice(0, 200); // already sorted newest-first (unshift in addLivePosition)
+      cache.livePositions = [...openPositions, ...recentClosed];
     }
   }
 }
