@@ -87,3 +87,10 @@ prod_secrets.txt
 *.command
 /tmp/
 .gcp-sa-key.json
+
+# ═══ Session Handoff Artifacts (ephemeral, per-session) ═══
+SESSION_HANDOFF_*.md
+SESSION_INJECT_*.md
+
+# ═══ Supabase Local Temp ═══
+supabase/.temp/
