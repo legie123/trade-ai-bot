@@ -305,6 +305,63 @@ class GladiatorStore {
     this.recalibrateRanks();
     saveGladiatorsToDb(this.gladiators);
   }
+
+  /**
+   * RESET ALL STATS — One-shot recovery after TP/SL asymmetry fix (QW-7).
+   *
+   * Motivație: simulator-ul rulează acum cu TP/SL simetric (±0.5%) și isWin bazat strict
+   * pe hitTP, dar stats.winRate din DB conține acumulări pre-QW-7 (TP=0.3%, SL=-1.0%,
+   * isWin=pnl>0) → winRate raportat 99.18%, imposibil matematic cu PnL real negativ.
+   *
+   * Acțiune: resetează toate stats non-omega la inițial + șterge tracking-ul intern
+   * (_totalWinPnl etc.) + demotează toți la IN_TRAINING + clear wfCache.
+   *
+   * Asumpție care invalidează: dacă `saveGladiatorsToDb` eșuează silent, reset-ul e doar
+   * in-memory și revine la următorul refresh din cloud. VERIFICĂ return-ul.
+   *
+   * Side-effects downstream: Butcher, auto-promote, recalibrateRanks vor relua eligibility
+   * de la zero. Niciun gladiator nu va fi `isLive` până nu atinge din nou threshold-urile
+   * institutionale (totalTrades>=20, WR>=45, PF>=1.1). FAIL-SAFE by design.
+   */
+  public resetAllStats(reason: string): { affected: number; reason: string; timestamp: number } {
+    this.ensureLoaded();
+    let affected = 0;
+    for (const g of this.gladiators) {
+      if (g.isOmega) continue;
+      // Reset public stats la starea inițială (match cu seedGladiators)
+      g.stats = {
+        winRate: 0,
+        profitFactor: 1.0,
+        maxDrawdown: 0,
+        sharpeRatio: 0,
+        totalTrades: 0,
+      };
+      // Șterge tracking-ul intern (force re-init la următorul updateGladiatorStats)
+      const ext = g as Gladiator & {
+        _totalWinPnl?: number;
+        _totalLossPnl?: number;
+        _peakEquity?: number;
+        _currentEquity?: number;
+        readinessScore?: number;
+      };
+      delete ext._totalWinPnl;
+      delete ext._totalLossPnl;
+      delete ext._peakEquity;
+      delete ext._currentEquity;
+      // Demotează: nu poate fi live până nu re-câștigă eligibility via recalibrateRanks
+      g.isLive = false;
+      g.status = 'IN_TRAINING';
+      g.trainingProgress = 0;
+      g.lastUpdated = Date.now();
+      affected++;
+    }
+    // Invalidează walk-forward cache — rezultate calculate pe stats vechi
+    this.wfCache.clear();
+    // Reset timer recalibrate pentru ca recalibrateRanks să se trigger-eze la primul trade
+    this.lastRecalibrateTime = 0;
+    saveGladiatorsToDb(this.gladiators);
+    return { affected, reason, timestamp: Date.now() };
+  }
 }
 
 export const gladiatorStore = GladiatorStore.getInstance();

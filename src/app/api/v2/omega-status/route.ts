@@ -71,6 +71,37 @@ export async function GET() {
         isLive: g.isLive,
       }));
 
+    // ── Data-integrity warnings (sanity gates pentru leaderboard) ──
+    // Motivație: post-QW-7 (TP/SL simetric), statisticile pre-fix rămân poluate. Un
+    // avgWinRate > 80% cu sample mic ESTE aproape sigur artefact — semnalează-l explicit
+    // ca să nu influențeze decizii de promovare LIVE. Nu mascăm datele, le etichetăm.
+    const warnings: Array<{ code: string; severity: 'HIGH' | 'MEDIUM' | 'LOW'; message: string }> = [];
+    const maxTrades = withTrades.reduce((m, g) => Math.max(m, g.stats.totalTrades), 0);
+    if (avgIndividualWR !== null && avgIndividualWR > 80 && maxTrades < 200) {
+      warnings.push({
+        code: 'SUSPICIOUS_HIGH_WIN_RATE',
+        severity: 'HIGH',
+        message: `avgWinRate=${avgIndividualWR}% cu sample max ${maxTrades}. Probabil artefact pre-QW-7. Recomandare: gladiators:reset-stats.`,
+      });
+    }
+    if (withTrades.length > 0 && maxTrades < 30) {
+      warnings.push({
+        code: 'LOW_SAMPLE_SIZE',
+        severity: 'MEDIUM',
+        message: `Max ${maxTrades} trades per gladiator. Statistic nesemnificativ (target ≥30).`,
+      });
+    }
+    if (regime && typeof regime.allGladiatorWinRate === 'number' && avgIndividualWR !== null) {
+      const regimeWRPercent = regime.allGladiatorWinRate * 100;
+      if (Math.abs(regimeWRPercent - avgIndividualWR) > 20) {
+        warnings.push({
+          code: 'DATA_SOURCE_DIVERGENCE',
+          severity: 'HIGH',
+          message: `individuals.avgWinRate=${avgIndividualWR}% vs regime.allGladiatorWinRate=${regimeWRPercent.toFixed(1)}%. Două surse, valori diferite — una e falsă.`,
+        });
+      }
+    }
+
     return successResponse({
       omega: synthesis
         ? {
@@ -103,6 +134,7 @@ export async function GET() {
             bearSignals: regime.bearSignals,
           }
         : null,
+      warnings,
       timestamp: Date.now(),
     });
   } catch (err) {

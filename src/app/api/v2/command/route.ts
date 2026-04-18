@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState, resetDailyTriggers } from '@/lib/core/killSwitch';
+import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { watchdogPing, getWatchdogState } from '@/lib/core/watchdog';
 import { startHeartbeat, getFreshHealthSnapshot } from '@/lib/core/heartbeat';
 import { isAuthenticated } from '@/lib/auth';
@@ -228,6 +229,17 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       case 'reset:daily-triggers': {
         resetDailyTriggers();
         return ok(command, 'Daily triggers reset', getKillSwitchState(), start);
+      }
+
+      // ─── GLADIATORS RESET-STATS (post-QW-7 recovery; auth-required) ───
+      // Șterge stats poluate pre-QW-7 și demotează toți la IN_TRAINING. Safe: gladiatorii
+      // vor reacumula stats prin phantoms curente (TP/SL simetric). Fail-safe: nimeni LIVE
+      // până nu atinge din nou threshold-ul institutional (trades>=20, WR>=45, PF>=1.1).
+      case 'gladiators:reset-stats': {
+        const reason = String(params?.reason || 'manual-admin-reset-post-qw7');
+        const result = gladiatorStore.resetAllStats(reason);
+        log.warn(`[CMD] Gladiators stats reset: ${result.affected} affected. Reason: ${reason}`);
+        return ok(command, `Reset ${result.affected} gladiators (reason: ${reason})`, result, start);
       }
 
       // ─── OMEGA STATUS (GET — no auth) ───
