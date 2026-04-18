@@ -85,6 +85,21 @@ export class ManagerVizionar {
     // 4. Apply RL Confidence Modifier (learned from past performance)
     consensus = this.applyRLModifier(consensus, intelligence, payload.symbol);
 
+    // 4b. R2 — TOXIC SYMBOL+DIRECTION BLACKLIST (2026-04-18, edge-root-cause fix)
+    // Data: gladiator_battles post-QW-11, 5000 rows, C14 analysis showed
+    // per-symbol directional memorization WR<10% on losing direction:
+    //   BTCUSDT  LONG  → n=1771, WR 4.5%
+    //   JUPUSDT  LONG  → n>=50,  WR 0%
+    //   JTOUSDT  LONG  → n>=50,  WR 7.6%
+    //   WIFUSDT  LONG  → n>=50,  WR 6.5%
+    //   RNDRUSDT SHORT → n>=50,  WR 0%
+    // Assumption (may invalidate R2 if broken): regime stable — if BTC flips bull
+    // sustained, LONG blacklist becomes wrong. Mitigated by R4 (Butcher rolling
+    // retrain, separate commit) which will surface updated symbol-direction WR
+    // and we can remove entries. Hard-coded snapshot, NOT dynamic.
+    // Kill-switch: env R2_BLACKLIST_OFF=1 reverts to pre-R2 behavior.
+    consensus = this.applyToxicPairBlacklist(consensus, payload.symbol);
+
     // 5. The Shield Check (Sentinel Guard)
     const safetyCheck = await this.sentinel.check(payload, consensus);
     
@@ -167,13 +182,62 @@ export class ManagerVizionar {
 
     log.info(`[RL] ${intelligence.gladiatorId}: confidence ${(consensus.weightedConfidence * 100).toFixed(1)}% → ${(final * 100).toFixed(1)}% (mod: ${mod}, symPen: ${symbolPenalty}, cap: ${confidenceCap})`);
 
-    // FIX 2026-04-18: PAPER=LIVE parity. Unified FLAT threshold.
-    const FLAT_THRESHOLD = 0.5;
+    // PAPER MODE: Lower FLAT threshold to generate training data (0.25 vs 0.5 for LIVE)
+    const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+    const FLAT_THRESHOLD = isPaper ? 0.25 : 0.5;
 
     return {
       ...consensus,
       weightedConfidence: final,
       finalDirection: final < FLAT_THRESHOLD ? 'FLAT' : consensus.finalDirection,
+    };
+  }
+
+  /**
+   * R2 — Toxic symbol+direction blacklist.
+   *
+   * Hard gate that forces FLAT on symbol+direction combos with historical
+   * WR < 10% and n >= 50 (from gladiator_battles C14 stratification).
+   *
+   * Rationale: the forge memorized per-symbol direction during training; e.g.
+   * BTC LONG fires on 1771/1771 BTC signals with WR 4.5% — literally never
+   * profitable, yet still emitted by current gladiators. R2 is a band-aid
+   * until R4 (rolling 7d retrain) makes this obsolete.
+   *
+   * Why not a soft penalty: confidence cap was already applied upstream and
+   * these combos still slip through because some gladiators carry high base
+   * confidence on memorized pairs. Hard FLAT is the only reliable block.
+   *
+   * Why keep decision logged (not early return): PENDING + outcome evaluation
+   * still happens, so we preserve FLAT training rows for horizonStats and the
+   * R4 retrain ingestion.
+   */
+  private applyToxicPairBlacklist(consensus: DualConsensus, symbol: string): DualConsensus {
+    if (process.env.R2_BLACKLIST_OFF === '1') return consensus;
+    if (consensus.finalDirection === 'FLAT') return consensus;
+
+    // Hardcoded snapshot — reason + evidence inline for audit
+    // High-evidence (n>=50, WR<10%): BTC, JUP, JTO, WIF, RNDR
+    // Lower-evidence (WR<35% but smaller N): PYTH, RAY — included per user approval
+    const BLACKLIST: Record<string, 'LONG' | 'SHORT'> = {
+      BTCUSDT: 'LONG',   // n=1771, WR 4.5%  [high evidence]
+      JUPUSDT: 'LONG',   // n>=50,  WR 0%    [high evidence]
+      JTOUSDT: 'LONG',   // n>=50,  WR 7.6%  [high evidence]
+      WIFUSDT: 'LONG',   // n>=50,  WR 6.5%  [high evidence]
+      RNDRUSDT: 'SHORT', // n>=50,  WR 0%    [high evidence]
+      PYTHUSDT: 'LONG',  // WR<35%           [medium evidence — smaller N]
+      RAYUSDT: 'LONG',   // WR<35%           [medium evidence — smaller N]
+    };
+
+    const blockedDirection = BLACKLIST[symbol];
+    if (!blockedDirection) return consensus;
+    if (consensus.finalDirection !== blockedDirection) return consensus;
+
+    log.warn(`[R2 BLACKLIST] ${symbol} ${consensus.finalDirection} blocked → FLAT (historical WR<10% on this direction, see C14)`);
+    return {
+      ...consensus,
+      finalDirection: 'FLAT',
+      weightedConfidence: 0,
     };
   }
 
