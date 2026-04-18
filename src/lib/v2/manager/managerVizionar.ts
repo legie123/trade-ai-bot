@@ -110,9 +110,19 @@ export class ManagerVizionar {
    */
   private applyRLModifier(consensus: DualConsensus, intelligence: IntelligenceDigest, symbol?: string): DualConsensus {
     // 1. CIRCUIT BREAKER: 4+ loss streak AND base confidence < 85% → refuse trade
+    // PAPER UNLOCK (2026-04-18): Shadow trades have zero capital risk. CB in PAPER mode
+    // was forcing FLAT on ~all signals (current WR=44%, streak≤-4 statistically dominant),
+    // leaving json_store.decisions empty and blocking FAZA B.1c validation.
+    // In PAPER, log-only so the pipeline accumulates training data.
+    // ASSUMPTION CRITIQUE: LIVE mode preserves hard CB. If TRADING_MODE !== 'PAPER',
+    // CB still forces FLAT to protect real capital.
+    const isPaperCB = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
     if (intelligence.currentStreak <= -4 && consensus.weightedConfidence < 0.85) {
-      log.warn(`[RL] CIRCUIT BREAKER: ${intelligence.gladiatorId} on ${intelligence.currentStreak} loss streak. Forcing FLAT.`);
-      return { ...consensus, weightedConfidence: 0, finalDirection: 'FLAT' };
+      if (!isPaperCB) {
+        log.warn(`[RL] CIRCUIT BREAKER: ${intelligence.gladiatorId} on ${intelligence.currentStreak} loss streak. Forcing FLAT.`);
+        return { ...consensus, weightedConfidence: 0, finalDirection: 'FLAT' };
+      }
+      log.warn(`[RL CB-LOG] PAPER: ${intelligence.gladiatorId} streak=${intelligence.currentStreak} conf=${consensus.weightedConfidence.toFixed(2)} — LIVE would block, PAPER continues for training data.`);
     }
 
     // ═══ CONFIDENCE CAP: Limit max confidence based on rolling win rate ═══
