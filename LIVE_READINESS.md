@@ -113,14 +113,65 @@ After each **48h clean-pass** window:
 
 ## LIVE switch mechanics (when authorized)
 
-- **Env vars required:**
-  - `TRADE_MODE=LIVE` (currently `PAPER`)
-  - `LIVE_CAPITAL_CAP_USD=25` (canary) or approved higher value
-  - `LIVE_DAILY_LOSS_LIMIT_PCT=2.0`
-  - `LIVE_ALLOWED_SYMBOLS=SOLUSDT` (comma-separated whitelist)
-  - `LIVE_ALLOWED_GLADIATOR_IDS=<uuid>` (explicit opt-in list)
-- **Deployment:** separate commit + manual Cloud Run env update, never bundled with code changes
-- **Rollback:** `TRADE_MODE=PAPER` → redeploy (target < 5 min)
+### Exact env vars for CANARY (FAZA 3)
+
+Two-key activation — **both required**, else tradingMode.ts collapses to PAPER:
+
+```
+TRADING_MODE=LIVE
+LIVE_TRADING_CONFIRM=YES_I_UNDERSTAND_RISK
+```
+
+Safety thresholds (override defaults):
+
+```
+KILL_SWITCH_DAILY_LOSS_PCT=2.0     # canary = 2% instead of default 5%
+KILL_SWITCH_MAX_EXPOSURE_PCT=10    # canary = 10% (single $25 pos on $1k = 2.5%)
+```
+
+Canary scoping (enforced by managerVizionar/Sentinel — SOURCE VERIFY before relying):
+
+```
+LIVE_CAPITAL_CAP_USD=25             # max per-trade notional
+LIVE_ALLOWED_SYMBOLS=SOLUSDT        # whitelist — never BTC in canary
+LIVE_ALLOWED_GLADIATOR_IDS=<uuid>   # explicit opt-in, 1 gladiator
+LIVE_MAX_OPEN_POSITIONS=1
+LIVE_MAX_TRADES_PER_24H=10
+```
+
+**NOTE:** `LIVE_ALLOWED_*` env vars are intent documentation at time of drafting; verify enforcement in managerVizionar.ts before FAZA 3 activation — if not enforced in code, add enforcement BEFORE setting vars live.
+
+### Observer (pre-LIVE dry-run)
+
+Before FAZA 3 activation, enable the PAPER safety-gate observer to validate the threshold-detection chain on real equity data without engaging:
+
+```
+SAFETY_GATES_PAPER_SIMULATE=true
+```
+
+Grep Cloud Logging for `[SafetyGate:PAPER-SIM]`. Expected behavior over ≥24h:
+- At least one "approaching" (70% of limit) or "WOULD-TRIGGER" log line if PAPER drawdown ≥3.5% in any UTC day
+- Zero thrown exceptions
+- Zero `engageKillSwitch` invocations (PAPER mode → real path dormant)
+
+Default OFF. Remove this env var before LIVE flip (real gates take over).
+
+### Test-fire endpoint (FAZA 2.5 gate — BLOCKER for FAZA 3)
+
+Dry-run simulation validates the *math*. It does NOT validate engage→MEXC→Supabase. Before canary, a manual test-fire of the real engage path is required:
+
+- `POST /api/admin/killswitch/test-fire` (NOT YET IMPLEMENTED — TODO before FAZA 3)
+  - Invokes `engageKillSwitch('TEST_FIRE')` with `DRY_RUN_MEXC=true` flag
+  - Verifies Supabase kill_switch_state row written
+  - Verifies dashboard reflects engaged state
+  - Verifies `disengageKillSwitch` cleanup path
+  - Must pass before canary capital deployment
+
+### Deployment mechanics
+
+- Separate commit + manual Cloud Run env update, never bundled with code changes
+- Canary env vars set via `gcloud run services update trade-ai --update-env-vars=...` (NOT `--set-env-vars` — destructive)
+- **Rollback:** `TRADING_MODE=PAPER` + redeploy (target < 5 min)
 
 ---
 
@@ -139,3 +190,4 @@ LIVE transition requires explicit text from Andrei citing:
 ## Change log
 
 - 2026-04-18 21:10 UTC — initial draft post R2+C15+R4 deploy (commits 3c0f0c3, 88d11d4, fcf6759)
+- 2026-04-19 — added PAPER dry-run observer (`SAFETY_GATES_PAPER_SIMULATE`), exact canary env vars, test-fire endpoint requirement (FAZA 2.5 gate)

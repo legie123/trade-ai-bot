@@ -8,6 +8,13 @@ import { DNAExtractor } from '@/lib/v2/superai/dnaExtractor';
 import { OmegaEngine } from '@/lib/v2/superai/omegaEngine';
 import { netPnlFromGross } from '@/lib/v2/fees/feeModel';
 import { initDB, tryAcquireTaskLease, releaseTaskLease, getInstanceId } from '@/lib/store/db';
+// A1 (2026-04-18) — Shadow stats unifier. Shadow decisions log to DNA (gladiator_battles)
+// via DNAExtractor.logBattle() but were NOT incrementing gladiator.stats (totalTrades/winRate/PF).
+// That created 76% battle-vs-stats gap + reported WR biased ~30pp HIGH over empirical.
+// Fix: mirror simulator.ts:277 pattern — invoke updateGladiatorStats on WIN/LOSS only (skip NEUTRAL).
+// ASUMPȚIE: NEUTRAL label (|pnl| ≤ WIN_THRESHOLD=0.3%) nu e trade închis — phantom simulator
+// tratează analog (isNeutral → continue fără stats update). Consistent cu convenția existentă.
+import { gladiatorStore } from '@/lib/store/gladiatorStore';
 
 const log = createLogger('CronLoop');
 
@@ -100,8 +107,11 @@ export async function GET(request: NextRequest) {
       })().catch(err => log.warn('WS health check failed', { error: String(err) })),
 
       // (C) Safety gates (AUDIT FIX C1 — daily reset + loss watchdog)
+      // Also runs PAPER-mode observer (monitorPaperSafetyGates) when
+      // SAFETY_GATES_PAPER_SIMULATE=true — pure logging, zero engage, for
+      // pre-LIVE dry-run validation of the threshold chain.
       (async () => {
-        const { ensureDailyReset, computeDailyLossPercent } = await import('@/lib/core/safetyGates');
+        const { ensureDailyReset, computeDailyLossPercent, monitorPaperSafetyGates } = await import('@/lib/core/safetyGates');
         const { checkDailyLossLimit } = await import('@/lib/core/killSwitch');
         await ensureDailyReset();
         const dailyLoss = computeDailyLossPercent();
@@ -109,6 +119,8 @@ export async function GET(request: NextRequest) {
           const DAILY_LIMIT = parseFloat(process.env.KILL_SWITCH_DAILY_LOSS_PCT || '5');
           checkDailyLossLimit(dailyLoss, DAILY_LIMIT).catch(() => { /* ignore */ });
         }
+        // PAPER-only observer. No-op unless SAFETY_GATES_PAPER_SIMULATE=true.
+        monitorPaperSafetyGates();
       })().catch(err => log.warn('Safety gate tick check failed', { error: String(err) })),
     ]);
 
@@ -134,7 +146,16 @@ export async function GET(request: NextRequest) {
 
     const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
     const HORIZONS = [5, 15, 60, 240];
-    const PRIMARY_HORIZON = 15;
+    // F1 (2026-04-19) — Timescale alignment. Scouts emit timeframe:'4h' signals
+    // (btcEngine.ts:439, solanaEngine.ts:327). Previous 15min eval forced premature
+    // labeling — empirical LONG WR 2.4% last 4h in BTC 89% DOWN regime because
+    // 4h bearish thesis was captured as 15min noise. 60min = compromise aligned with
+    // EMA50/200 1h trend filter in btcEngine.ts. Decisions now labeled at 1h.
+    // ASUMPȚIE: Orizont [5,15,60,240] rămâne — 60 devine primary; 5/15/240 sunt
+    // multi-horizon secondary slots. appendToEquityCurve, shadow logBattle, A1
+    // updateGladiatorStats TOATE se mută pe 1h. Stats necesită reset (F4) pentru
+    // a evita mixed 15m-vechi + 60m-nou.
+    const PRIMARY_HORIZON = 60;
     const WIN_THRESHOLD = 0.3;
     const envKey = isPaper ? 'PAPER_PENDING_MIN_AGE_MIN' : 'LIVE_PENDING_MIN_AGE_MIN';
     const minAgeMin = Number(process.env[envKey]) || Math.min(...HORIZONS);
@@ -330,6 +351,23 @@ export async function GET(request: NextRequest) {
                         };
                       })()
                     });
+
+                    // A1 (2026-04-18) — Stats unifier: increment gladiator.stats for shadow WIN/LOSS.
+                    // Mirrors simulator.ts:277 (phantom path). Skip NEUTRAL → not a closed trade.
+                    // Uses GROSS pnlPercent (consistent with phantom convention).
+                    // IMPACT: reported WR/PF will drift toward empirical truth as new shadows flow in.
+                    // Historic bias (tt~2038 stats vs ~8674 battles) remains until natural dilution OR
+                    // explicit gladiators:reset-stats command. No retroactive backfill here (safe).
+                    if (label !== 'NEUTRAL') {
+                      try {
+                        gladiatorStore.updateGladiatorStats(gladiatorIdMatch[1], {
+                          pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+                          isWin: label === 'WIN'
+                        });
+                      } catch (statsErr) {
+                        log.error(`[A1] updateGladiatorStats failed for shadow ${dec.id}`, { error: String(statsErr) });
+                      }
+                    }
                   } catch (err) {
                     log.error(`Failed to inject shadow DNA for ${dec.id}`, { error: String(err) });
                   }

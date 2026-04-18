@@ -44,31 +44,37 @@ const MAX_EXPOSURE_PCT = parseFloat(process.env.KILL_SWITCH_MAX_EXPOSURE_PCT || 
 let lastResetUtcDay: string | null = null;
 
 /**
- * Compute today's LIVE loss % relative to start-of-day balance.
- * Uses equityHistory. Returns 0 if no data or only gains.
- * Positive return value = loss magnitude (e.g. 3.5 means -3.5% drawdown).
+ * Compute today's loss % relative to start-of-day balance, for a given mode.
+ *
+ * WHY parameterized:
+ *   Original was LIVE-only (correct for enforce path — PAPER must never engage
+ *   real kill switch). But for pre-LIVE dry-run simulation we need to run the
+ *   same math on PAPER equity without triggering enforce. `computeDailyLossPercent()`
+ *   stays LIVE-only for the real enforce path; the *ForMode variant is the
+ *   observer-path helper.
+ *
+ * ASSUMPTION: equityCurve mode tagging ('PAPER'|'LIVE') is already written
+ * consistently by appendToEquityCurve (AUDIT FIX CRITIC-8). If that tagging
+ * drifts, the dry-run numbers are meaningless.
  */
-export function computeDailyLossPercent(): number {
-  const curve = getEquityCurve('LIVE');
+export function computeDailyLossPercentForMode(mode: 'PAPER' | 'LIVE'): number {
+  const curve = getEquityCurve(mode);
   if (curve.length < 2) return 0;
 
   const now = new Date();
   const startOfDayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
   const sodMs = startOfDayUtc.getTime();
 
-  // Find the latest entry BEFORE start-of-day (the "opening balance")
-  // and the most recent entry overall (the "current balance").
   let startBalance: number | null = null;
   for (const p of curve) {
     const ts = new Date(p.timestamp).getTime();
     if (ts < sodMs) {
       startBalance = p.balance;
     } else {
-      break; // curve is chronological
+      break;
     }
   }
 
-  // No pre-SOD snapshot → take earliest today-entry as baseline (first-tick-of-day fallback)
   if (startBalance === null) {
     startBalance = curve[0].balance;
   }
@@ -77,8 +83,18 @@ export function computeDailyLossPercent(): number {
   if (!startBalance || startBalance <= 0) return 0;
 
   const deltaPct = ((currentBalance - startBalance) / startBalance) * 100;
-  // Return positive loss magnitude; a positive deltaPct (gain) → 0 loss
   return deltaPct < 0 ? -deltaPct : 0;
+}
+
+/**
+ * Compute today's LIVE loss % relative to start-of-day balance.
+ * Uses equityHistory. Returns 0 if no data or only gains.
+ * Positive return value = loss magnitude (e.g. 3.5 means -3.5% drawdown).
+ *
+ * NB: Always LIVE. For PAPER dry-run use computeDailyLossPercentForMode('PAPER').
+ */
+export function computeDailyLossPercent(): number {
+  return computeDailyLossPercentForMode('LIVE');
 }
 
 /**
@@ -163,6 +179,69 @@ export async function onTradeExecuted(notional: number): Promise<void> {
   const triggered = await trackTradeVelocity(spendPercent);
   if (triggered) {
     log.fatal(`[SafetyGate] Velocity gate TRIGGERED kill switch: spendPct=${spendPercent.toFixed(2)}%`);
+  }
+}
+
+/**
+ * PAPER dry-run safety-gate observer.
+ *
+ * WHY this exists:
+ *   runPreTradeGates() and the LIVE-only daily-loss watcher in cron never fire
+ *   in PAPER because getEquityCurve('LIVE') returns empty. Before flipping
+ *   TRADING_MODE=LIVE we need empirical evidence that:
+ *     (a) PAPER equity curve has consistent mode tagging
+ *     (b) computeDailyLossPercent math matches intuition on real data
+ *     (c) threshold crossing is detected *before* real capital is at risk
+ *
+ *   This function runs the same math on PAPER equity and LOGS a "WOULD-TRIGGER"
+ *   event when the limit is breached — never calls engageKillSwitch, never
+ *   liquidates, never writes to Supabase kill-switch state. Zero operational
+ *   impact in PAPER.
+ *
+ * WHY NOT just call the real path:
+ *   killSwitch.engage() writes Supabase, triggers MEXC liquidation (no-op in
+ *   PAPER but still attempts auth), and blocks all subsequent trades. A
+ *   PAPER-mode accidental trigger would halt the paper validation run → we
+ *   lose the observation window we're trying to build.
+ *
+ * ASSUMPTIONS (if any breaks, dry-run is misleading):
+ *   - TRADING_MODE env is set to 'PAPER' when this runs. If LIVE, skip — real
+ *     gates are authoritative.
+ *   - SAFETY_GATES_PAPER_SIMULATE=true is explicitly set (default OFF, opt-in).
+ *   - PAPER equity curve receives appendToEquityCurve ticks with mode:'PAPER'
+ *     (verified in db.ts CRITIC-8 fix).
+ *
+ * Output: log lines tagged [SafetyGate:PAPER-SIM] for easy grep.
+ */
+export function monitorPaperSafetyGates(): void {
+  // Opt-in only — default OFF so the observer never surprises anyone.
+  if (process.env.SAFETY_GATES_PAPER_SIMULATE !== 'true') return;
+
+  // If actually LIVE, skip — real path handles it.
+  const mode = (process.env.TRADING_MODE || 'PAPER').toUpperCase();
+  if (mode === 'LIVE') return;
+
+  try {
+    const paperLoss = computeDailyLossPercentForMode('PAPER');
+    if (paperLoss <= 0) return;
+
+    // Use same threshold as real path so simulation is directly comparable.
+    if (paperLoss >= DAILY_LOSS_LIMIT_PCT) {
+      log.warn(
+        `[SafetyGate:PAPER-SIM] WOULD-TRIGGER daily-loss kill switch: ` +
+        `paperLoss=${paperLoss.toFixed(2)}% >= limit=${DAILY_LOSS_LIMIT_PCT}% ` +
+        `(observer only — no engage, no liquidate)`
+      );
+    } else if (paperLoss >= DAILY_LOSS_LIMIT_PCT * 0.7) {
+      // Early-warning band: 70% of limit → surfaces trend before breach
+      log.info(
+        `[SafetyGate:PAPER-SIM] approaching daily-loss threshold: ` +
+        `paperLoss=${paperLoss.toFixed(2)}% (${((paperLoss / DAILY_LOSS_LIMIT_PCT) * 100).toFixed(0)}% of ${DAILY_LOSS_LIMIT_PCT}% limit)`
+      );
+    }
+  } catch (err) {
+    // Observer must NEVER throw — it is instrumentation, not control flow.
+    log.warn('[SafetyGate:PAPER-SIM] observer error (ignored)', { error: (err as Error).message });
   }
 }
 
