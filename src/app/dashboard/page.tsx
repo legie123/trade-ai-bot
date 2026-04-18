@@ -372,17 +372,25 @@ export default function StatusPage(){
   },[terminalLines]);
 
   // Pipe live logs into terminal
+  // C17 fix (2026-04-19): backend returnează mereu 20 loguri (capped). `length` nu se schimbă → effect-ul rula 1x, populau 1 linie, apoi nimic.
+  // Fix: dep pe timestamp-ul primului log (se schimbă la fiecare scan nou) + push TOATE logurile mai noi decât lastSeen, nu doar primul.
+  const lastSeenLogTsRef=useRef<string>('');
   useEffect(()=>{
     const logs=dash?.logs?.recent||[];
-    if(logs.length>0){
-      const latest=logs[0];
-      if(latest){
-        termLog('log',`[${latest.level?.toUpperCase()}] ${latest.msg}`);
-      }
-    }
-  // Only fire when logs actually change
+    if(logs.length===0)return;
+    const newest=logs[0]?.ts;
+    if(!newest||newest===lastSeenLogTsRef.current)return;
+    // Logs sosesc newest-first. Luăm doar pe cele posterioare lui lastSeen (dacă există), altfel doar ultimele 5 la prima hidratare.
+    const seen=lastSeenLogTsRef.current;
+    const fresh=seen
+      ? logs.filter((l:{ts:string})=>l.ts>seen).reverse() // oldest-first pentru terminal
+      : logs.slice(0,5).reverse();
+    fresh.forEach((l:{level?:string;msg?:string})=>{
+      termLog('log',`[${l.level?.toUpperCase()||'INFO'}] ${l.msg||''}`);
+    });
+    lastSeenLogTsRef.current=newest;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[dash?.logs?.recent?.length]);
+  },[dash?.logs?.recent?.[0]?.ts]);
 
   /* ─── DATA FETCHERS ─── */
   const fetchLight=useCallback(async()=>{
