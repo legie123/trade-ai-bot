@@ -16,3 +16,4 @@ export async function GET() {
   // Invoca direct handler-ul v2/health în proces — nu self-fetch.
   return v2HealthGET();
 }
+// Build trigger: 1776474131
