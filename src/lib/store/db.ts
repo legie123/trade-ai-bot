@@ -347,9 +347,15 @@ export function clearSystemHealthData(): void {
 export function addDecision(snapshot: DecisionSnapshot): void {
   if (cache.decisions.some((d) => d.signalId === snapshot.signalId)) return;
 
-  // Calibration #13: Final confidence floor — reject garbage signals at DB level
-  // FIX 2026-04-18: PAPER=LIVE parity. Unified floor at 65%.
-  const CONFIDENCE_FLOOR = 65;
+  // Calibration #13: Final confidence floor — reject garbage signals at DB level.
+  // REVERT 2026-04-19: "PAPER=LIVE parity" (commit 50754f8d09, 2026-04-18) raised
+  // unified floor to 65%, silently dropping ALL scout signals in confidence 20-64
+  // range → PAPER pipeline went dry at 20:45 UTC (0 new decisions for 3h+).
+  // PAPER mode by design collects training data at lower floor; LIVE stays strict.
+  // ASUMPȚIE CRITICĂ: LIVE gate-keeping is enforced elsewhere (Sentinel, killSwitch);
+  // this floor is only the DB-level final filter — NOT the only defense for LIVE.
+  const isPaperMode = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+  const CONFIDENCE_FLOOR = isPaperMode ? 20 : 65;
   if (snapshot.confidence < CONFIDENCE_FLOOR && snapshot.signal !== 'NEUTRAL') {
     return; // Silent drop — engine should have caught this
   }
