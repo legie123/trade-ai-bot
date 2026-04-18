@@ -11,6 +11,9 @@
 import { NextRequest } from 'next/server';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { tuneThreshold, lastTuneResult } from '@/lib/polymarket/thresholdTuner';
+// FIX 2026-04-18 (QW-4): PUBLIC_PREFIXES /api/v2/polymarket via startsWith a lasat POST deschis.
+// tuneThreshold e sweep computational (CPU/RAM) — risc DoS. Consumer prevazut: UI manual.
+import { isAuthenticated } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +37,10 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    // FIX 2026-04-18 (QW-4): Auth gate — sweep CPU/RAM-heavy.
+    if (!isAuthenticated(req)) {
+      return errorResponse('UNAUTHORIZED', 'Valid auth token required for threshold sweep', 401);
+    }
     const { searchParams } = new URL(req.url);
     const bandRaw = searchParams.get('band');
     const band = bandRaw

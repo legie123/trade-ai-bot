@@ -7,6 +7,9 @@
 import { NextRequest } from 'next/server';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { tuneThresholdByDivision, lastDivisionTuneResult } from '@/lib/polymarket/thresholdTuner';
+// FIX 2026-04-18 (QW-4): aceeasi scurgere prin PUBLIC_PREFIXES.startsWith. Sweep per-division,
+// chiar mai costisitor decat single. Consumer: UI manual.
+import { isAuthenticated } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +33,10 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    // FIX 2026-04-18 (QW-4): Auth gate pe sweep per-division.
+    if (!isAuthenticated(req)) {
+      return errorResponse('UNAUTHORIZED', 'Valid auth token required for per-division sweep', 401);
+    }
     const { searchParams } = new URL(req.url);
     const bandRaw = searchParams.get('band');
     const band = bandRaw
