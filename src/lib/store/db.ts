@@ -934,6 +934,81 @@ export async function releaseTradeLock(symbol: string): Promise<void> {
   }
 }
 
+// ─── R5-lite: Cross-Instance Task Lease ────────────────
+// Prevents duplicate execution of cron/scheduler tasks across Cloud Run instances.
+// Reuses trade_locks table with reserved `__task__` prefix on the symbol column.
+//
+// WHY reuse trade_locks:
+//   - Already has PRIMARY KEY on symbol → true atomic INSERT-or-conflict semantics.
+//   - Dedicated lease table would require a Supabase migration (blocks autonomous deploy).
+//   - Prefix `__task__` cannot collide with a real MEXC symbol (no double-underscore tickers).
+//
+// TTL tradeoff: lease expires even if holder crashes → no stuck lock.
+// If an instance takes longer than ttlMs to finish its work, a second instance
+// may take over mid-tick. This is ACCEPTED — a stuck instance is worse than overlap.
+// Choose ttlMs slightly BELOW the cron cadence (cron=60s → lease=50s).
+//
+// ASSUMPTION: Supabase reachable. If DB is down we return { acquired: true, degraded: true }
+// so cron keeps running in single-instance mode (no idempotence but also no silent halt).
+export function getInstanceId(): string { return instanceId; }
+
+export async function tryAcquireTaskLease(
+  taskKey: string,
+  ttlMs: number
+): Promise<{ acquired: boolean; holder?: string; degraded?: boolean }> {
+  const lockSymbol = `__task__${taskKey}`;
+
+  if (!supabaseUrl || !dbInitialized) {
+    // Degraded mode: DB unreachable. Allow tick to proceed (no idempotence, but
+    // better than silently halting the entire cron loop).
+    return { acquired: true, degraded: true };
+  }
+
+  try {
+    const now = Date.now();
+    const expiresAt = new Date(now + ttlMs).toISOString();
+
+    // Step 1: Cleanup expired leases system-wide (cheap; keeps table small).
+    await supabase.from('trade_locks').delete().lt('expires_at', new Date().toISOString());
+
+    // Step 2: Atomic INSERT. If another instance holds active lease → 23505.
+    const { error: insertErr } = await supabase.from('trade_locks').insert({
+      symbol: lockSymbol, instance_id: instanceId, expires_at: expiresAt,
+    });
+
+    if (!insertErr) return { acquired: true };
+
+    if (insertErr.code === '23505') {
+      // Conflict: someone else holds it. Read holder for observability.
+      const { data } = await supabase.from('trade_locks')
+        .select('instance_id')
+        .eq('symbol', lockSymbol)
+        .maybeSingle();
+      return { acquired: false, holder: (data?.instance_id as string) || 'unknown' };
+    }
+
+    // Non-conflict Supabase error (schema/permissions) → degrade to allow.
+    log.warn(`[TaskLease] Supabase insert error for ${lockSymbol} (${insertErr.message}) — degrading to allow.`);
+    return { acquired: true, degraded: true };
+  } catch (err) {
+    log.warn(`[TaskLease] Lease acquisition crashed (${(err as Error).message}) — degrading to allow.`);
+    return { acquired: true, degraded: true };
+  }
+}
+
+export async function releaseTaskLease(taskKey: string): Promise<void> {
+  if (!supabaseUrl || !dbInitialized) return;
+  const lockSymbol = `__task__${taskKey}`;
+  try {
+    await supabase.from('trade_locks')
+      .delete()
+      .eq('symbol', lockSymbol)
+      .eq('instance_id', instanceId);
+  } catch (err) {
+    log.warn('Failed to release task lease, TTL will expire it', { taskKey, error: String(err) });
+  }
+}
+
 // ─── Polymarket State Persistence ───────────────────────
 export async function loadPolyStateFromCloud(): Promise<{ wallet: Record<string, unknown> | null; gladiators: unknown[] | null }> {
   if (!supabaseUrl || !dbInitialized) return { wallet: null, gladiators: null };

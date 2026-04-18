@@ -5,7 +5,7 @@ import { startHeartbeat } from '@/lib/core/heartbeat';
 import { createLogger } from '@/lib/core/logger';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 import { DNAExtractor } from '@/lib/v2/superai/dnaExtractor';
-import { initDB } from '@/lib/store/db';
+import { initDB, tryAcquireTaskLease, releaseTaskLease, getInstanceId } from '@/lib/store/db';
 
 const log = createLogger('CronLoop');
 
@@ -27,6 +27,31 @@ export async function GET(request: NextRequest) {
   try {
     // CRITICAL: Load Supabase cache (gladiators, decisions, etc.) before anything runs
     await initDB();
+
+    // R5-lite (2026-04-18): Cross-instance cron idempotence.
+    // `loopStarted` is module-scoped → NOT shared across Cloud Run instances.
+    // When the service scales to >1 instance OR a new instance cold-starts while
+    // the old one is still warm, BOTH received the same cron tick → duplicate
+    // WS connects, duplicate scanners, duplicate DNA logs, duplicate trade attempts.
+    // TTL=50s is tuned just below the 60s scheduler cadence: one instance wins
+    // per tick; if it stalls >50s, the next instance can take over (desired).
+    // ASSUMPTION: Cron scheduler fires ~every 60s. If cadence becomes faster,
+    // lower TTL proportionally. On lease-held we return 200 (NOT 4xx) so the
+    // scheduler does not escalate retries / alerts.
+    // ORDER: lease BEFORE gladiator refresh — skip tick entirely if not leader
+    // (saves a Supabase read per non-leader instance).
+    const LEASE_TTL_MS = Number(process.env.CRON_LEASE_TTL_MS) || 50_000;
+    const lease = await tryAcquireTaskLease('cron:main-tick', LEASE_TTL_MS);
+    if (!lease.acquired) {
+      return NextResponse.json({
+        status: 'skipped',
+        reason: 'lease-held-by-other-instance',
+        holder: lease.holder,
+        ownInstance: getInstanceId(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+    const leaseDegraded = lease.degraded === true;
 
     // FIX: Refresh gladiators from Supabase every tick.
     // initDB runs once, but gladiator status (isLive, ACTIVE) may change
@@ -317,6 +342,10 @@ export async function GET(request: NextRequest) {
       log.warn('flushPendingSyncs timed out — some data may not have persisted');
     }
 
+    // R5-lite: release lease proactively so the NEXT scheduler tick isn't
+    // blocked waiting for TTL expiry. On crash/timeout, TTL handles cleanup.
+    releaseTaskLease('cron:main-tick').catch(() => { /* TTL will clean up */ });
+
     return NextResponse.json({
       status: 'ok',
       message: 'Cron tick processed',
@@ -331,6 +360,8 @@ export async function GET(request: NextRequest) {
       minAgeMin,
       mode: isPaper ? 'PAPER' : 'LIVE',
       forgeProgress: forgeStats.progressPercent,
+      leaseOwner: getInstanceId(),
+      leaseDegraded,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
@@ -339,6 +370,8 @@ export async function GET(request: NextRequest) {
       __autoScan?: { running: boolean };
     };
     if (gScanErr.__autoScan) gScanErr.__autoScan.running = false;
+    // Release lease on error too so next tick doesn't stall behind dead work.
+    releaseTaskLease('cron:main-tick').catch(() => { /* TTL fallback */ });
     log.error('Cron loop error', { error: (err as Error).message });
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });
   }
