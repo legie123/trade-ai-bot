@@ -114,39 +114,88 @@ export class ArenaSimulator {
         continue; // Keep phantom trade open
       }
 
-      // Determine Outcome
-      // FIX 2026-04-18 (QW-7): Strâns criteriul isWin. Vechi: `pnlPercent > 0` permitea ca
-      // un phantom expirat la +0.001% să conteze ca win → inflație artificială a winRate.
-      // Nou: win doar dacă a atins efectiv TP-ul (hitTP) SAU dacă la expirare e cel puțin la
-      // jumătate din TP (pragul mai cenzor, dar realist). Orice altceva = loss.
-      // Efect așteptat: winRate va scădea la valori realiste, PF va deveni stabil (denominator non-zero).
-      const isWin = hitTP || (isExpired && pnlPercent >= WIN_THRESHOLD_TP / 2);
+      // FIX 2026-04-18 (QW-11): Clamp overshoot to TP/SL prices.
+      // BUG ROOT CAUSE: Cron-tick latency allows price to travel far past TP/SL between ticks.
+      // Example: RNDR phantom with entry=$1.86 — price pumps to $7.03 before next evaluator
+      // tick → hitTP true, but we record closing at $7.03 (+278%) instead of TP ($1.87, +0.5%).
+      // 430 of 5845 trades (7.3%) polluted, cumulative PnL inflated ~1000× (+120,000% vs
+      // realistic +440%). Strategy stats became mathematical artifact — PF=192, Sharpe=0.28.
+      // FIX: When hitTP/hitSL detected post-hoc, clamp exitPrice and pnlPercent to threshold
+      // values. Simulates continuous monitoring (strategy's implicit assumption).
+      // ASSUMPTION THAT INVALIDATES FIX:
+      //  (a) LIVE execution has real slippage that may be >/< the overshoot we clamp.
+      //      → For PAPER mode: fine. For LIVE: slippage must be modeled separately (FAZA D).
+      //  (b) True intra-bar high/low data not available; we assume price crossed threshold
+      //      at some moment in the cron interval. Acceptable because TP/SL is 0.5% and crypto
+      //      paths almost always cross monotonically within a 15min window.
+      let exitPrice: number;
+      let finalPnl: number;
+      let exitSource: 'HIT_TAKE_PROFIT' | 'HIT_STOP_LOSS' | 'TIME_EXPIRATION';
 
-      // 1. Clean up phantom position
+      if (hitTP) {
+        const tpMove = WIN_THRESHOLD_TP / 100; // 0.005
+        exitPrice = isLongSignal
+          ? trade.entryPrice * (1 + tpMove)
+          : trade.entryPrice * (1 - tpMove);
+        finalPnl = WIN_THRESHOLD_TP; // exactly +0.5%
+        exitSource = 'HIT_TAKE_PROFIT';
+      } else if (hitSL) {
+        const slMove = Math.abs(LOSS_THRESHOLD_SL) / 100; // 0.005
+        exitPrice = isLongSignal
+          ? trade.entryPrice * (1 - slMove)
+          : trade.entryPrice * (1 + slMove);
+        finalPnl = LOSS_THRESHOLD_SL; // exactly -0.5%
+        exitSource = 'HIT_STOP_LOSS';
+      } else {
+        // TIME_EXPIRATION: use actual market price — legitimate mark-to-market at window close.
+        // Drift here can legitimately exceed TP/SL for slow-moving pairs, that's OK.
+        exitPrice = currentPrice;
+        finalPnl = pnlPercent;
+        exitSource = 'TIME_EXPIRATION';
+      }
+
+      // FIX 2026-04-18 (QW-10): Three-way classification — WIN / LOSS / NEUTRAL.
+      // Expired phantom with |pnl| < NEUTRAL_ZONE is noise, not signal — skip stats.
+      // ASSUMPTION: NEUTRAL_ZONE = SL/2 = 0.25%. If crypto micro-volatility consistently
+      // stays below 0.25% in 15min windows, most trades become NEUTRAL → slow stat
+      // accumulation. Acceptable: slow-but-accurate beats fast-but-garbage.
+      const NEUTRAL_ZONE = Math.abs(LOSS_THRESHOLD_SL) / 2; // 0.25%
+      const isWin = hitTP || (isExpired && finalPnl >= WIN_THRESHOLD_TP / 2);
+      const isNeutral = isExpired && !hitTP && !hitSL && Math.abs(finalPnl) < NEUTRAL_ZONE;
+
+      // 1. Clean up phantom position (always — even neutrals must be removed)
       removePhantomTrade(trade.id);
-      
-      // 2. DNA Extraction (The Forge) — log regardless of win/loss for learning
+
+      // Skip stats update for NEUTRAL expired trades — they're noise, not signal
+      if (isNeutral) {
+        totalClosed++;
+        continue;
+      }
+
+      // 2. DNA Extraction (The Forge) — log WIN/LOSS with CLAMPED values for learning
       await this.dnaBank.logBattle({
         id: trade.id,
         gladiatorId: trade.gladiatorId,
         symbol: trade.symbol,
         decision: isLongSignal ? 'LONG' : 'SHORT',
         entryPrice: trade.entryPrice,
-        outcomePrice: currentPrice,
-        pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+        outcomePrice: exitPrice,                           // CLAMPED (was: currentPrice)
+        pnlPercent: parseFloat(finalPnl.toFixed(4)),      // CLAMPED (was: pnlPercent)
         isWin,
         timestamp: Date.now(),
         marketContext: {
-          source: isExpired ? 'TIME_EXPIRATION' : (hitTP ? 'HIT_TAKE_PROFIT' : 'HIT_STOP_LOSS'),
+          source: exitSource,
           holdTimeSec: elapsedSec,
           entryPrice: trade.entryPrice,
-          exitPrice: currentPrice,
+          exitPrice,                                       // CLAMPED (was: currentPrice)
+          marketPriceAtClose: currentPrice,                // Reference: actual market price
+          overshoot: parseFloat((pnlPercent - finalPnl).toFixed(4)), // Gap clamped away — telemetry
         }
       });
 
-      // 3. Update Gladiator's lifetime record with real data
+      // 3. Update Gladiator's lifetime record with CLAMPED values
       gladiatorStore.updateGladiatorStats(trade.gladiatorId, {
-         pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+         pnlPercent: parseFloat(finalPnl.toFixed(4)),
          isWin
       });
 
