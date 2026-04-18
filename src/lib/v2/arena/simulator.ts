@@ -9,36 +9,9 @@ import type { Gladiator, GladiatorDNA } from '@/lib/types/gladiator';
 
 const log = createLogger('ArenaSimulator');
 
-// FAZA B.2 — FEES NET MODEL (2026-04-18)
-// Round-trip taker fees by market type. Applied to gross PnL to produce pnlPercentNet
-// which is written into marketContext and used DOWNSTREAM by Butcher (B.4) and
-// promotion gates. gross pnlPercent + isWin are UNCHANGED for backward compat —
-// net fields are ADDITIVE.
-//
-// Sources (MEXC public fee schedule, verified 2026-04):
-//   SPOT taker    = 0.1%  → round-trip 0.2%
-//   FUTURES taker = 0.04% → round-trip 0.08%
-//
-// Default = FUTURES because LIVE plan targets perps (better fee + shorts + leverage).
-// If PAPER simulates spot execution later, flip via env MARKET_TYPE=SPOT.
-//
-// ASUMPȚIE CRITICĂ care poate invalida calculele:
-//   - Slippage NU este modelat aici (FAZA B.2b future). 0.08% fee este lower-bound;
-//     real slippage pe MEXC futures la size $50-100 e ~0.02-0.05% pe leg → +0.04-0.1%
-//     round-trip. Dacă LIVE e planificat pe size mare, real total cost poate fi 2x.
-//   - Asumăm 100% taker. Dacă bot trece pe maker (limit orders), fees scad la -0.01%
-//     rebate → model invalid. De tracking separat în marketType când se adaugă maker.
-//   - Asumăm exit la TP/SL/expiration exact. Funding rates pe futures NU sunt incluse
-//     (pentru hold sub 8h, negligible, dar notable pentru hold-uri lungi).
-const FEES_ROUND_TRIP: Record<string, number> = {
-  FUTURES: 0.08,  // 0.04% × 2 — MEXC futures taker
-  SPOT: 0.2,      // 0.1%  × 2 — MEXC spot taker
-};
-function getFeeRoundTrip(): { fee: number; marketType: 'FUTURES' | 'SPOT' } {
-  const mt = (process.env.MARKET_TYPE || 'FUTURES').toUpperCase();
-  const resolved: 'FUTURES' | 'SPOT' = mt === 'SPOT' ? 'SPOT' : 'FUTURES';
-  return { fee: FEES_ROUND_TRIP[resolved], marketType: resolved };
-}
+// FAZA B.2 — fee model extracted to shared module (src/lib/v2/fees/feeModel.ts)
+// so cron shadow-DNA path (src/app/api/cron/route.ts) uses identical values.
+import { netPnlFromGross } from '@/lib/v2/fees/feeModel';
 
 // Delegate to global price cache (MEXC → DexScreener → CoinGecko)
 async function getCachedPrice(symbol: string): Promise<number> {
@@ -265,9 +238,7 @@ export class ArenaSimulator {
       // ASSUMPȚIE CRITICĂ: fees aplicate uniform la TOATE trades, inclusiv
       // TIME_EXPIRATION (care poate fi breakeven gross → net negativ). Asta reflectă
       // realitatea: deschiderea+închiderea costă indiferent de rezultat.
-      const { fee: feeRoundTrip, marketType } = getFeeRoundTrip();
-      const pnlPercentNet = parseFloat((finalPnl - feeRoundTrip).toFixed(4));
-      const isWinNet = pnlPercentNet > 0; // telemetry-only; DOES NOT replace isWin
+      const { feeRoundTrip, marketType, pnlPercentNet, isWinNet } = netPnlFromGross(finalPnl);
 
       // 2. DNA Extraction (The Forge) — log WIN/LOSS with CLAMPED values for learning
       await this.dnaBank.logBattle({

@@ -6,6 +6,7 @@ import { createLogger } from '@/lib/core/logger';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 import { DNAExtractor } from '@/lib/v2/superai/dnaExtractor';
 import { OmegaEngine } from '@/lib/v2/superai/omegaEngine';
+import { netPnlFromGross } from '@/lib/v2/fees/feeModel';
 import { initDB, tryAcquireTaskLease, releaseTaskLease, getInstanceId } from '@/lib/store/db';
 
 const log = createLogger('CronLoop');
@@ -307,6 +308,12 @@ export async function GET(request: NextRequest) {
                       marketContext: (() => {
                         const _omega = OmegaEngine.getInstance();
                         const _r = _omega.getRegime();
+                        // FAZA B.2 (2026-04-18) — NET PnL accounting aligned with simulator.ts.
+                        // Shadow DNA path uses time-based pnl (not TP/SL clamped), but fees still apply.
+                        // ASUMPȚIE: shadow path assumes exit la orice pnl curent → fees aplicate la
+                        // full round-trip chiar dacă e mark-to-market (nu e închidere reală).
+                        // Pentru PAPER accounting e corect: simulăm execuția ca și cum am fi ieșit.
+                        const _feeCalc = netPnlFromGross(parseFloat(pnlPercent.toFixed(4)));
                         return {
                           exitType: 'SHADOW_TIME_BASED',
                           holdTimeSec: elapsedMin * 60,
@@ -314,6 +321,12 @@ export async function GET(request: NextRequest) {
                           regimeConfidence: parseFloat(_r.confidence.toFixed(4)),
                           regimeVolatilityScore: _r.volatilityScore,
                           regimeIsFallback: !_omega.hasLiveRegime(),
+                          // FAZA B.2 — NET fields (additive, non-breaking)
+                          feeRoundTrip: _feeCalc.feeRoundTrip,
+                          marketType: _feeCalc.marketType,
+                          pnlPercentGross: parseFloat(pnlPercent.toFixed(4)),
+                          pnlPercentNet: _feeCalc.pnlPercentNet,
+                          isWinNet: _feeCalc.isWinNet,
                         };
                       })()
                     });
