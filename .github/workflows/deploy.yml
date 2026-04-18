@@ -58,7 +58,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="NODE_ENV=production" \
+            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true" \
             --set-secrets="\
               NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,\
               NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest,\
@@ -76,7 +76,8 @@ jobs:
               POLYMARKET_API_KEY=POLYMARKET_API_KEY:latest,\
               POLYMARKET_CLOB_URL=POLYMARKET_CLOB_URL:latest,\
               POLYMARKET_GAMMA_URL=POLYMARKET_GAMMA_URL:latest,\
-              SWARM_TOKEN=SWARM_TOKEN:latest"
+              SWARM_TOKEN=SWARM_TOKEN:latest,\
+              MOLTBOOK_API_KEY=MOLTBOOK_API_KEY:latest"
 
       - name: Deploy to Cloud Run (secondary - antigravity-trade)
         # FAZA B.2 — ships same image+config to the secondary service so both
@@ -97,7 +98,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="NODE_ENV=production" \
+            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true" \
             --set-secrets="\
               NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,\
               NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest,\
@@ -115,7 +116,8 @@ jobs:
               POLYMARKET_API_KEY=POLYMARKET_API_KEY:latest,\
               POLYMARKET_CLOB_URL=POLYMARKET_CLOB_URL:latest,\
               POLYMARKET_GAMMA_URL=POLYMARKET_GAMMA_URL:latest,\
-              SWARM_TOKEN=SWARM_TOKEN:latest"
+              SWARM_TOKEN=SWARM_TOKEN:latest,\
+              MOLTBOOK_API_KEY=MOLTBOOK_API_KEY:latest"
 
       - name: Get deployed URL
         run: |
