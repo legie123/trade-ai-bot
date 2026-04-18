@@ -5,6 +5,7 @@ import { createLogger } from '@/lib/core/logger';
 import { RoutedSignal } from '@/lib/router/signalRouter';
 import { addPhantomTrade, getPhantomTrades, removePhantomTrade, PhantomTrade } from '@/lib/store/db';
 import { getOrFetchPrice } from '@/lib/cache/priceCache';
+import type { Gladiator, GladiatorDNA } from '@/lib/types/gladiator';
 
 const log = createLogger('ArenaSimulator');
 
@@ -30,8 +31,49 @@ export class ArenaSimulator {
   }
 
   /**
-   * Called when a live signal hits the system. Distributes it to all gladiators
-   * to enter Phantom Trades for real-time testing.
+   * DNA-based signal acceptance check.
+   * Returns true if the gladiator's DNA allows this signal.
+   * Gladiators without DNA accept everything (backward compat).
+   */
+  private shouldAcceptSignal(gladiator: Gladiator, signal: RoutedSignal): boolean {
+    const dna = gladiator.dna;
+    if (!dna) return true; // No DNA = accept all (legacy gladiators)
+
+    // 1. Symbol filter: signal.symbol (e.g., 'BTCUSDT') must start with any entry in symbolFilter
+    //    '*' = wildcard, accepts everything
+    if (!dna.symbolFilter.includes('*')) {
+      const symUpper = signal.symbol.toUpperCase();
+      const matched = dna.symbolFilter.some(f => symUpper.startsWith(f.toUpperCase()));
+      if (!matched) return false;
+    }
+
+    // 2. Confidence gate
+    const signalConf = signal.confidence ?? 0;
+    if (signalConf < dna.minConfidence) return false;
+
+    // 3. Direction bias
+    if (dna.directionBias !== 'BOTH') {
+      const isLong = signal.normalized === 'BUY' || signal.normalized === 'LONG';
+      const isShort = signal.normalized === 'SELL' || signal.normalized === 'SHORT';
+      if (dna.directionBias === 'LONG_ONLY' && isShort) return false;
+      if (dna.directionBias === 'SHORT_ONLY' && isLong) return false;
+    }
+
+    // 4. Timeframe filter (if specified)
+    if (dna.timeframes && dna.timeframes.length > 0 && signal.timeframe) {
+      if (!dna.timeframes.includes(signal.timeframe)) return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Called when a live signal hits the system. Distributes it to gladiators
+   * whose DNA accepts the signal — creates real strategy differentiation.
+   *
+   * PRE-DNA: all gladiators received all trades → identical PnL streams → Arena
+   * selection was noise-driven. POST-DNA: each gladiator specializes → uncorrelated
+   * PnL → meaningful Darwinian selection.
    */
   public distributeSignalToGladiators(routedSignal: RoutedSignal) {
     const allGladiators = gladiatorStore.getLeaderboard();
@@ -44,7 +86,16 @@ export class ArenaSimulator {
       return;
     }
 
+    let accepted = 0;
+    let rejected = 0;
+
     allGladiators.forEach(g => {
+      // DNA FILTER: each gladiator decides independently whether to accept this signal
+      if (!this.shouldAcceptSignal(g, routedSignal)) {
+        rejected++;
+        return;
+      }
+
       const trade: PhantomTrade = {
         id: `phantom_${Date.now()}_${g.id.substring(0, 5)}`,
         gladiatorId: g.id,
@@ -53,11 +104,12 @@ export class ArenaSimulator {
         entryPrice: currentPrice,
         timestamp: new Date().toISOString()
       };
-      
+
       addPhantomTrade(trade);
+      accepted++;
     });
-    
-    log.info(`[Combat Engine] Deployed Phantom Trades for ${allGladiators.length} Gladiators on ${routedSignal.symbol} @ $${currentPrice}`);
+
+    log.info(`[Combat Engine] Phantom Trades: ${accepted} accepted, ${rejected} filtered by DNA for ${routedSignal.symbol} @ $${currentPrice}`);
   }
 
   /**
@@ -72,14 +124,14 @@ export class ArenaSimulator {
     // Cron route does refreshGladiatorsFromCloud() before calling this method.
     // Daily rotation must do its own refresh before calling evaluatePhantomTrades().
 
-    // FIX 2026-04-18 FAZA 3+5: Asymmetric TP/SL thresholds (applied 3x due to rebase conflicts).
-    // Previous symmetric ±0.5% hit both TP and SL in same candle for volatile tokens → PF≈0.84.
-    // New: TP=1.0%, SL=-0.5% (R:R 2:1) → break-even @ WR ~33%.
-    // MAX_HOLD 900s→1800s to let asymmetric TP breathe.
+    // FIX 2026-04-18 FAZA 3: Asymmetric TP/SL thresholds.
+    // Previous symmetric ±0.5% was hitting both TP and SL in same candle for volatile tokens.
+    // New: TP=1.0%, SL=-0.5% (R:R 2:1) → break-even @ WR ~33%. This rewards correct direction
+    // while quickly cutting losers. Volatile tokens won't simultaneously trigger both thresholds.
     // Historical trades NOT recalculated — old stats remain, new phantoms produce realistic PF.
-    const WIN_THRESHOLD_TP = 1.0;   // Take Profit 1.0% — give winners room
+    const WIN_THRESHOLD_TP = 1.0;   // Take Profit 1.0% — give winners room to run
     const LOSS_THRESHOLD_SL = -0.5; // Stop Loss -0.5% — cut losers fast
-    const MAX_HOLD_SEC = 1800;      // Maximum 30min
+    const MAX_HOLD_SEC = 1800;      // Maximum 30min — doubled from 15min to let asymmetric TP breathe
 
     // Batch: get unique symbols and prefetch prices in parallel
     const uniqueSymbols = [...new Set(activePhantoms.map(t => t.symbol))];

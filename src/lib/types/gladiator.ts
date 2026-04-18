@@ -9,6 +9,25 @@ export interface MasterConsensus {
 
 
 /**
+ * DNA = the gladiator's signal acceptance criteria.
+ * Creates real strategy differentiation — gladiators that specialize
+ * in different symbols/timeframes/directions produce uncorrelated PnL
+ * streams → Darwinian selection becomes meaningful.
+ *
+ * Without DNA: all gladiators take identical trades → WR spread is pure noise.
+ */
+export interface GladiatorDNA {
+  /** Symbol prefixes to accept. ['BTC'] matches BTCUSDT. ['*'] = accept all. */
+  symbolFilter: string[];
+  /** Minimum signal confidence (0-95) to accept. Higher = fewer but cleaner trades. */
+  minConfidence: number;
+  /** Direction bias. LONG_ONLY for trend-followers, SHORT_ONLY for contrarians. */
+  directionBias: 'LONG_ONLY' | 'SHORT_ONLY' | 'BOTH';
+  /** Preferred timeframes. Empty = accept all. */
+  timeframes?: string[];
+}
+
+/**
  * Gladiator represents a specific trading strategy competing in an arena.
  */
 export interface Gladiator {
@@ -17,6 +36,7 @@ export interface Gladiator {
   arena: ArenaType;
   rank: number; // 1 to 10
   isLive: boolean; // Only top 3 are true
+  dna?: GladiatorDNA; // Signal acceptance criteria — absent = accept all (backward compat)
   stats: {
     winRate: number;
     profitFactor: number;

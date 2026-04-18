@@ -23,12 +23,23 @@ export interface VWAPResult {
   signal: 'BUY' | 'SELL' | 'NEUTRAL';
 }
 
-// ─── Fetch klines with volume from Binance ─────────────
+// ─── Fetch klines with volume from Binance (cached) ─────────────
+// FIX 2026-04-18 (perf): VWAP was called per-signal with no cache → 8+ Binance calls
+// per scan cycle. 1h candles don't change within a 60s cron tick. Cache for 90s.
+const _vwapCache: Record<string, { data: { close: number; high: number; low: number; volume: number }[]; ts: number }> = {};
+const VWAP_CACHE_TTL = 90_000; // 90s — covers one cron cycle + margin
+
 async function fetchKlinesWithVolume(
   symbol: string,
   interval: '15m' | '1h' | '4h' = '1h',
   limit: number = 50
 ): Promise<{ close: number; high: number; low: number; volume: number }[]> {
+  const cacheKey = `${symbol}_${interval}_${limit}`;
+  const cached = _vwapCache[cacheKey];
+  if (cached && Date.now() - cached.ts < VWAP_CACHE_TTL && cached.data.length > 0) {
+    return cached.data;
+  }
+
   try {
     const res = await fetchWithRetry(
       `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
@@ -37,12 +48,14 @@ async function fetchKlinesWithVolume(
     const klines = await res.json();
     if (!Array.isArray(klines)) return [];
 
-    return klines.map((k: [number, string, string, string, string, string]) => ({
+    const result = klines.map((k: [number, string, string, string, string, string]) => ({
       close: parseFloat(k[4]),
       high: parseFloat(k[2]),
       low: parseFloat(k[3]),
       volume: parseFloat(k[5]),
     }));
+    _vwapCache[cacheKey] = { data: result, ts: Date.now() };
+    return result;
   } catch (err) {
     log.error(`VWAP kline fetch failed for ${symbol}`, { error: (err as Error).message });
     return [];

@@ -51,6 +51,7 @@ class GladiatorStore {
         arena,
         rank,
         isLive: false, // NO gladiator gets live capital until proven via phantom trades
+        dna: strat.dna, // Signal acceptance criteria — creates real strategy differentiation
         status: 'IN_TRAINING' as const,
         trainingProgress: 0,
         skills: arena === 'DEEP_WEB' ? ['MEME_SNIPER'] : [],
@@ -98,6 +99,29 @@ class GladiatorStore {
     const fromDb = getGladiatorsFromDb();
     if (fromDb && fromDb.length > 0) {
       this.gladiators = fromDb;
+      // Migrate: inject DNA into existing gladiators that don't have it yet.
+      // DNA comes from seed definitions. Gladiators not in seed keep dna=undefined (accept all).
+      this.migrateDna();
+    }
+  }
+
+  /**
+   * One-time migration: injects DNA from INITIAL_STRATEGIES into existing gladiators.
+   * Existing gladiators loaded from Supabase may predate the DNA system.
+   * Gladiators already with DNA are left untouched.
+   */
+  private migrateDna(): void {
+    let migrated = 0;
+    for (const g of this.gladiators) {
+      if (g.dna) continue; // Already has DNA
+      const seed = INITIAL_STRATEGIES.find(s => s.id === g.id);
+      if (seed?.dna) {
+        g.dna = seed.dna;
+        migrated++;
+      }
+    }
+    if (migrated > 0) {
+      saveGladiatorsToDb(this.gladiators);
     }
   }
 
@@ -112,10 +136,9 @@ class GladiatorStore {
     return this.gladiators
       .filter(g => !g.isOmega)
       .sort((a, b) => {
-        // FIX 2026-04-18 FAZA 3: readinessScore was never computed — the ?? fallback
-        // always triggered, making the cast dead code. Use computeQuickScore directly.
-        const scoreA = this.computeQuickScore(a);
-        const scoreB = this.computeQuickScore(b);
+        // Primary: readinessScore (composite metric)
+        const scoreA = (a.stats as Record<string, unknown>).readinessScore as number ?? this.computeQuickScore(a);
+        const scoreB = (b.stats as Record<string, unknown>).readinessScore as number ?? this.computeQuickScore(b);
         if (scoreB !== scoreA) return scoreB - scoreA;
         // Tiebreaker: profitFactor × winRate
         return (b.stats.profitFactor * b.stats.winRate) - (a.stats.profitFactor * a.stats.winRate);

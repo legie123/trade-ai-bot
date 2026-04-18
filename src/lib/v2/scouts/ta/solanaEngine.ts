@@ -268,7 +268,9 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
     const candles = await fetchOHLC(coin.id);
     const analysis = analyzeCoin(coin.symbol, coin.name, candles, prices[coin.id] || 0);
     results.push(analysis);
-    await new Promise((r) => setTimeout(r, 200)); // Respecting rate limits
+    // FIX 2026-04-18 (perf): 200ms×8=1.6s waste. MEXC allows ~20 req/s.
+    // 50ms is conservative enough to avoid 429 while saving 1.2s/scan.
+    await new Promise((r) => setTimeout(r, 50));
   }
 
   for (const coin of results) {
