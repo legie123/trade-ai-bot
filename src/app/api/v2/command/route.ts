@@ -99,6 +99,26 @@ const READ_ONLY_COMMANDS = new Set<string>([
   'heartbeat:status',
 ]);
 
+// FIX 2026-04-18 FAZA 6: Commands that accept CRON_SECRET as alternative auth.
+// Enables autonomous admin operations (e.g., Claude deploy agent) without dashboard JWT.
+// CRON_SECRET is already a strong production secret — safe to trust for admin ops.
+// Only non-destructive admin commands go here. Kill switch and mode changes stay JWT-only.
+const CRON_AUTHED_COMMANDS = new Set<string>([
+  'gladiators:reset-stats',
+  'cron:run',
+  'cron:positions',
+  'cron:sentiment',
+  'cron:promote',
+]);
+
+function isCronAuthenticated(request: Request): boolean {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) return false;
+  const provided = request.headers.get('x-cron-secret')
+    || request.headers.get('authorization')?.replace('Bearer ', '');
+  return provided === cronSecret;
+}
+
 export async function POST(request: Request): Promise<NextResponse<CommandResult>> {
   const start = Date.now();
 
@@ -111,8 +131,11 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
 
   const { command, params } = body;
 
-  // Auth check — gated după ce știm ce comandă a fost cerută; read-only poate trece fără cookie.
-  if (!READ_ONLY_COMMANDS.has(command) && !isAuthenticated(request)) {
+  // Auth check — gated după ce știm ce comandă a fost cerută.
+  // Priority: read-only (no auth) → CRON_SECRET (admin ops) → JWT (dashboard user).
+  if (!READ_ONLY_COMMANDS.has(command)
+    && !(CRON_AUTHED_COMMANDS.has(command) && isCronAuthenticated(request))
+    && !isAuthenticated(request)) {
     return NextResponse.json({ ok: false, command, message: 'Unauthorized', durationMs: Date.now() - start }, { status: 401 });
   }
   log.info(`[CMD] Executing: ${command}`, { params });
