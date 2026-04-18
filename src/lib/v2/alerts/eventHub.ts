@@ -19,7 +19,8 @@ export type EventCategory =
   | 'ERROR'
   | 'SENTINEL'
   | 'OMEGA'
-  | 'MONTE_CARLO';
+  | 'MONTE_CARLO'
+  | 'SHADOW_PNL_ANOMALY';
 
 export interface SystemEvent {
   category: EventCategory;
@@ -48,6 +49,7 @@ const CATEGORY_EMOJI: Record<EventCategory, string> = {
   SENTINEL: '🛡️',
   OMEGA: '🧠',
   MONTE_CARLO: '🎲',
+  SHADOW_PNL_ANOMALY: '⚡',
 };
 
 // In-memory event log (last 100 events for dashboard)
