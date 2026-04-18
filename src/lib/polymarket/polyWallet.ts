@@ -367,22 +367,31 @@ export function emergencyLiquidate(
 }
 
 // ─── Rebalance across divisions ────────────────────────
+// FIX CRITICAL: Previous implementation created money from nothing.
+// Now uses a two-pass approach: collect excess first, then distribute to deficit divisions.
 export function rebalancePortfolio(wallet: PolyWallet): void {
-  const targetPerDiv = wallet.totalBalance / Object.keys(PolyDivision).length;
+  const divCount = Object.keys(PolyDivision).length;
+  if (divCount === 0) return;
+  const targetPerDiv = wallet.totalBalance / divCount;
 
+  // Pass 1: Collect excess from over-allocated divisions
+  let availablePool = 0;
   for (const [division, divBalance] of wallet.divisionBalances.entries()) {
-    const currentBal = divBalance.balance;
-
-    if (currentBal > targetPerDiv * 1.2) {
-      // Too much capital, move to reserve
-      const excess = currentBal - targetPerDiv;
+    if (divBalance.balance > targetPerDiv * 1.2) {
+      const excess = divBalance.balance - targetPerDiv;
       divBalance.balance -= excess;
-      log.debug('Rebalance: Reduce capital', { division, excess: excess.toFixed(2) });
-    } else if (currentBal < targetPerDiv * 0.8) {
-      // Too little capital, bring up from reserve
-      const needed = targetPerDiv - currentBal;
+      availablePool += excess;
+      log.debug('Rebalance: Collected excess', { division, excess: excess.toFixed(2) });
+    }
+  }
+
+  // Pass 2: Distribute collected pool to under-allocated divisions (only from pool, not thin air)
+  for (const [division, divBalance] of wallet.divisionBalances.entries()) {
+    if (divBalance.balance < targetPerDiv * 0.8 && availablePool > 0) {
+      const needed = Math.min(targetPerDiv - divBalance.balance, availablePool);
       divBalance.balance += needed;
-      log.debug('Rebalance: Add capital', { division, added: needed.toFixed(2) });
+      availablePool -= needed;
+      log.debug('Rebalance: Distributed from pool', { division, added: needed.toFixed(2), remainingPool: availablePool.toFixed(2) });
     }
   }
 

@@ -87,7 +87,9 @@ async function mexcRequest(
       await rateLimiter.wait();
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
+      // FIX CRITICAL: Increased timeout from 8s to 15s — 8s was too tight for Cloud Run cold starts
+      // and caused batch price fetch cascade failures
+      const timer = setTimeout(() => controller.abort(), 15000);
 
       const res = await fetch(url, { method, headers, signal: controller.signal });
       clearTimeout(timer);
@@ -179,13 +181,13 @@ export async function getMexcPrices(symbols?: string[]): Promise<Record<string, 
     return {};
   }
 
-  const CONCURRENCY = 8;
+  const CHUNK_SIZE = 5;
   const results: Record<string, number> = {};
 
-  // Bounded parallel fetch — prevent MEXC rate-limit on large symbol sets.
-  for (let i = 0; i < symbols.length; i += CONCURRENCY) {
-    const batch = symbols.slice(i, i + CONCURRENCY);
-    await Promise.allSettled(batch.map(async (sym) => {
+  // Chunked parallel fetch — concurrency=5 to stay under MEXC rate limit (10 req/s signed)
+  for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
+    const chunk = symbols.slice(i, i + CHUNK_SIZE);
+    await Promise.allSettled(chunk.map(async (sym) => {
       try {
         const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol: sym }, false);
         const price = parseFloat(data.price as string);
@@ -196,7 +198,7 @@ export async function getMexcPrices(symbols?: string[]): Promise<Record<string, 
     }));
   }
 
-  log.info(`[MEXC] Parallel fetch: ${symbols.length} requested, ${Object.keys(results).length} returned (concurrency=${CONCURRENCY})`);
+  log.info(`[MEXC] Chunked fetch: ${symbols.length} requested, ${Object.keys(results).length} returned`);
   return results;
 }
 

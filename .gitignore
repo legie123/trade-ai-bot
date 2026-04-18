@@ -72,7 +72,8 @@ docs/gemini_analysis_v2.md
 
 # ═══ Dev Scratch ═══
 scripts/test-forge.ts
-.claude/
+.claude/*
+!.claude/agents/
 .env*
 
 # Claude autonomous deploy credentials (NEVER COMMIT)

@@ -112,9 +112,10 @@ class GladiatorStore {
     return this.gladiators
       .filter(g => !g.isOmega)
       .sort((a, b) => {
-        // Primary: readinessScore (composite metric)
-        const scoreA = (a.stats as Record<string, unknown>).readinessScore as number ?? this.computeQuickScore(a);
-        const scoreB = (b.stats as Record<string, unknown>).readinessScore as number ?? this.computeQuickScore(b);
+        // FIX 2026-04-18 FAZA 3: readinessScore was never computed — the ?? fallback
+        // always triggered, making the cast dead code. Use computeQuickScore directly.
+        const scoreA = this.computeQuickScore(a);
+        const scoreB = this.computeQuickScore(b);
         if (scoreB !== scoreA) return scoreB - scoreA;
         // Tiebreaker: profitFactor × winRate
         return (b.stats.profitFactor * b.stats.winRate) - (a.stats.profitFactor * a.stats.winRate);

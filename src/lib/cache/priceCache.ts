@@ -28,6 +28,30 @@ const locks = g.__priceFetchLocks;
 const DEFAULT_TTL = 30_000;       // 30s for normal access
 const EXTENDED_TTL = 120_000;     // 2min for fallback tolerance
 
+// FIX CRITICAL: Circuit breaker for MEXC — skip MEXC for 5min after 3 consecutive failures
+// Prevents 8-15s timeout cascade when MEXC is down
+const circuitBreaker = {
+  mexcFailCount: 0,
+  mexcOpenUntil: 0,
+  MAX_FAILS: 3,
+  OPEN_DURATION_MS: 5 * 60_000, // 5 minutes
+  isMexcOpen(): boolean {
+    if (Date.now() < this.mexcOpenUntil) return true;
+    return false;
+  },
+  recordMexcFail(): void {
+    this.mexcFailCount++;
+    if (this.mexcFailCount >= this.MAX_FAILS) {
+      this.mexcOpenUntil = Date.now() + this.OPEN_DURATION_MS;
+      log.warn(`[CircuitBreaker] MEXC circuit OPEN for 5min after ${this.mexcFailCount} consecutive failures`);
+    }
+  },
+  recordMexcSuccess(): void {
+    this.mexcFailCount = 0;
+    this.mexcOpenUntil = 0;
+  },
+};
+
 export function getCachedPrice(symbol: string): number | null {
   const entry = cache.get(symbol);
   if (!entry) return null;
@@ -76,15 +100,24 @@ async function fetchPriceChain(symbol: string): Promise<number> {
 
   const mexcSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
 
-  // 1. MEXC (primary live exchange)
-  try {
-    const { getMexcPrice } = await import('@/lib/exchange/mexcClient');
-    const price = await getMexcPrice(mexcSymbol);
-    if (price > 0) {
-      setCachedPrice(symbol, price, 'MEXC', DEFAULT_TTL);
-      return price;
+  // 1. MEXC (primary live exchange) — with circuit breaker
+  if (!circuitBreaker.isMexcOpen()) {
+    try {
+      const { getMexcPrice } = await import('@/lib/exchange/mexcClient');
+      const price = await getMexcPrice(mexcSymbol);
+      if (price > 0) {
+        setCachedPrice(symbol, price, 'MEXC', DEFAULT_TTL);
+        circuitBreaker.recordMexcSuccess();
+        return price;
+      }
+      circuitBreaker.recordMexcFail();
+    } catch (err) {
+      circuitBreaker.recordMexcFail();
+      log.warn(`MEXC price fetch failed for ${mexcSymbol}`, { error: String(err) });
     }
-  } catch (err) { log.warn(`MEXC price fetch failed for ${mexcSymbol}`, { error: String(err) }); }
+  } else {
+    log.debug(`[PriceCache] MEXC circuit open — skipping to Binance for ${symbol}`);
+  }
 
   // 2. Binance (AUDIT FIX: Re-enabled — client now exists)
   try {

@@ -61,9 +61,9 @@ function defaultState(): KillSwitchState {
 }
 
 // AUDIT FIX T2.3: Hydrate from Supabase on first use (async, non-blocking init)
+// FIX CRITICAL: Moved hydrated flag AFTER successful fetch to prevent stale state on network failure
 async function hydrateFromSupabase(): Promise<void> {
   if (g.__killSwitchHydrated || !supabase) return;
-  g.__killSwitchHydrated = true;
   try {
     const { data } = await supabase
       .from('json_store')
@@ -75,8 +75,10 @@ async function hydrateFromSupabase(): Promise<void> {
       Object.assign(state, remote);
       log.info('Kill switch state hydrated from Supabase', { engaged: state.engaged });
     }
+    g.__killSwitchHydrated = true; // Only mark hydrated on SUCCESS
   } catch (err) {
-    log.warn('Failed to hydrate kill switch from Supabase', { error: (err as Error).message });
+    // DO NOT set hydrated flag — next call will retry
+    log.warn('Failed to hydrate kill switch from Supabase — will retry next call', { error: (err as Error).message });
   }
 }
 
@@ -293,9 +295,13 @@ export async function resetDailyTriggers(): Promise<void> {
   while (velocityWindow.length > 0 && velocityWindow[0].timestamp < cutoff24h) {
     velocityWindow.shift();
   }
-  if (state.autoEngaged && !state.manualOverride) {
+  // FIX: Only auto-disengage if triggered by daily loss limit, NOT velocity or exposure
+  // Velocity/exposure triggers indicate systemic issues that persist across days
+  if (state.autoEngaged && !state.manualOverride && state.dailyLossTriggered && !state.velocityTriggered && !state.maxExposureTriggered) {
     await disengageKillSwitch();
-    log.info('Kill switch auto-disengaged on new day');
+    log.info('Kill switch auto-disengaged on new day (daily loss trigger only)');
+  } else if (state.autoEngaged) {
+    log.warn('Kill switch NOT auto-disengaged — velocity or exposure trigger still active, requires manual disengage');
   }
   await persistState();
 }

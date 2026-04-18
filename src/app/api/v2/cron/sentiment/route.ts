@@ -103,8 +103,14 @@ export async function GET(request: Request) {
 
       if (symbolPosts.length === 0) continue;
 
-      // Try LLM-enhanced analysis first (Faza 10)
-      const llmResult = await analyzeSentimentLLM(sym, symbolPosts.map(p => p.content));
+      // Try LLM-enhanced analysis first (Faza 10) with error fallback
+      // FIX: Wrap LLM call in try-catch to prevent entire cron from failing on LLM errors
+      let llmResult: { method: string; score: number; direction: string } = { method: 'KEYWORD', score: 0, direction: 'NEUTRAL' };
+      try {
+        llmResult = await analyzeSentimentLLM(sym, symbolPosts.map(p => p.content));
+      } catch (llmErr) {
+        log.warn(`[Sentiment] LLM analysis failed for ${sym}, falling back to keyword`, { error: String(llmErr) });
+      }
 
       // Also run keyword for comparison stats
       let bullish = 0, bearish = 0, neutral = 0;
@@ -118,10 +124,14 @@ export async function GET(request: Request) {
       const total = bullish + bearish + neutral;
 
       // Use LLM score if available, otherwise keyword
-      const finalScore = llmResult.method === 'LLM' ? llmResult.score
+      // FIX: Clamp LLM score to [-100, 100] to prevent garbage values from malformed LLM responses
+      const rawScore = llmResult.method === 'LLM' ? llmResult.score
         : Math.round(((bullish - bearish) / total) * 100);
-      const finalDirection = llmResult.method === 'LLM' ? llmResult.direction
-        : (finalScore > 15 ? 'BULLISH' : finalScore < -15 ? 'BEARISH' : 'NEUTRAL') as 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+      const finalScore = Math.max(-100, Math.min(100, rawScore));
+      const llmDir = llmResult.direction as 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+      const finalDirection: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = llmResult.method === 'LLM'
+        ? (['BULLISH', 'BEARISH', 'NEUTRAL'].includes(llmDir) ? llmDir : 'NEUTRAL')
+        : (finalScore > 15 ? 'BULLISH' : finalScore < -15 ? 'BEARISH' : 'NEUTRAL');
 
       symbolScores.push({
         symbol: sym,

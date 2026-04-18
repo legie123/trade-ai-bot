@@ -3,6 +3,7 @@ import { positionManager } from '@/lib/v2/manager/positionManager';
 import { createLogger } from '@/lib/core/logger';
 import { initDB, getLivePositions } from '@/lib/store/db';
 import { requireCronAuth } from '@/lib/core/cronAuth';
+import { isKillSwitchEngaged } from '@/lib/core/killSwitch';
 
 const log = createLogger('Cron-PositionManager');
 
@@ -18,14 +19,25 @@ export async function GET(request: Request) {
     // Ensure DB is loaded (important for Serverless environments like Cloud Run)
     await initDB();
 
+    // FIX: Check kill switch before evaluating — prevents redundant orders during liquidation
+    if (isKillSwitchEngaged()) {
+      log.warn('[Cron] Kill switch engaged — skipping position evaluation');
+      return NextResponse.json({ status: 'skipped', reason: 'kill_switch_engaged', timestamp: new Date().toISOString() });
+    }
+
     const openPositions = getLivePositions().filter(p => p.status === 'OPEN');
     log.info(`[Cron] Position Manager tick — ${openPositions.length} open positions.`);
 
-    // Trigger position evaluation
-    await positionManager.evaluateLivePositions();
+    // FIX: Add 45s timeout to prevent cron cascade when MEXC is slow
+    const evalPromise = positionManager.evaluateLivePositions();
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Position evaluation timed out after 45s')), 45_000)
+    );
 
-    return NextResponse.json({ 
-      status: 'ok', 
+    await Promise.race([evalPromise, timeoutPromise]);
+
+    return NextResponse.json({
+      status: 'ok',
       openPositions: openPositions.length,
       positions: openPositions.map(p => ({
         id: p.id,
@@ -35,7 +47,7 @@ export async function GET(request: Request) {
         partialTPHit: p.partialTPHit,
         highestObserved: p.highestPriceObserved,
       })),
-      timestamp: new Date().toISOString() 
+      timestamp: new Date().toISOString()
     });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
