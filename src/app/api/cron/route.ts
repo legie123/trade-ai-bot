@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       const { GET: runBtc } = await import('@/app/api/btc-signals/route');
       const { GET: runSolana } = await import('@/app/api/solana-signals/route');
       const { GET: runMeme } = await import('@/app/api/meme-signals/route');
-      
+
       // CRITICAL: await scanners — Cloud Run freezes process after response.
       // Fire-and-forget promises never complete on serverless.
       await Promise.allSettled([runBtc(), runSolana(), runMeme()]);
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     // Evaluate Real/Shadow Main System Decisions
     const { getPendingDecisions, updateDecision, recalculatePerformance, appendToEquityCurve, getLivePositions, updateLivePosition } = await import('@/lib/store/db');
     const { getMexcPrices } = await import('@/lib/exchange/mexcClient');
-    
+
     const pending = getPendingDecisions();
     let mainDecisionsEvaluated = 0;
 
@@ -154,10 +154,10 @@ export async function GET(request: NextRequest) {
     for (const dec of eligibleDecisions) {
       const currentPrice = priceCache[dec.symbol];
       if (!currentPrice || !dec.price) continue;
-      
+
       const pnlDiff = (currentPrice - dec.price) / dec.price;
       const pnlPercent = (dec.action === 'LONG' || dec.action === 'BUY') ? pnlDiff * 100 : -pnlDiff * 100;
-      
+
       // BUG FIX: Previous threshold was 0.05% — any micro-movement was a WIN.
       // In crypto, 0.05% moves in seconds → inflated win rates to ~80%+.
       // 0.3% is the minimum meaningful edge after fees (~0.1% MEXC taker).
@@ -205,7 +205,7 @@ export async function GET(request: NextRequest) {
     let livePositionsUpdated = 0;
     for (const pos of livePos) {
       if (priceCache[pos.symbol]) {
-        updateLivePosition(pos.id, { 
+        updateLivePosition(pos.id, {
           currentPrice: priceCache[pos.symbol],
           highestPriceObserved: Math.max(pos.highestPriceObserved, priceCache[pos.symbol]),
           lowestPriceObserved: Math.min(pos.lowestPriceObserved, priceCache[pos.symbol])
@@ -247,4 +247,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: 'error', error: (err as Error).message }, { status: 500 });
   }
 }
-
