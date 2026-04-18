@@ -77,9 +77,16 @@ export class ArenaSimulator {
       this.lastGladiatorRefresh = now;
     }
 
-    const WIN_THRESHOLD_TP = 0.3; // Take Profit 0.3%
-    const LOSS_THRESHOLD_SL = -1.0; // Stop Loss -1.0%
-    const MAX_HOLD_SEC = 900;    // Maximum 15min — force-close stale phantoms
+    // FIX 2026-04-18 (QW-7): Rebalansare TP/SL — era 0.3/-1.0 (R:R 1:3.33 → gladiatorul
+    // avea nevoie de WR >78% doar ca să fie break-even — matematic improbabil sustained).
+    // Nou: 0.5/-0.5 (R:R 1:1) → break-even @ WR 50%. PF-ul devine interpretabil.
+    // Asumpție care invalidează: volatility crypto > 0.5% în 15min poate lovi ambele praguri
+    // în aceeași fereastră — accept acest artifact statistic vs. artifact mai mare al R:R 1:3.33.
+    // Istoricul trades NU se recalculează — statisticile vechi rămân poluate, dar noile phantoms
+    // vor produce PF realist.
+    const WIN_THRESHOLD_TP = 0.5;  // Take Profit 0.5% (simetric)
+    const LOSS_THRESHOLD_SL = -0.5; // Stop Loss -0.5% (simetric)
+    const MAX_HOLD_SEC = 900;       // Maximum 15min — force-close stale phantoms
 
     // Batch: get unique symbols and prefetch prices in parallel
     const uniqueSymbols = [...new Set(activePhantoms.map(t => t.symbol))];
@@ -108,7 +115,12 @@ export class ArenaSimulator {
       }
 
       // Determine Outcome
-      const isWin = pnlPercent > 0; // It could be evaluated on expiration at e.g +0.1% -> still a win technically, but didn't hit TP.
+      // FIX 2026-04-18 (QW-7): Strâns criteriul isWin. Vechi: `pnlPercent > 0` permitea ca
+      // un phantom expirat la +0.001% să conteze ca win → inflație artificială a winRate.
+      // Nou: win doar dacă a atins efectiv TP-ul (hitTP) SAU dacă la expirare e cel puțin la
+      // jumătate din TP (pragul mai cenzor, dar realist). Orice altceva = loss.
+      // Efect așteptat: winRate va scădea la valori realiste, PF va deveni stabil (denominator non-zero).
+      const isWin = hitTP || (isExpired && pnlPercent >= WIN_THRESHOLD_TP / 2);
 
       // 1. Clean up phantom position
       removePhantomTrade(trade.id);
