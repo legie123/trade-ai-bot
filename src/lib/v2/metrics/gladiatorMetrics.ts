@@ -20,8 +20,25 @@ export interface TradeRecord {
 
 /**
  * Compute Sharpe Ratio from array of trade returns
- * Annualized assuming ~250 trading days, ~5 trades/day average
+ * Annualized assuming ~1250 trades/year (5/day × 250 days)
+ *
+ * RUFLO FAZA 3 Batch 3 (C7) 2026-04-19:
+ * Bug: Previous formula used sqrt(min(n, 1250)) as annualizationFactor,
+ *      i.e. factor scaled with sample size. This is WRONG — standard
+ *      Sharpe annualization uses a CONSTANT factor = sqrt(periods_per_year)
+ *      (Sharpe 1994). Variable scaling penalized small-n gladiators
+ *      (artificially low Sharpe) and reached parity only near n=1250.
+ * Fix:  Constant annualizationFactor = sqrt(TRADES_PER_YEAR).
+ * Impact: Small-n gladiators see Sharpe go UP (normalized to annual).
+ *         Downstream readinessScore + eligible flag may shift.
+ *         C8 Butcher Wilson CI + C9 auto-promote gates (next batches)
+ *         must land to prevent premature promotions on the new scale.
+ * Kill-switch: env USE_LEGACY_SHARPE=1 reverts to old variable formula.
+ * ASUMPȚIE: TRADES_PER_YEAR=1250 matches the existing comment assumption.
+ *           If real trade frequency differs (e.g. 3/day for some gladiators),
+ *           Sharpe is over/under-annualized uniformly — ranking still valid.
  */
+const TRADES_PER_YEAR = 1250;
 export function computeSharpeRatio(returns: number[]): number {
   if (returns.length < 5) return 0;
 
@@ -31,8 +48,10 @@ export function computeSharpeRatio(returns: number[]): number {
 
   if (stdDev === 0) return 0;
 
-  // Annualize: assume ~1250 trades/year (5/day × 250 days)
-  const annualizationFactor = Math.sqrt(Math.min(returns.length, 1250));
+  const useLegacy = process.env.USE_LEGACY_SHARPE === '1';
+  const annualizationFactor = useLegacy
+    ? Math.sqrt(Math.min(returns.length, TRADES_PER_YEAR))  // legacy (buggy, scales with n)
+    : Math.sqrt(TRADES_PER_YEAR);                            // correct (constant)
   return (mean / stdDev) * annualizationFactor;
 }
 
