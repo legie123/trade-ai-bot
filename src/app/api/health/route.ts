@@ -1,38 +1,18 @@
 /**
  * GET /api/health
- * Top-level health endpoint — proxy to /api/v2/health.
+ * Top-level health endpoint — thin wrapper over /api/v2/health handler.
  * Exists because Cloud Scheduler and external monitors may ping this URL.
  *
- * FIX 2026-04-18: Eliminat forward-ul de headere din request (cauza "Health proxy failed").
- * Cloud Run self-fetch pica dacă propagăm headerele externe (host corupt, cookie auth etc).
- * v2/health e public (in PUBLIC_PREFIXES din middleware), deci nu are nevoie de auth forward.
+ * FIX 2026-04-18 (v2): Self-fetch HTTP pe Cloud Run e nefiabil (container → propriul URL public
+ * loop-back eșuează intermitent cu "fetch failed", indiferent de headere). În loc de self-fetch,
+ * importăm direct handler-ul v2/health și îl invocăm in-process. Zero round-trip, zero HTTP.
  */
 
-import { NextResponse } from 'next/server';
+import { GET as v2HealthGET } from '../v2/health/route';
 
-const V2_HEALTH = '/api/v2/health';
+export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request) {
-  try {
-    const url = new URL(request.url);
-    const v2Url = `${url.origin}${V2_HEALTH}`;
-
-    // FIX 2026-04-18: Self-fetch minimal — fara headere propagate.
-    const resp = await fetch(v2Url, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(10000), // 10s pentru warm-up Cloud Run
-    });
-
-    const data = await resp.json();
-    return NextResponse.json(data, { status: resp.status });
-  } catch (err) {
-    // Fallback daca self-fetch esueaza — trimitem 206 cu motivul real
-    return NextResponse.json({
-      success: true,
-      status: 'DEGRADED',
-      message: `Health proxy failed: ${(err as Error).message || 'unknown'}`,
-      timestamp: new Date().toISOString(),
-    }, { status: 206 });
-  }
+export async function GET() {
+  // Invoca direct handler-ul v2/health în proces — nu self-fetch.
+  return v2HealthGET();
 }
