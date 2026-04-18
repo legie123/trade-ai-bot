@@ -292,10 +292,20 @@ export class ArenaSimulator {
         }
       });
 
-      // 3. Update Gladiator's lifetime record with CLAMPED values
+      // 3. Update Gladiator's lifetime record with CLAMPED values.
+      // FAZA 3/BATCH 1 (2026-04-19) — F1 FIX: stats use NET pnl (fee+slippage).
+      // PRIOR BUG: pnlPercentNet computed at line 260 but updateGladiatorStats
+      // received GROSS pnl + TP-based isWin → promotion gates (WR≥58, PF≥1.3)
+      // measured on inflated net → weak gladiators promoted.
+      // NOW: default NET (fair accounting). Rollback: FEE_NET_V2=0 → legacy gross.
+      // ASSUMPTION: feeModel.ts RT cost reflects real MEXC execution. If env
+      // MARKET_TYPE ≠ exchange reality, net is over/underestimated uniformly.
+      const useNet = process.env.FEE_NET_V2 !== '0';
+      const statsPnl = useNet ? pnlPercentNet : parseFloat(finalPnl.toFixed(4));
+      const statsWin = useNet ? isWinNet : isWin;
       gladiatorStore.updateGladiatorStats(trade.gladiatorId, {
-         pnlPercent: parseFloat(finalPnl.toFixed(4)),
-         isWin
+         pnlPercent: statsPnl,
+         isWin: statsWin
       });
 
       totalClosed++;

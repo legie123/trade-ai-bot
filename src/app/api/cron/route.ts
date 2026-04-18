@@ -15,6 +15,18 @@ import { initDB, tryAcquireTaskLease, releaseTaskLease, getInstanceId } from '@/
 // ASUMPȚIE: NEUTRAL label (|pnl| ≤ WIN_THRESHOLD=0.3%) nu e trade închis — phantom simulator
 // tratează analog (isNeutral → continue fără stats update). Consistent cu convenția existentă.
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+// FAZA 3/5 BATCH 1/4 (2026-04-19) — Shadow pnl sanity + clamp.
+// Shadow MTM path at horizon eval was writing RAW pnl to DNA+stats, bypassing QW-11 clamp.
+// Two guards:
+//  (a) Sanity reject: |raw| > 20% → skip write + emit SHADOW_PNL_ANOMALY (price cache corruption).
+//  (b) Soft clamp: pnl ∈ [-0.5, +1.0] for stats/DNA writes (aligned w/ simulator TP/SL convention).
+//      horizonOutcomes keep RAW value (informational metric, not a trade outcome).
+// ASUMPȚIE: în crypto 15m, move real >20% e extrem rar — pierderea unui sample acceptabilă.
+// Dacă asumpția se rupe (flash pump real 25% in 15m), vedem SHADOW_PNL_ANOMALY event și re-calibrăm.
+import { emitEvent } from '@/lib/v2/alerts/eventHub';
+const SHADOW_PNL_SANITY_ABS = 20.0; // %
+const SHADOW_TP_CLAMP = 1.0;         // %
+const SHADOW_SL_CLAMP = -0.5;        // %
 
 const log = createLogger('CronLoop');
 
@@ -283,11 +295,41 @@ export async function GET(request: NextRequest) {
             if (ho[String(H)]) continue;
 
             const pnlDiff = (currentPrice - dec.price) / dec.price;
-            const pnlPercent = (dec.action === 'LONG' || dec.action === 'BUY')
+            const rawPnlPercent = (dec.action === 'LONG' || dec.action === 'BUY')
               ? pnlDiff * 100 : -pnlDiff * 100;
+
+            // FAZA 3/5 BATCH 1/4 — Sanity guard: reject cache-corruption values (|raw| > 20%).
+            if (Math.abs(rawPnlPercent) > SHADOW_PNL_SANITY_ABS) {
+              log.error(`[SHADOW_ANOMALY] decId=${dec.id} symbol=${dec.symbol} H=${H}m raw=${rawPnlPercent.toFixed(2)}% entry=${dec.price} exit=${currentPrice} — SKIP horizon write`);
+              try {
+                await emitEvent({
+                  category: 'SHADOW_PNL_ANOMALY',
+                  severity: 'CRITICAL',
+                  title: `Shadow pnl ${rawPnlPercent.toFixed(2)}% exceeds sanity ${SHADOW_PNL_SANITY_ABS}%`,
+                  details: {
+                    decId: dec.id,
+                    symbol: dec.symbol,
+                    action: dec.action,
+                    entryPrice: dec.price,
+                    exitPrice: currentPrice,
+                    horizon: H,
+                    rawPnlPercent: parseFloat(rawPnlPercent.toFixed(4)),
+                    reason: 'likely price cache corruption or delisted symbol'
+                  }
+                });
+              } catch { /* non-fatal */ }
+              continue; // skip this horizon for this decision — do NOT pollute stats/DNA
+            }
+
+            // Horizon metric keeps RAW value (informational, may reflect real sharp moves <20%).
+            const pnlPercent = rawPnlPercent;
             const label: 'WIN' | 'LOSS' | 'NEUTRAL' =
               pnlPercent > WIN_THRESHOLD ? 'WIN'
               : pnlPercent < -WIN_THRESHOLD ? 'LOSS' : 'NEUTRAL';
+
+            // Execution-convention pnl: clamped to simulator TP/SL bandwidth.
+            // Used ONLY for DNA logBattle + gladiator stats (aligned w/ QW-11 simulator clamp).
+            const execPnlPercent = Math.max(SHADOW_SL_CLAMP, Math.min(SHADOW_TP_CLAMP, rawPnlPercent));
 
             setHorizonOutcome(dec.id, H, {
               price: currentPrice,
@@ -303,12 +345,16 @@ export async function GET(request: NextRequest) {
             if (legacyPriceField) updateDecision(dec.id, { [legacyPriceField]: currentPrice });
 
             if (H === PRIMARY_HORIZON) {
+              // FAZA 3/5 BATCH 1/4 — decision.pnl + equity curve use execPnlPercent
+              // (clamped TP/SL) for consistency with DNA + gladiator stats.
+              // recalculatePerformance() consumes this → performance metrics aligned with
+              // simulator convention (no phantom inflation from price spikes beyond TP).
               updateDecision(dec.id, {
-                pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+                pnlPercent: parseFloat(execPnlPercent.toFixed(4)),
                 outcome: label,
                 evaluatedAt: new Date().toISOString(),
               });
-              appendToEquityCurve({ ...dec, outcome: label }, pnlPercent);
+              appendToEquityCurve({ ...dec, outcome: label }, execPnlPercent);
               mainDecisionsEvaluated++;
 
               // DNA LEARNING — one shadow → one DNA row
@@ -316,6 +362,8 @@ export async function GET(request: NextRequest) {
                 const gladiatorIdMatch = dec.source.match(/\(([A-Za-z0-9_-]+)\)/);
                 if (gladiatorIdMatch && gladiatorIdMatch[1]) {
                   try {
+                    // FAZA 3/5 BATCH 1/4 — DNA writes use execPnlPercent (clamped to TP/SL).
+                    // Aligned with simulator.ts QW-11 convention → stats/DNA coherent across sources.
                     await DNAExtractor.getInstance().logBattle({
                       id: `shadow_${dec.id}`,
                       gladiatorId: gladiatorIdMatch[1],
@@ -323,18 +371,18 @@ export async function GET(request: NextRequest) {
                       decision: dec.action as 'LONG' | 'SHORT' | 'FLAT',
                       entryPrice: dec.price,
                       outcomePrice: currentPrice,
-                      pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+                      pnlPercent: parseFloat(execPnlPercent.toFixed(4)),
                       isWin: label === 'WIN',
                       timestamp: Date.now(),
                       marketContext: (() => {
                         const _omega = OmegaEngine.getInstance();
                         const _r = _omega.getRegime();
                         // FAZA B.2 (2026-04-18) — NET PnL accounting aligned with simulator.ts.
-                        // Shadow DNA path uses time-based pnl (not TP/SL clamped), but fees still apply.
-                        // ASUMPȚIE: shadow path assumes exit la orice pnl curent → fees aplicate la
+                        // Shadow DNA path uses time-based pnl clamped to TP/SL (BATCH 1/4 post-fix).
+                        // ASUMPȚIE: shadow path assumes exit la pnl clamped → fees aplicate la
                         // full round-trip chiar dacă e mark-to-market (nu e închidere reală).
-                        // Pentru PAPER accounting e corect: simulăm execuția ca și cum am fi ieșit.
-                        const _feeCalc = netPnlFromGross(parseFloat(pnlPercent.toFixed(4)));
+                        // Pentru PAPER accounting e corect: simulăm execuția ca și cum am fi ieșit la TP/SL.
+                        const _feeCalc = netPnlFromGross(parseFloat(execPnlPercent.toFixed(4)));
                         return {
                           exitType: 'SHADOW_TIME_BASED',
                           holdTimeSec: elapsedMin * 60,
@@ -345,9 +393,12 @@ export async function GET(request: NextRequest) {
                           // FAZA B.2 — NET fields (additive, non-breaking)
                           feeRoundTrip: _feeCalc.feeRoundTrip,
                           marketType: _feeCalc.marketType,
-                          pnlPercentGross: parseFloat(pnlPercent.toFixed(4)),
+                          pnlPercentGross: parseFloat(execPnlPercent.toFixed(4)),
                           pnlPercentNet: _feeCalc.pnlPercentNet,
                           isWinNet: _feeCalc.isWinNet,
+                          // BATCH 1/4 audit trail: păstrăm raw pentru investigații
+                          rawHorizonPnlGross: parseFloat(rawPnlPercent.toFixed(4)),
+                          wasClamped: rawPnlPercent !== execPnlPercent,
                         };
                       })()
                     });
@@ -360,9 +411,18 @@ export async function GET(request: NextRequest) {
                     // explicit gladiators:reset-stats command. No retroactive backfill here (safe).
                     if (label !== 'NEUTRAL') {
                       try {
+                        // FAZA 3/BATCH 1 (2026-04-19) — F1 FIX: shadow stats NET (parity w/ simulator).
+                        // PRIOR: stats used GROSS execPnlPercent → WR/PF inflated by fee drag.
+                        // NOW: default NET. Rollback env FEE_NET_V2=0 → legacy gross.
+                        // ASSUMPTION: shadow exit simulated at clamped TP/SL → fee applied full
+                        // round-trip (accounting reflects real execution cost).
+                        const _useNet = process.env.FEE_NET_V2 !== '0';
+                        const _shadowFee = netPnlFromGross(parseFloat(execPnlPercent.toFixed(4)));
+                        const _statsPnl = _useNet ? _shadowFee.pnlPercentNet : parseFloat(execPnlPercent.toFixed(4));
+                        const _statsWin = _useNet ? _shadowFee.isWinNet : (label === 'WIN');
                         gladiatorStore.updateGladiatorStats(gladiatorIdMatch[1], {
-                          pnlPercent: parseFloat(pnlPercent.toFixed(4)),
-                          isWin: label === 'WIN'
+                          pnlPercent: _statsPnl,
+                          isWin: _statsWin
                         });
                       } catch (statsErr) {
                         log.error(`[A1] updateGladiatorStats failed for shadow ${dec.id}`, { error: String(statsErr) });
