@@ -115,17 +115,28 @@ export class ArenaSimulator {
       }
 
       // Determine Outcome
-      // FIX 2026-04-18 (QW-7): Strâns criteriul isWin. Vechi: `pnlPercent > 0` permitea ca
-      // un phantom expirat la +0.001% să conteze ca win → inflație artificială a winRate.
-      // Nou: win doar dacă a atins efectiv TP-ul (hitTP) SAU dacă la expirare e cel puțin la
-      // jumătate din TP (pragul mai cenzor, dar realist). Orice altceva = loss.
-      // Efect așteptat: winRate va scădea la valori realiste, PF va deveni stabil (denominator non-zero).
+      // FIX 2026-04-18 (QW-10): Three-way classification — WIN / LOSS / NEUTRAL.
+      // Problem: expired phantom at +0.02% counted as LOSS with pnl=0.02 → _totalLossPnl
+      // denominator near-zero → PF exploded to 439. Noise trades polluted statistics.
+      // Fix: expired trades with |pnl| below NEUTRAL_ZONE don't update stats at all.
+      // Only TP/SL hits and expired trades with meaningful movement count.
+      // ASSUMPTION: NEUTRAL_ZONE = SL/2 = 0.25%. If crypto micro-volatility consistently
+      // stays below 0.25% in 15min windows, most trades become NEUTRAL → slow stat accumulation.
+      // That's acceptable: slow-but-accurate beats fast-but-garbage.
+      const NEUTRAL_ZONE = Math.abs(LOSS_THRESHOLD_SL) / 2; // 0.25%
       const isWin = hitTP || (isExpired && pnlPercent >= WIN_THRESHOLD_TP / 2);
+      const isNeutral = isExpired && !hitTP && !hitSL && Math.abs(pnlPercent) < NEUTRAL_ZONE;
 
-      // 1. Clean up phantom position
+      // 1. Clean up phantom position (always — even neutrals must be removed)
       removePhantomTrade(trade.id);
-      
-      // 2. DNA Extraction (The Forge) — log regardless of win/loss for learning
+
+      // Skip stats update for NEUTRAL expired trades — they're noise, not signal
+      if (isNeutral) {
+        totalClosed++;
+        continue;
+      }
+
+      // 2. DNA Extraction (The Forge) — log WIN/LOSS for learning
       await this.dnaBank.logBattle({
         id: trade.id,
         gladiatorId: trade.gladiatorId,

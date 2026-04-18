@@ -155,16 +155,22 @@ class GladiatorStore {
     }
 
     // Real ProfitFactor = total win PnL / total loss PnL
-    // FIX 2026-04-18 (QW-6): Eliminat fallback artificial PF=99. Cauza: gladiator cu 0 losses
-    // primea PF=99 care trivializa gate-ul de promovare (criteriul `PF >= 1.1` era automat satisfăcut
-    // după chiar 1 win, înainte ca regimul de pierdere să fi fost observat → promovare prematură).
-    // Nou: PF rămâne 1.0 neutru până avem cel puțin un loss înregistrat (denominator real).
-    // Asumpție care, dacă se rupe, invalidează logica: _totalLossPnl e acumulat corect la fiecare
-    // loss (verificat linia 140). Dacă acumularea eșuează, PF va rămâne 1.0 la infinit → gladiatorul
-    // nu se promovează, fail-safe pe partea conservatoare.
-    gladiator.stats.profitFactor = ext._totalLossPnl > 0
-      ? parseFloat((ext._totalWinPnl / ext._totalLossPnl).toFixed(2))
-      : 1.0; // PF nedefinit fără pierderi → neutru, NU 99. Blochează promovare prematură.
+    // FIX 2026-04-18 (QW-10): PF inflation fix — three guards:
+    //   1. Minimum loss floor: _totalLossPnl < MIN_LOSS_FLOOR → PF=1.0 (insufficient data)
+    //   2. PF cap at 10.0 — any PF > 10 in crypto is artifact, not edge
+    //   3. Keep QW-6 rule: no losses at all → PF=1.0 neutral
+    // Root cause of PF=439: expired phantoms with +0.02% pnl counted as loss →
+    // _totalLossPnl denominator near-zero. Also fixed upstream (QW-10 NEUTRAL zone
+    // in simulator.ts), but this guard protects against future denominator pollution.
+    // ASSUMPTION: MIN_LOSS_FLOOR=0.5 ≈ one real SL hit (SL=0.5%).
+    const MIN_LOSS_FLOOR = 0.5;
+    const PF_CAP = 10.0;
+    if (ext._totalLossPnl >= MIN_LOSS_FLOOR) {
+      const rawPF = ext._totalWinPnl / ext._totalLossPnl;
+      gladiator.stats.profitFactor = parseFloat(Math.min(rawPF, PF_CAP).toFixed(2));
+    } else {
+      gladiator.stats.profitFactor = 1.0; // insufficient loss data → neutral
+    }
 
     // Real MaxDrawdown = peak-to-trough on equity curve
     ext._currentEquity *= (1 + tick.pnlPercent / 100);
