@@ -35,9 +35,9 @@ import { GET as omegaStatusGET } from '../omega-status/route';
 import { GET as arenaStatusGET } from '../arena/route';
 // FIX 2026-04-19: diag:full + diag:signal-quality in-process (self-fetch returns null on Cloud Run)
 import { GET as healthGET } from '../health/route';
-import { GET as diagMasterGET } from '../../../diagnostics/master/route';
-import { GET as diagCreditsGET } from '../../../diagnostics/credits/route';
-import { GET as diagSignalQualityGET } from '../../../diagnostics/signal-quality/route';
+import { GET as diagMasterGET } from '../../diagnostics/master/route';
+import { GET as diagCreditsGET } from '../../diagnostics/credits/route';
+import { GET as diagSignalQualityGET } from '../../diagnostics/signal-quality/route';
 
 export const dynamic = 'force-dynamic';
 const log = createLogger('CommandCenter');
