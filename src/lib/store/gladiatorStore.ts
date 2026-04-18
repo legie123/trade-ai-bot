@@ -65,40 +65,7 @@ class GladiatorStore {
     const fromDb = getGladiatorsFromDb();
     if (fromDb && fromDb.length > 0) {
       this.gladiators = fromDb;
-      // MERGE-SEED (2026-04-18): insert new strategies from INITIAL_STRATEGIES that don't exist in DB.
-      // Preserves existing gladiator stats/isLive; only ADDS missing ones. Rank is assigned at end.
-      // Assumption that invalidates: if a strategy id is renamed, old id stays in DB AND new id gets added as duplicate.
-      // Mitigation: manually run gladiators:reset-stats OR purge old id via admin endpoint.
-      const existingIds = new Set(this.gladiators.map(g => g.id));
-      const missing = INITIAL_STRATEGIES.filter(s => !existingIds.has(s.id));
-      if (missing.length > 0) {
-        storeLog.info(`[MERGE-SEED] Adding ${missing.length} new gladiator(s): ${missing.map(m => m.id).join(', ')}`);
-        let nextRank = Math.max(...this.gladiators.map(g => g.rank), 0) + 1;
-        for (const strat of missing) {
-          let arena: ArenaType = 'DAY_TRADING';
-          const lid = strat.id.toLowerCase();
-          if (lid.includes('scalp')) arena = 'SCALPING';
-          if (lid.includes('swing') || lid.includes('follow')) arena = 'SWING';
-          if (lid.includes('solana') || lid.includes('eco') || lid.includes('meme') || lid.includes('pump')) {
-            arena = 'DEEP_WEB';
-          }
-          this.gladiators.push({
-            id: strat.id,
-            name: strat.name,
-            arena,
-            rank: nextRank++,
-            isLive: false,
-            dna: strat.dna,
-            status: 'IN_TRAINING',
-            trainingProgress: 0,
-            skills: arena === 'DEEP_WEB' ? ['MEME_SNIPER'] : [],
-            stats: { winRate: 0, profitFactor: 1.0, maxDrawdown: 0, sharpeRatio: 0, totalTrades: 0 },
-            lastUpdated: Date.now(),
-          });
-        }
-        // Persist so the new gladiators survive next cold start
-        saveGladiatorsToDb(this.gladiators);
-      }
+      this.mergeSeedMissing();
     } else {
       this.seedGladiators();
     }
@@ -179,7 +146,45 @@ class GladiatorStore {
       // Migrate: inject DNA into existing gladiators that don't have it yet.
       // DNA comes from seed definitions. Gladiators not in seed keep dna=undefined (accept all).
       this.migrateDna();
+      // Merge-seed: add any new INITIAL_STRATEGIES missing from DB.
+      this.mergeSeedMissing();
     }
+  }
+
+  /**
+   * Merge-seed: insert new INITIAL_STRATEGIES entries that don't exist in DB.
+   * Preserves existing gladiator stats/isLive; only ADDS missing ones.
+   * Called from both ensureLoaded (cold start with DB) and reloadFromDb (post-initDB).
+   */
+  private mergeSeedMissing(): void {
+    const existingIds = new Set(this.gladiators.map(g => g.id));
+    const missing = INITIAL_STRATEGIES.filter(s => !existingIds.has(s.id));
+    if (missing.length === 0) return;
+    storeLog.info(`[MERGE-SEED] Adding ${missing.length} new gladiator(s): ${missing.map(m => m.id).join(', ')}`);
+    let nextRank = Math.max(...this.gladiators.map(g => g.rank), 0) + 1;
+    for (const strat of missing) {
+      let arena: ArenaType = 'DAY_TRADING';
+      const lid = strat.id.toLowerCase();
+      if (lid.includes('scalp')) arena = 'SCALPING';
+      if (lid.includes('swing') || lid.includes('follow')) arena = 'SWING';
+      if (lid.includes('solana') || lid.includes('eco') || lid.includes('meme') || lid.includes('pump')) {
+        arena = 'DEEP_WEB';
+      }
+      this.gladiators.push({
+        id: strat.id,
+        name: strat.name,
+        arena,
+        rank: nextRank++,
+        isLive: false,
+        dna: strat.dna,
+        status: 'IN_TRAINING',
+        trainingProgress: 0,
+        skills: arena === 'DEEP_WEB' ? ['MEME_SNIPER'] : [],
+        stats: { winRate: 0, profitFactor: 1.0, maxDrawdown: 0, sharpeRatio: 0, totalTrades: 0 },
+        lastUpdated: Date.now(),
+      });
+    }
+    saveGladiatorsToDb(this.gladiators);
   }
 
   /**
