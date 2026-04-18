@@ -470,9 +470,18 @@ export function addSyndicateAudit(audit: Record<string, unknown>): void {
       opinions: auditRec.opinions || [],
       hallucinationReport: auditRec.hallucinationReport || null,
     };
-    supabase.from('syndicate_audits').insert(dbAudit).then(({ error }) => {
-      if (error) log.warn('Failed to insert syndicate audit to Supabase', { error: error.message });
-    });
+    // SAFETY FAZA 3.1: Handle BOTH PostgREST payload error AND transport-level promise rejection.
+    // Supabase builder returns PromiseLike (not full Promise), so .catch() is not available.
+    // Use .then(onFulfilled, onRejected) two-arg form to cover both paths without unhandled rejections.
+    // Critical: hallucinationReport audit trail must not be lost silently on timeout/network failure.
+    supabase.from('syndicate_audits').insert(dbAudit).then(
+      ({ error }) => {
+        if (error) log.warn('Failed to insert syndicate audit to Supabase', { error: error.message });
+      },
+      (err: unknown) => {
+        log.warn('Syndicate audit insert REJECTED (transport)', { err: err instanceof Error ? err.message : String(err) });
+      }
+    );
   }
 }
 

@@ -451,13 +451,21 @@ export class DualMasterConsciousness {
 
     // ─── Cache store ───
     _consensusCache.set(cKey, { result: consensus, ts: Date.now() });
-    // Evict stale entries (prevent memory leak on long-running process)
+    // SAFETY FAZA 3.1: Strict LRU eviction. Previous code only evicted TTL-stale entries,
+    // so on a hot process where all 50 entries stay fresh, Map kept growing unbounded.
+    // Map preserves insertion order → keys().next() returns the oldest key. Delete until size <= 50.
     if (_consensusCache.size > 50) {
       const now = Date.now();
-      const keys = Array.from(_consensusCache.keys());
-      for (const k of keys) {
+      // Pass 1: drop TTL-stale entries (cheapest wins first)
+      for (const k of Array.from(_consensusCache.keys())) {
         const entry = _consensusCache.get(k);
         if (entry && now - entry.ts > CONSENSUS_CACHE_TTL) _consensusCache.delete(k);
+      }
+      // Pass 2: if still >50 after TTL sweep → drop oldest by insertion order until back to cap
+      while (_consensusCache.size > 50) {
+        const oldest = _consensusCache.keys().next().value;
+        if (oldest === undefined) break;
+        _consensusCache.delete(oldest);
       }
     }
 
