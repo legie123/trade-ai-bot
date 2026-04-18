@@ -28,6 +28,18 @@ export async function GET(request: NextRequest) {
     // CRITICAL: Load Supabase cache (gladiators, decisions, etc.) before anything runs
     await initDB();
 
+    // FIX: Refresh gladiators from Supabase every tick.
+    // initDB runs once, but gladiator status (isLive, ACTIVE) may change
+    // via Supabase dashboard or external tools between ticks.
+    try {
+      const { refreshGladiatorsFromCloud } = await import('@/lib/store/db');
+      const { gladiatorStore } = await import('@/lib/store/gladiatorStore');
+      await refreshGladiatorsFromCloud();
+      gladiatorStore.reloadFromDb();
+    } catch (err) {
+      log.warn('Failed to refresh gladiators from cloud', { error: String(err) });
+    }
+
     // Ensure heartbeat + WS feeds are running
     if (!loopStarted) {
       startHeartbeat();
