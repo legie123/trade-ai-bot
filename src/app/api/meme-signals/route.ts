@@ -7,6 +7,7 @@ import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { routeSignal } from '@/lib/router/signalRouter';
 import { signalStore } from '@/lib/store/signalStore';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
+import { initDB } from '@/lib/store/db';
 
 const log = createLogger('MemeApi');
 const manager = ManagerVizionar.getInstance();
@@ -16,6 +17,9 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
+    // COLD-START FIX (2026-04-18): Hydrate gladiatorStore before findBestGladiator().
+    await initDB();
+
     const result = await runMemeEngineScan();
     
     // Process generated signals through the main AI manager
@@ -26,7 +30,7 @@ export async function GET() {
           signalStore.addSignal(routed);
           ArenaSimulator.getInstance().distributeSignalToGladiators(routed);
           
-          const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
+          const gladiator = await gladiatorStore.findBestGladiator(routed.symbol);
           if (gladiator) {
             log.info(`[MEME TRIGGER] Processing MEME signal with Gladiator: ${gladiator.name}`);
             try {

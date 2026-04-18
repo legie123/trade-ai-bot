@@ -6,6 +6,7 @@ import { routeSignal, normalizeSignalType } from '@/lib/router/signalRouter';
 import { createLogger } from '@/lib/core/logger';
 import { ManagerVizionar } from '@/lib/v2/manager/managerVizionar';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+import { initDB } from '@/lib/store/db';
 
 const log = createLogger('TradingViewRoute');
 const manager = ManagerVizionar.getInstance();
@@ -14,6 +15,9 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    // COLD-START FIX (2026-04-18): Hydrate gladiatorStore before findBestGladiator().
+    await initDB();
+
     const body: TradingViewWebhook = await request.json();
 
     // Secure webhook secret auth (OMNI-Audit Protocol)
@@ -65,7 +69,7 @@ export async function POST(request: NextRequest) {
     // ==========================================
     // PHOENIX V2 ACTIVATION (The Oracle Ritual)
     // ==========================================
-    const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
+    const gladiator = await gladiatorStore.findBestGladiator(routed.symbol);
     if (gladiator) {
       log.info(`[V2 TRIGGER] Processing signal with Gladiator: ${gladiator.name} (${gladiator.arena})`);
       // Run asynchrously to avoid blocking the webhook response

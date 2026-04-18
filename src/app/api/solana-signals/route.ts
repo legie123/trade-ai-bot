@@ -65,7 +65,7 @@ export async function GET() {
              signalStore.addSignal(routed);
              ArenaSimulator.getInstance().distributeSignalToGladiators(routed);
 
-             const gladiator = gladiatorStore.findBestGladiator(routed.symbol);
+             const gladiator = await gladiatorStore.findBestGladiator(routed.symbol);
 
              if (gladiator) {
                log.info(`[V2 TRIGGER] Processing internal SOL signal with Gladiator: ${gladiator.name}`);

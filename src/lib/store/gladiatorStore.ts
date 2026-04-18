@@ -3,6 +3,43 @@ import { Gladiator, ArenaType } from '../types/gladiator';
 import { getGladiatorsFromDb, saveGladiatorsToDb } from '@/lib/store/db';
 import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
 import type { WalkForwardResult } from '@/lib/v2/validation/walkForwardEngine';
+import { DNAExtractor } from '@/lib/v2/superai/dnaExtractor';
+import { createLogger } from '@/lib/core/logger';
+
+const storeLog = createLogger('GladiatorStore');
+
+/**
+ * Filter out gladiators currently tripping the Circuit Breaker condition in applyRLModifier.
+ * CB condition (applyRLModifier): currentStreak <= -4 AND recentWinRate < 0.50 → force FLAT.
+ *
+ * AND (not OR): streak -5 with WR=65% = bad luck, still include. streak -5 with WR=30% = broken, exclude.
+ * Fail-open: if intel lookup throws, include gladiator (prefer routing over silence).
+ *
+ * Assumption that invalidates this filter if broken:
+ *   - DNAExtractor.extractIntelligenceAsync returns accurate+timely streak/recentWR.
+ *   - If Postgres reads spike >500ms per gladiator and we have 12+, latency compounds (sequential await).
+ *   - Mitigation path: switch to Promise.all if perf degrades.
+ */
+async function filterNonCB(candidates: Gladiator[]): Promise<Gladiator[]> {
+  if (candidates.length === 0) return [];
+  const dna = DNAExtractor.getInstance();
+  const results: Gladiator[] = [];
+  for (const g of candidates) {
+    try {
+      const intel = await dna.extractIntelligenceAsync(g.id);
+      const inCB = intel.currentStreak <= -4 && intel.recentWinRate < 0.50;
+      if (inCB) {
+        storeLog.warn(`[ROUTING] Skipping ${g.id} — in CB (streak=${intel.currentStreak}, recentWR=${(intel.recentWinRate * 100).toFixed(0)}%)`);
+        continue;
+      }
+      results.push(g);
+    } catch (err) {
+      storeLog.warn(`[ROUTING] Intel fetch failed for ${g.id}, including anyway`, { error: String(err) });
+      results.push(g);
+    }
+  }
+  return results;
+}
 
 /**
  * Singleton for managing the Gladiator Ranks and Arenas for Phoenix V2.
@@ -39,9 +76,15 @@ class GladiatorStore {
     // until it earns it through 20+ real phantom trades via the Darwinian loop.
     this.gladiators = INITIAL_STRATEGIES.map((strat, index) => {
       let arena: ArenaType = 'DAY_TRADING';
-      if (strat.id.toLowerCase().includes('scalp')) arena = 'SCALPING';
-      if (strat.id.toLowerCase().includes('swing') || strat.id.toLowerCase().includes('follow')) arena = 'SWING';
-      if (strat.id.toLowerCase().includes('solana') || strat.id.toLowerCase().includes('eco')) arena = 'DEEP_WEB';
+      const lid = strat.id.toLowerCase();
+      if (lid.includes('scalp')) arena = 'SCALPING';
+      if (lid.includes('swing') || lid.includes('follow')) arena = 'SWING';
+      // DEEP_WEB = Solana ecosystem + memecoins + alt-pump specialists.
+      // Fix 2026-04-18: memecoin-degen, alt-pump-hunter, meme-momentum-surf now correctly land in DEEP_WEB
+      // so findBestGladiator P1 (preferredArena=DEEP_WEB) can find them for JUP/RNDR/WIF/etc.
+      if (lid.includes('solana') || lid.includes('eco') || lid.includes('meme') || lid.includes('pump')) {
+        arena = 'DEEP_WEB';
+      }
 
       const rank = index + 1;
 
@@ -297,39 +340,64 @@ class GladiatorStore {
    * Finds the best candidate gladiator to handle an incoming signal.
    * Priority: Top Rank (isLive = true) for the given symbol's typical arena.
    * Prefers gladiators who were recently active and have higher win rates.
+   *
+   * ASYNC (2026-04-18): filters out gladiators in CB state BEFORE routing, to prevent
+   * applyRLModifier CIRCUIT BREAKER from firing on routed signals and collapsing to FLAT.
+   * Hard fallback: if ALL tiers filter to empty, returns top-rank anyway (prefer maybe-VETO over silence).
    */
-  public findBestGladiator(symbol: string): Gladiator | undefined {
+  public async findBestGladiator(symbol: string): Promise<Gladiator | undefined> {
     this.ensureLoaded();
-    const preferredArena: ArenaType = symbol.includes('SOL') || symbol.includes('WIF') ? 'DEEP_WEB' : 'DAY_TRADING';
+    // Routing: map symbol → preferred arena. DEEP_WEB covers Solana ecosystem + memes + alts without BTC/ETH majors.
+    // Fix 2026-04-18: JUP/RNDR/BONK/PEPE/DOGE/SHIB/FLOKI/RAY/JTO/PYTH now route to DEEP_WEB so meme/alt specialists get signals.
+    // Assumption that invalidates: if an alt listed here shows up as "BTC-correlated momentum" it might be better served by BTC gladiators.
+    //   Monitor per-gladiator symbol P&L; if JUP/RNDR systematically lose in DEEP_WEB, revisit classification.
+    const DEEP_WEB_SYMBOLS = ['SOL', 'WIF', 'JUP', 'RNDR', 'BONK', 'PEPE', 'DOGE', 'SHIB', 'FLOKI', 'RAY', 'JTO', 'PYTH'];
+    const sym = symbol.toUpperCase();
+    const preferredArena: ArenaType = DEEP_WEB_SYMBOLS.some(s => sym.includes(s)) ? 'DEEP_WEB' : 'DAY_TRADING';
     const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
 
     // Priority 1: live non-Omega in preferred arena
-    const candidates = this.gladiators
-      .filter(g => g.arena === preferredArena && g.isLive && !g.isOmega);
-    if (candidates.length > 0) {
-      return candidates.sort((a, b) => a.rank - b.rank)[0];
-    }
+    const p1 = this.gladiators
+      .filter(g => g.arena === preferredArena && g.isLive && !g.isOmega)
+      .sort((a, b) => a.rank - b.rank);
+    const p1Filtered = await filterNonCB(p1);
+    if (p1Filtered.length > 0) return p1Filtered[0];
 
     // Priority 2: any live non-Omega
-    const anyLive = this.gladiators
+    const p2 = this.gladiators
       .filter(g => g.isLive && !g.isOmega)
       .sort((a, b) => a.rank - b.rank);
-    if (anyLive.length > 0) return anyLive[0];
+    const p2Filtered = await filterNonCB(p2);
+    if (p2Filtered.length > 0) return p2Filtered[0];
 
     // Priority 3 (PAPER mode only): top-ranked non-Omega even if not live.
-    // This breaks the deadlock where gladiators need trades to become live,
-    // but need to be live to receive signals. In PAPER mode, all decisions
-    // are shadow-only so risk is zero.
+    // Breaks the live-deadlock; in PAPER mode risk is zero (shadow-only).
     if (isPaper) {
-      const paperFallback = this.gladiators
+      const p3 = this.gladiators
         .filter(g => g.arena === preferredArena && !g.isOmega)
         .sort((a, b) => a.rank - b.rank);
-      if (paperFallback.length > 0) return paperFallback[0];
+      const p3Filtered = await filterNonCB(p3);
+      if (p3Filtered.length > 0) return p3Filtered[0];
 
-      // Last resort: any non-Omega
-      return this.gladiators
+      // Priority 4: any non-Omega (last resort in PAPER)
+      const p4 = this.gladiators
         .filter(g => !g.isOmega)
-        .sort((a, b) => a.rank - b.rank)[0];
+        .sort((a, b) => a.rank - b.rank);
+      const p4Filtered = await filterNonCB(p4);
+      if (p4Filtered.length > 0) return p4Filtered[0];
+
+      // HARD FALLBACK: all filtered empty → return top-rank anyway, log error.
+      // Rationale: Sentinel VETO is a safer failure mode than total silence.
+      if (p4.length > 0) {
+        storeLog.error(`[ROUTING] All tiers filtered empty for ${symbol} — returning top-rank ${p4[0].id} as hard fallback (expect downstream VETO)`);
+        return p4[0];
+      }
+    }
+
+    // LIVE mode: if p2 had candidates but all filtered CB, hard-fallback to top-rank live
+    if (p2.length > 0) {
+      storeLog.error(`[ROUTING] All live tiers filtered empty for ${symbol} — returning top-live ${p2[0].id} as hard fallback`);
+      return p2[0];
     }
 
     return undefined;

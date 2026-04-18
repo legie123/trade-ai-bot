@@ -107,4 +107,20 @@ export const INITIAL_STRATEGIES: SeedStrategy[] = [
     // Low confidence gate — meme signals are inherently noisy, we accept that
     dna: { symbolFilter: ['WIF', 'BONK', 'PEPE', 'DOGE', 'SHIB', 'FLOKI'], minConfidence: 5, directionBias: 'BOTH' },
   },
+  // ─── NEW MEME/ALT Specialists (2026-04-18) ───
+  // Purpose: fill routing gap for JUP/RNDR/BONK/PEPE/etc. Existing solana-* gladiators are in CB.
+  // Assumption that invalidates: if DualMaster returns 0% consensus regardless of gladiator (AI-level issue,
+  // not routing), these will still be VETO'd. Butcher should eliminate if PnL stays negative.
+  {
+    id: 'alt-pump-hunter',
+    name: 'Alt Pump Hunter',
+    description: 'Breakout capture on Solana-ecosystem alts and hot memes with tight risk cap',
+    dna: { symbolFilter: ['JUP', 'RNDR', 'RAY', 'JTO', 'PYTH', 'WIF', 'BONK', 'PEPE'], minConfidence: 10, directionBias: 'BOTH', timeframes: ['15m', '1h'] },
+  },
+  {
+    id: 'meme-momentum-surf',
+    name: 'Meme Momentum Surfer',
+    description: 'Rides meme momentum waves; low confidence gate, quick exit on reversal',
+    dna: { symbolFilter: ['WIF', 'PEPE', 'BONK', 'DOGE', 'SHIB', 'FLOKI'], minConfidence: 8, directionBias: 'BOTH' },
+  },
 ];
