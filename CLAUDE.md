@@ -1,289 +1,197 @@
-# Claude Code Configuration - RuFlo V3
+# TRADE AI — Claude Instructions
 
-## Behavioral Rules (Always Enforced)
+## 0. RUFLO PROTOCOL (coordinator layer — permanent)
+Standard operational global. Orchestreaza toate protocoalele de mai jos.
+**Layers:** Discovery → Execution → Validation → Memory → Cloud → Control
+**Regula:** Orice task: cuantifica → structureaza in faze → executa controlat → valideaza → raporteaza (DONE/BLOCKED/NEXT) → continua doar in logica Ruflo.
+**Format raportare (task multi-faza):** OBIECTIV → FAZA CURENTA → CE EXECUT → CE AM TERMINAT → CE E BLOCAT → NEXT
+**NEXT gating:** Nu sari faze. Nu presupui. Nu improvizezi fara date. Workflow manual = astepti NEXT.
+**Interdictii:** bulk fara structurare, refactor total fara faze, directie schimbata fara motiv, livrare fara status.
+**Merge cooperativ:** Nu inlocuieste Hard Mode/Sniper/Anti-Loop/Debate/Maieutic — le coordoneaza.
 
-- Do what has been asked; nothing more, nothing less
-- NEVER create files unless they're absolutely necessary for achieving your goal
-- ALWAYS prefer editing an existing file to creating a new one
-- NEVER proactively create documentation files (*.md) or README files unless explicitly requested
-- NEVER save working files, text/mds, or tests to the root folder
-- Never continuously check status after spawning a swarm — wait for results
-- ALWAYS read a file before editing it
-- NEVER commit secrets, credentials, or .env files
+## 1. HARD MODE (permanent)
+**Interdictii:** marketing, limbaj diplomatic decorativ, storytelling, romantizare, propuneri speculative ca valoare, output lung fara valoare.
+**Verdicte:** VALIDAT · NEVALIDAT · NU MERITA ACUM · COSMETICA · PERICULOS
+**Status claims:** VERIFICAT (dovada clara) · PROBABIL (indicii) · NEVERIFICAT (fara dovada)
 
-## File Organization
+## 2. SNIPER PROTOCOL
+Fisiere >100 linii → Edit chirurgical, NU rescriere. Max 2-3 fisiere per batch. Dupa batch: validare.
 
-- NEVER save to root folder — use the directories below
-- Use `/src` for source code files
-- Use `/tests` for test files
-- Use `/docs` for documentation and markdown files
-- Use `/config` for configuration files
-- Use `/scripts` for utility scripts
-- Use `/examples` for example code
+## 3. ANTI-LOOP
+Max 2 retry pe aceeasi abordare. Aceeasi eroare x2 → BLOCKED + escaladare umana.
 
-## Project Architecture
+## 4. TRADE AI — REGULA SUPREMA
+Zero feature-uri noi. Doar optimizare / testare / deploy. Exceptie: bug blocant critic.
+NU modific v2/master/, v2/scouts/, v2/manager/ fara context complet.
+NU schimb endpoint-uri API/Supabase fara aprobare.
+NU force-deploy / force-push peste pipeline existent.
 
-- Follow Domain-Driven Design with bounded contexts
-- Keep files under 500 lines
-- Use typed interfaces for all public APIs
-- Prefer TDD London School (mock-first) for new code
-- Use event sourcing for state changes
-- Ensure input validation at system boundaries
+## 5. DEPLOYMENT HARD-LOCK
+`TRADE AI/` → GCP project `evident-trees-453923-f9`, Cloud Run service `trade-ai`, region `europe-west1`. Safe-check `pwd` inainte de deploy. Mismatch → BLOCKED.
 
-### Project Config
+## 6. FORMAT RASPUNS
+**Implementare:** STATUS → FINDINGS → ACTION → VALIDATION → NEXT
+**Audit:** ISSUE → EVIDENCE → IMPACT → SAFE FIX → PRIORITY
 
-- **Topology**: hierarchical-mesh
-- **Max Agents**: 15
-- **Memory**: hybrid
-- **HNSW**: Enabled
-- **Neural**: Enabled
+---
 
-## Build & Test
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
 
-```bash
-# Build
-npm run build
+This project is indexed by GitNexus as **TRADE AI** (1356 symbols, 3607 relationships, 107 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
-# Test
-npm test
+> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
-# Lint
-npm run lint
-```
+## Always Do
 
-- ALWAYS run tests after making code changes
-- ALWAYS verify build succeeds before committing
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
 
-## Security Rules
+## When Debugging
 
-- NEVER hardcode API keys, secrets, or credentials in source files
-- NEVER commit .env files or any file containing secrets
-- Always validate user input at system boundaries
-- Always sanitize file paths to prevent directory traversal
-- Run `npx @claude-flow/cli@latest security scan` after security-related changes
+1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
+2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
+3. `READ gitnexus://repo/TRADE AI/process/{processName}` — trace the full execution flow step by step
+4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
 
-## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
+## When Refactoring
 
-- All operations MUST be concurrent/parallel in a single message
-- Use Claude Code's Agent tool for spawning agents, not just MCP
-- ALWAYS spawn ALL agents in ONE message with full instructions via Agent tool
-- ALWAYS batch ALL file reads/writes/edits in ONE message
-- ALWAYS batch ALL Bash commands in ONE message
+- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
+- **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
+- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
 
-## Swarm Orchestration
+## Never Do
 
-- MUST initialize the swarm using CLI tools when starting complex tasks
-- MUST spawn concurrent agents using Claude Code's Agent tool
-- Never use CLI tools alone for execution — Agent tool agents do the actual work
-- MUST call CLI tools AND Agent tool in ONE message for complex work
+- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
+- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
 
-### 3-Tier Model Routing (ADR-026)
+## Tools Quick Reference
 
-| Tier | Handler | Latency | Cost | Use Cases |
-|------|---------|---------|------|-----------|
-| **1** | Agent Booster (WASM) | <1ms | $0 | Simple transforms (var→const, add types) — Skip LLM |
-| **2** | Haiku | ~500ms | $0.0002 | Simple tasks, low complexity (<30%) |
-| **3** | Sonnet/Opus | 2-5s | $0.003-0.015 | Complex reasoning, architecture, security (>30%) |
+| Tool | When to use | Command |
+|------|-------------|---------|
+| `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
+| `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
+| `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
+| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
+| `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
+| `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
 
-- For Tier 1 simple transforms, use Edit tool directly — no LLM agent needed
+## Impact Risk Levels
 
-## Swarm Configuration & Anti-Drift
+| Depth | Meaning | Action |
+|-------|---------|--------|
+| d=1 | WILL BREAK — direct callers/importers | MUST update these |
+| d=2 | LIKELY AFFECTED — indirect deps | Should test |
+| d=3 | MAY NEED TESTING — transitive | Test if critical path |
 
-- ALWAYS use hierarchical topology for coding swarms
-- Keep maxAgents at 6-8 for tight coordination
-- Use specialized strategy for clear role boundaries
-- Use `raft` consensus for hive-mind (leader maintains authoritative state)
-- Run frequent checkpoints via `post-task` hooks
-- Keep shared memory namespace for all agents
+## Resources
 
-```bash
-npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized
-```
+| Resource | Use for |
+|----------|---------|
+| `gitnexus://repo/TRADE AI/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/TRADE AI/clusters` | All functional areas |
+| `gitnexus://repo/TRADE AI/processes` | All execution flows |
+| `gitnexus://repo/TRADE AI/process/{name}` | Step-by-step execution trace |
 
-## Swarm Execution Rules
+## Self-Check Before Finishing
 
-- ALWAYS use `run_in_background: true` for all Agent tool calls
-- ALWAYS put ALL Agent calls in ONE message for parallel execution
-- After spawning, STOP — do NOT add more tool calls or check status
-- Never poll agent status repeatedly — trust agents to return
-- When agent results arrive, review ALL results before proceeding
+Before completing any code modification task, verify:
+1. `gitnexus_impact` was run for all modified symbols
+2. No HIGH/CRITICAL risk warnings were ignored
+3. `gitnexus_detect_changes()` confirms changes match expected scope
+4. All d=1 (WILL BREAK) dependents were updated
 
-## V3 CLI Commands
+## Keeping the Index Fresh
 
-### Core Commands
-
-| Command | Subcommands | Description |
-|---------|-------------|-------------|
-| `init` | 4 | Project initialization |
-| `agent` | 8 | Agent lifecycle management |
-| `swarm` | 6 | Multi-agent swarm coordination |
-| `memory` | 11 | AgentDB memory with HNSW search |
-| `task` | 6 | Task creation and lifecycle |
-| `session` | 7 | Session state management |
-| `hooks` | 17 | Self-learning hooks + 12 workers |
-| `hive-mind` | 6 | Byzantine fault-tolerant consensus |
-
-### Quick CLI Examples
+After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
 
 ```bash
-npx @claude-flow/cli@latest init --wizard
-npx @claude-flow/cli@latest agent spawn -t coder --name my-coder
-npx @claude-flow/cli@latest swarm init --v3-mode
-npx @claude-flow/cli@latest memory search --query "authentication patterns"
-npx @claude-flow/cli@latest doctor --fix
+npx gitnexus analyze
 ```
 
-## Available Agents (16 Roles + Custom)
-
-### Core Development
-`coder`, `reviewer`, `tester`, `planner`, `researcher`
-
-### Specialized
-`security-architect`, `security-auditor`, `memory-specialist`, `performance-engineer`
-
-### Coordination
-`hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`
-
-### GitHub & Repository
-`pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`
-
-Any string can be used as a custom agent type — these are the typed roles with specialized behavior.
-
-## Memory & Vector Search
-
-### MCP Tools (use via ToolSearch to discover)
-
-| Tool | Description |
-|------|-------------|
-| `memory_store` | Store value with ONNX 384-dim vector embedding |
-| `memory_search` | Semantic vector search by query |
-| `memory_retrieve` | Get entry by key |
-| `memory_list` | List entries in namespace |
-| `memory_delete` | Delete entry |
-| `memory_import_claude` | Import Claude Code memories into AgentDB (allProjects=true for all) |
-| `memory_search_unified` | Search across ALL namespaces (Claude + AgentDB + patterns) |
-| `memory_bridge_status` | Show bridge health, vectors, SONA, intelligence |
-
-### CLI Commands
+If the index previously included embeddings, preserve them by adding `--embeddings`:
 
 ```bash
-# Store with vector embedding
-npx @claude-flow/cli@latest memory store --key "pattern-auth" --value "JWT with refresh" --namespace patterns
-
-# Semantic search
-npx @claude-flow/cli@latest memory search --query "authentication patterns"
-
-# Import all Claude Code memories into AgentDB
-node .claude/helpers/auto-memory-hook.mjs import-all
+npx gitnexus analyze --embeddings
 ```
 
-### Claude Code ↔ AgentDB Bridge
+To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.embeddings` field shows the count (0 means no embeddings). **Running analyze without `--embeddings` will delete any previously generated embeddings.**
 
-Claude Code auto-memory files (`~/.claude/projects/*/memory/*.md`) are automatically imported into AgentDB with ONNX vector embeddings on session start. Use `memory_search_unified` to search across both stores.
+> Claude Code users: A PostToolUse hook handles this automatically after `git commit` and `git merge`.
 
-## Key MCP Tools (314 available — use ToolSearch to discover)
+## CLI
 
-### Most Used Tools
+| Task | Read this skill file |
+|------|---------------------|
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
-| Category | Tools | What They Do |
-|----------|-------|-------------|
-| **Memory** | `memory_store`, `memory_search`, `memory_search_unified` | Store/search with ONNX vector embeddings |
-| **Claude Bridge** | `memory_import_claude`, `memory_bridge_status` | Import Claude memories into AgentDB |
-| **Swarm** | `swarm_init`, `swarm_status`, `swarm_health` | Multi-agent coordination |
-| **Agents** | `agent_spawn`, `agent_list`, `agent_status` | Agent lifecycle |
-| **Hive-Mind** | `hive-mind_init`, `hive-mind_spawn`, `hive-mind_consensus` | Byzantine/Raft consensus |
-| **Hooks** | `hooks_route`, `hooks_session-start`, `hooks_post-task` | Task routing + learning |
-| **Workers** | `hooks_worker-list`, `hooks_worker-dispatch` | 12 background workers |
-| **Security** | `aidefence_scan`, `aidefence_is_safe` | Prompt injection detection |
-| **Intelligence** | `hooks_intelligence`, `neural_status` | Pattern learning + SONA |
+## Project Environment & Credentials
 
-### Swarm Capabilities
+- **Source of Truth**: All API keys (MEXC, Supabase, AI, Telegram) are stored in the root `.env` file.
+- **Usage**: Before running tests or specialized agents, ensure you parse `.env`.
+- **Cloud Sync**: The script `./push-secrets.sh` is used to sync local `.env` values to GCP Secret Manager for Cloud Run deployments. Always run this script after modifying critical credentials in `.env`.
+- **Security**: Never commit `.env` or `.claude-creds` to the repository.
 
-- **Topologies**: hierarchical (anti-drift), mesh, ring, star, adaptive
-- **Consensus**: Raft (leader-based), Byzantine (PBFT), Gossip (eventual)
-- **Hive-Mind**: Queen-led coordination with spawn, broadcast, consensus voting, shared memory
-- **12 Background Workers**: audit, optimize, testgaps, map, deepdive, document, refactor, benchmark, ultralearn, consolidate, predict, preload
+<!-- gitnexus:end -->
 
-### Memory Capabilities
+<!-- GRAPHIFY_PROJECT_BEGIN -->
+# Graphify — Knowledge Graph Layer
 
-- **ONNX Embeddings**: all-MiniLM-L6-v2, 384 dimensions — real neural vectors
-- **DiskANN**: SSD-friendly vector search (8,000x faster insert than HNSW, perfect recall at 1K)
-- **sql.js**: Cross-platform SQLite (WASM, no native compilation)
-- **Claude Code Bridge**: Auto-imports MEMORY.md files into AgentDB on session start
-- **Unified Search**: `memory_search_unified` searches Claude memories + AgentDB + patterns
-- **SONA Learning**: Trajectory recording → pattern extraction → file persistence
+## ON SESSION START (mandatory pentru orice sesiune Claude pe TRADE AI)
+1. **Citeste** `src/graphify-out/GRAPH_REPORT.md` daca exista (sectiunile: Summary, God Nodes, Communities) — fara aceasta nu raspunzi la intrebari de arhitectura.
+2. **Daca lipseste sau e >7 zile vechi**, ruleaza `./scripts/graphify-session-init.sh` — printeaza TL;DR + freshness, sugereaza rebuild la nevoie. Cost: 0 tokeni.
+3. **Daca raportul e absent total**, executa `./scripts/graphify-rebuild.sh` (target ./src, fara Claude subagents → 0 tokeni, ~2s pe TRADE AI).
+4. **Cand utilizatorul intreaba "cum functioneaza X"**, foloseste `graphify query "X"` SAU citeste sectiunea relevanta din `GRAPH_REPORT.md`. NU grep blind pe codebase pentru intrebari arhitecturale.
+5. **Cand utilizatorul cere refactor major**, ruleaza graphify update inainte de raportul final (verifica daca god-nodes s-au mutat).
 
-### How to Discover Tools
+Graphify completeaza gitnexus: **gitnexus = impact surgical, graphify = exploratory / god-nodes / community clusters**. Nu inlocuiesc unul pe celalalt.
 
-Use ToolSearch to find specific tools:
-```
-ToolSearch("memory search")     → memory_store, memory_search, memory_search_unified
-ToolSearch("swarm")             → swarm_init, swarm_status, swarm_health, swarm_shutdown
-ToolSearch("hive consensus")    → hive-mind_consensus, hive-mind_status
-ToolSearch("+aidefence")        → aidefence_scan, aidefence_is_safe, aidefence_has_pii
-```
+## Reguli pentru TRADE AI (strict)
+- **NICIODATA `graphify .` din repo root** — contine `.env`, `.gcp-sa-key.json`, `.claude-creds`. Graphify v0.4.23 NU are config de excludere built-in.
+- **Foloseste wrapper-ul** `./scripts/graphify-safe <subpath>` — face pre-flight scan pentru secrete + interzice repo root fara `--force-root`.
+- **Subpath-uri permise:** `./src/`, `./app/`, `./lib/`, `./components/`, `./scripts/`. NU `.`, NU `./`, NU root-ul.
+- `graphify-out/` e gitignored (regenerabil). NU commit.
+- Pinned `graphifyy==0.4.23`. Upgrade manual dupa CHANGELOG.
 
-## Quick Setup
+## Cand folosesti
+| Intrebare | Tool |
+|---|---|
+| "Ce se strica daca editez `findBestGladiator`?" | gitnexus_impact |
+| "Cine apeleaza `executeTrade`?" | gitnexus_context |
+| "Da-mi harta arhitecturii TRADE AI" | graphify query |
+| "Care sunt god-nodes in src/?" | `./scripts/graphify-safe ./src` + citeste `graphify-out/GRAPH_REPORT.md` |
+| "Explica pipeline-ul OMNI-X" | `graphify explain "OMNI-X"` (dupa build) |
+| "Ce cluster-uri de sens are codul?" | `graphify-out/GRAPH_REPORT.md` |
 
+## Workflow standard
 ```bash
-claude mcp add claude-flow -- npx -y @claude-flow/cli@latest
-npx @claude-flow/cli@latest daemon start
-npx @claude-flow/cli@latest doctor --fix
+# Build initial (1x / major refactor)
+./scripts/graphify-safe ./src --mode deep
+
+# Update incremental (dupa commits)
+./scripts/graphify-safe ./src --update
+
+# Query
+graphify query "how does Moltbook karma gate work"
+graphify path "findBestGladiator" "executeTrade"
 ```
 
-## Claude Code vs MCP Tools
+## Integrare cu Ruflo Protocol
+- Faza Discovery: graphify pentru "ce e necunoscut in codebase"
+- Faza Execution: gitnexus pentru impact + implementare
+- Faza Validation: ambele (gitnexus_detect_changes + graphify rebuild daca s-a schimbat structura majora)
 
-- **Claude Code Agent tool** handles execution: agents, file ops, code generation, git
-- **MCP tools** (via ToolSearch) handle coordination: swarm, memory, hooks, routing, hive-mind
-- **CLI commands** (via Bash) are the same tools with terminal output
-- Use `ToolSearch("keyword")` to discover available MCP tools
-
-## TRADE AI Agent Swarm (33 agents)
-
-All agents in `.claude/agents/trade-ai/`. Topology in `SWARM_TOPOLOGY.md`.
-
-### Critical Layer (run first)
-- `security-sentinel` — auth bypass, key exposure, paper/live gate
-- `pipeline-guardian` — signal→route→evaluate→execute→log flow
-- `risk-manager` — sentinel guard, correlation guard, kill switch
-- `mexc-specialist` — MEXC V3 API, order execution, rate limits
-- `position-tracker` — position lifecycle, TP/SL, dust cleanup
-- `deploy-commander` — GCP Cloud Run deploy, rollback, env sync
-- `auth-gatekeeper` — JWT middleware, route protection, session mgmt
-- `supabase-guardian` — DB persistence, atomic writes, backup rotation
-- `pre-live-gate` — PAPER→LIVE readiness validation (institutional standard)
-
-### High Layer (core operations)
-- `gladiator-trainer` — gladiator lifecycle, promotion, phantom trades
-- `signal-calibrator` — confidence scoring, TA indicator tuning
-- `confidence-auditor` — prevents confidence inflation/saturation
-- `swarm-coordinator` — 4-arena consensus, debate engine, A2A
-- `cron-orchestrator` — all cron jobs health and timing
-- `feed-health-monitor` — MEXC/Binance/DexScreener/RSS/CoinGecko feeds
-- `experience-learner` — trade outcome memory, learning loop
-- `omega-strategist` — regime detection, Monte Carlo, DNA extraction
-- `observability-agent` — logging, heartbeat, watchdog, event hub
-- `polymarket-overseer` — prediction market subsystem
-- `master-oracle` — dual master consensus, oracle aggregation, final decision
-- `backtest-engine` — walk-forward, Monte Carlo, hyperopt validation
-- `auto-debugger` — automatic error diagnosis, self-healing, anomaly detection
-- `telegram-alerter` — notification delivery, alert rules, rate limiting
-- `paper-wallet-auditor` — paper mode fidelity, fee simulation, drawdown
-- `signal-deduplicator` — duplicate prevention, cooldown, signal buffer
-- `daily-rotation-manager` — gladiator rotation, equity snapshots, butcher/forge
-
-### Medium Layer (enrichment)
-- `sentiment-analyst` — LLM sentiment, Moltbook, DeepSeek
-- `intelligence-scout` — news, orderbook, volume, alpha signals
-- `dashboard-validator` — UI truthfulness verification
-- `asset-engine-btc` — BTC-specific TA, macro correlation, funding rate
-- `asset-engine-sol` — SOL-specific signals, DeFi flows, fast cycles
-- `asset-engine-meme` — Meme coin signals, social momentum, rug detection
-
-### Coordinator
-- `queen-coordinator` — master orchestrator, conflict resolution, escalation
-
-## Support
-
-- Documentation: https://github.com/ruvnet/ruflo
-- Issues: https://github.com/ruvnet/ruflo/issues
+## Platform bundle
+Source of truth: `graphify-platform/` (in acest repo). Contine wrapper, templates, protocol global, bootstrap pentru proiecte noi.
+Protocol complet: `graphify-platform/GRAPHIFY_PROTOCOL.md`.
+<!-- GRAPHIFY_PROJECT_END -->
