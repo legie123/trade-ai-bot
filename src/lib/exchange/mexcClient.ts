@@ -67,7 +67,15 @@ async function mexcRequest(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (signed || apiKey) {
+  // C11 FIX (2026-04-18): Only attach X-MEXC-APIKEY for SIGNED requests.
+  // Previously we attached it whenever apiKey existed, which poisoned PUBLIC
+  // endpoints (e.g. /api/v3/ticker/price) with 10072 "Api key info invalid"
+  // when the stored key was revoked / bad. Public endpoints don't need auth
+  // — so we skip the header entirely for them. This unblocks PAPER pipeline
+  // when the MEXC key is invalid (paper only needs public price feeds).
+  // ASSUMPTION: MEXC public endpoints tolerate missing X-MEXC-APIKEY header.
+  //             Verified against MEXC spot v3 docs (header optional on public).
+  if (signed) {
     headers['X-MEXC-APIKEY'] = apiKey;
   }
 
