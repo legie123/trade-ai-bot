@@ -16,7 +16,10 @@ export class AlphaScout {
   // Rolling data storage
   private klineData: Map<string, { close: number, volume: number }[]> = new Map();
   private depthData: Map<string, { bids: number, asks: number }> = new Map();
-  private readonly WINDOW_SIZE = 60; // N periods for moving average
+  // RECALIBRATED 2026-04-18 FAZA 4: 60→30 periods (30min on 1m candles).
+  // 60 periods was too sluggish — volume spikes decayed before Z-Score reacted.
+  // 30 catches crypto pump patterns within 5-10 candles of onset.
+  private readonly WINDOW_SIZE = 30;
   
   // Hardcoded tracking list for High Volatility Pairs
   private readonly TRACKED_SYMBOLS = [
@@ -155,17 +158,20 @@ export class AlphaScout {
       let sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
       let confidence = 0.5;
 
-      // Antigravity Quant Protocol: Z-Score > 2.5 + Strong OIB + Anti-FOMO Guard
-      if (zScore > 2.5 && oib > 0.65) {
+      // RECALIBRATED 2026-04-18 FAZA 4: Z-Score 2.5→2.0 (was too rare on 1m candles,
+      // produced near-zero signals). 2.0 sigma captures top ~2.3% volume events.
+      // OIB thresholds tightened 0.65→0.60 / 0.35→0.40 to compensate for lower Z bar.
+      // Confidence scaled by Z-Score instead of flat 0.85 — stronger anomalies → higher confidence.
+      if (zScore > 2.0 && oib > 0.60) {
         if (shift < 3.0) {
           sentiment = 'BULLISH';
-          confidence = 0.85;
+          confidence = Math.min(0.95, 0.70 + (zScore - 2.0) * 0.10);
         } else {
           log.warn(`🎯 [AlphaScout] FOMO BLOCKED: ${uppercaseSym} | Shift: ${shift.toFixed(2)}% | Z:${zScore.toFixed(2)}`);
         }
-      } else if (zScore > 2.5 && oib < 0.35) {
+      } else if (zScore > 2.0 && oib < 0.40) {
         sentiment = 'BEARISH';
-        confidence = 0.85;
+        confidence = Math.min(0.95, 0.70 + (zScore - 2.0) * 0.10);
       }
 
       if (sentiment !== 'NEUTRAL') {

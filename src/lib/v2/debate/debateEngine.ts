@@ -303,13 +303,18 @@ function heuristicDebate(input: DebateInput): DebateResult {
 
   score = Math.max(-1, Math.min(1, score));
 
-  const verdict = score < -0.3 ? 'OVERRIDE_FLAT'
-    : score < -0.1 ? 'REDUCE_CONFIDENCE'
+  // RECALIBRATED 2026-04-18 FAZA 4: Tighter debate thresholds.
+  // OVERRIDE_FLAT: -0.3 → -0.25 (catch weaker opposition earlier)
+  // REDUCE_CONFIDENCE: -0.1 → -0.05 (narrower neutral band → clearer verdicts)
+  // CONFIRM boost: 1.15 → 1.12, weight 0.15 → 0.12 (prevent confidence inflation)
+  // REDUCE modifier: 0.75 → 0.70 (stronger penalty for weak signals)
+  const verdict = score < -0.25 ? 'OVERRIDE_FLAT'
+    : score < -0.05 ? 'REDUCE_CONFIDENCE'
     : 'CONFIRM';
 
   const modifier = verdict === 'OVERRIDE_FLAT' ? 0.5
-    : verdict === 'REDUCE_CONFIDENCE' ? 0.75
-    : Math.min(1.15, 1.0 + score * 0.15);
+    : verdict === 'REDUCE_CONFIDENCE' ? 0.70
+    : Math.min(1.12, 1.0 + score * 0.12);
 
   return {
     verdict,
