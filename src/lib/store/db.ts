@@ -370,6 +370,52 @@ export function updateDecision(id: string, updates: Partial<DecisionSnapshot>): 
   syncToCloud('decisions', cache.decisions);
 }
 
+/**
+ * Multi-horizon eval helper (2026-04-18).
+ * Merges ONE horizon slot into horizonOutcomes without stomping the others.
+ * `updateDecision` does a shallow merge → passing `{horizonOutcomes: {5: X}}` would
+ * wipe already-set horizons. This helper deep-merges the specific horizon key.
+ *
+ * WHY separate from updateDecision: shallow-merge semantics are load-bearing for
+ * other callers. Don't change them.
+ */
+export function setHorizonOutcome(
+  id: string,
+  horizonMin: number,
+  result: { price: number; pnlPercent: number; label: 'WIN' | 'LOSS' | 'NEUTRAL'; evaluatedAt: string }
+): void {
+  const idx = cache.decisions.findIndex((d) => d.id === id);
+  if (idx === -1) return;
+  const dec = cache.decisions[idx];
+  const existing = dec.horizonOutcomes || {};
+  cache.decisions[idx] = {
+    ...dec,
+    horizonOutcomes: { ...existing, [String(horizonMin)]: result },
+  };
+  syncToCloud('decisions', cache.decisions);
+}
+
+/**
+ * Returns decisions that still have at least one horizon to evaluate.
+ * Criteria:
+ *   - Age < maxHorizonMin (past 4h we give up — decision is fossilized).
+ *   - At least one horizon in HORIZONS is still unset on horizonOutcomes.
+ * NOTE: deliberately does NOT filter by `outcome === PENDING`. A decision can
+ * be "finalized" (primary outcome set at 15m) but still awaiting 60m/240m fills.
+ */
+export function getDecisionsWithOpenHorizons(
+  horizons: number[],
+  nowMs: number = Date.now()
+): DecisionSnapshot[] {
+  const maxH = Math.max(...horizons);
+  return cache.decisions.filter((d) => {
+    const ageMin = (nowMs - new Date(d.timestamp).getTime()) / 60_000;
+    if (ageMin > maxH + 5) return false; // some slack past last horizon
+    const ho = d.horizonOutcomes || {};
+    return horizons.some((h) => !ho[String(h)]);
+  });
+}
+
 // ─── Syndicate Audit (Combat Logs) ────────────────
 export function addSyndicateAudit(audit: Record<string, unknown>): void {
   const newAudit = { ...audit, id: `audit-${Date.now()}` };

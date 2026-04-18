@@ -132,7 +132,8 @@ export interface DecisionSnapshot {
   psychHigh: number;
   psychLow: number;
   dailyOpen: number;
-  // Outcome tracking
+  // Outcome tracking (legacy single-horizon — kept for backward compat).
+  // Primary outcome/pnlPercent/evaluatedAt are set at the PRIMARY horizon (15min).
   priceAfter5m: number | null;
   priceAfter15m: number | null;
   priceAfter1h: number | null;
@@ -140,6 +141,23 @@ export interface DecisionSnapshot {
   outcome: 'WIN' | 'LOSS' | 'NEUTRAL' | 'PENDING';
   pnlPercent: number | null;
   evaluatedAt: string | null;
+  /**
+   * Multi-horizon evaluation map (2026-04-18). Keys = horizon minutes ('5','15','60','240').
+   * Each slot filled lazily by cron eval when age crosses the horizon. Absence = not yet evaluated.
+   * Legacy `outcome`/`pnlPercent` set from the '15' (primary) slot for backward compat.
+   *
+   * WHY a map (not discrete columns): add/remove horizons without schema churn;
+   * pre-existing decisions without this field stay valid (optional).
+   * threshold 0.3% is NOT calibrated edge — just a fee-floor label filter.
+   */
+  horizonOutcomes?: {
+    [horizonMin: string]: {
+      price: number;
+      pnlPercent: number;
+      label: 'WIN' | 'LOSS' | 'NEUTRAL';
+      evaluatedAt: string;
+    };
+  };
 }
 
 /** Performance record aggregated by signal type / source */

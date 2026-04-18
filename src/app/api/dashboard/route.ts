@@ -7,8 +7,83 @@ import { getRecentLogs } from '@/lib/core/logger';
 import { getDecisions, getSyncQueueStats, getLivePositions, getBotConfig, getEquityCurve, initDB } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { getMoltbookTelemetry } from '@/lib/moltbook/moltbookClient';
+import type { DecisionSnapshot } from '@/lib/types/radar';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Multi-horizon reliability aggregator (2026-04-18).
+ * For each horizon key present on any decision's horizonOutcomes map:
+ *   counts: WIN / LOSS / NEUTRAL
+ *   winRate = wins / (wins + losses)       // NEUTRALs EXCLUDED from denominator
+ *   winRateAll = wins / total              // NEUTRALs in denominator (harsher)
+ *   profitFactor = sum(WIN pnl) / |sum(LOSS pnl)|
+ *   meanPnlPct, medianPnlPct
+ *   wilson95 CI on winRate so the user sees small-sample uncertainty directly.
+ *
+ * WHY Wilson: low-sample binomial CIs diverge wildly from the naïve ±2σ; Wilson
+ * is the correct small-sample interval and makes "n=12, WR=92%" look as shaky
+ * as it actually is (lower bound often <70%).
+ *
+ * WHY two winRate flavors: single-horizon data, ±0.3% threshold → NEUTRAL can
+ * dominate. Excluding NEUTRALs gives you directional WR; including them is a
+ * harsher real-world measure.
+ */
+function wilsonLowerUpper(wins: number, n: number, z = 1.96): { lo: number; hi: number } {
+  if (n === 0) return { lo: 0, hi: 0 };
+  const p = wins / n;
+  const denom = 1 + (z * z) / n;
+  const center = (p + (z * z) / (2 * n)) / denom;
+  const margin = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / denom;
+  return { lo: Math.max(0, center - margin), hi: Math.min(1, center + margin) };
+}
+
+function computeHorizonStats(decisions: DecisionSnapshot[]): Record<string, unknown> {
+  const stats: Record<string, unknown> = {};
+  const horizonKeys = new Set<string>();
+  for (const d of decisions) {
+    if (d.horizonOutcomes) Object.keys(d.horizonOutcomes).forEach(k => horizonKeys.add(k));
+  }
+  // Stable ordering by numeric horizon value
+  const sortedKeys = [...horizonKeys].sort((a, b) => Number(a) - Number(b));
+
+  for (const hk of sortedKeys) {
+    let wins = 0, losses = 0, neutrals = 0;
+    let winPnlSum = 0, lossPnlSum = 0;
+    const allPnls: number[] = [];
+    for (const d of decisions) {
+      const slot = d.horizonOutcomes?.[hk];
+      if (!slot) continue;
+      allPnls.push(slot.pnlPercent);
+      if (slot.label === 'WIN') { wins++; winPnlSum += slot.pnlPercent; }
+      else if (slot.label === 'LOSS') { losses++; lossPnlSum += slot.pnlPercent; }
+      else neutrals++;
+    }
+    const n = wins + losses + neutrals;
+    const directional = wins + losses;
+    const winRate = directional ? wins / directional : 0;
+    const winRateAll = n ? wins / n : 0;
+    const pf = lossPnlSum < 0 ? winPnlSum / Math.abs(lossPnlSum) : (winPnlSum > 0 ? Infinity : 0);
+    const sorted = [...allPnls].sort((a, b) => a - b);
+    const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+    const mean = allPnls.length ? allPnls.reduce((a, b) => a + b, 0) / allPnls.length : 0;
+    const wilson = wilsonLowerUpper(wins, directional);
+    stats[`${hk}m`] = {
+      n, wins, losses, neutrals,
+      winRate: Math.round(winRate * 10000) / 10000,
+      winRateAll: Math.round(winRateAll * 10000) / 10000,
+      profitFactor: isFinite(pf) ? Math.round(pf * 100) / 100 : null,
+      meanPnlPct: Math.round(mean * 10000) / 10000,
+      medianPnlPct: Math.round(median * 10000) / 10000,
+      wilson95: directional >= 10
+        ? { lo: Math.round(wilson.lo * 10000) / 10000, hi: Math.round(wilson.hi * 10000) / 10000 }
+        : null, // don't show CI for tiny samples — misleading
+      // Callout: "winRate is not edge". Any consumer that surfaces this MUST
+      // show the sample size prominently. A winRate at n<50 is noise.
+    };
+  }
+  return stats;
+}
 
 export async function GET() {
   try {
@@ -147,6 +222,7 @@ export async function GET() {
         openPositions,
       },
       confidenceStats: confStats,
+      horizonStats: computeHorizonStats(decisions),
       logs: {
         recent: recentLogs.map((l: { ts: string; level: string; module: string; msg: string }) => ({
           ts: l.ts || new Date().toISOString(),
