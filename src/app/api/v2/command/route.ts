@@ -39,6 +39,10 @@ import { GET as healthGET } from '../health/route';
 import { GET as diagMasterGET } from '../../diagnostics/master/route';
 import { GET as diagCreditsGET } from '../../diagnostics/credits/route';
 import { GET as diagSignalQualityGET } from '../../diagnostics/signal-quality/route';
+// FIX 2026-04-19 (C4): Convert remaining POST self-fetch to in-process.
+// Cloud Run self-fetch HTTP fails intermittently. In-process = zero network, type-safe.
+import { POST as a2aOrchestratePOST } from '../../a2a/orchestrate/route';
+import { POST as botPOST } from '../../bot/route';
 
 export const dynamic = 'force-dynamic';
 const log = createLogger('CommandCenter');
@@ -73,9 +77,8 @@ function cronHeaders(): Record<string, string> {
   return h;
 }
 
-/** Safe internal fetch with timeout — retained pentru POST-uri cu body (bot:*, mode:set, agents:orchestrate)
- *  care nu sunt banale de convertit la in-process (handlerul consumă request.json()).
- *  P0 GET-uri folosesc invokeInProcess (în jos) — bypass complet al self-fetch HTTP. */
+/** @deprecated C4: All calls converted to in-process. Retained only as fallback reference.
+ *  Remove once all in-process conversions are validated in production. */
 async function internalFetch(url: URL, init?: RequestInit): Promise<unknown> {
   const res = await fetch(url, { ...init, signal: AbortSignal.timeout(15000) });
   return res.json();
@@ -91,6 +94,24 @@ async function invokeInProcess(
   headers: Record<string, string> = {}
 ): Promise<unknown> {
   const req = new NextRequest(url, { method: 'GET', headers });
+  const res = await handler(req);
+  return res.json();
+}
+
+/** C4: In-process POST handler invocation — constructs NextRequest with JSON body.
+ *  Used for bot:*, mode:set, agents:orchestrate — handlers that consume request.json().
+ *  Auth headers (cookie/authorization/x-swarm-token) are forwarded from the original request. */
+async function invokePostInProcess(
+  handler: (req: Request) => Promise<Response> | Response,
+  url: URL,
+  body: unknown,
+  headers: Record<string, string> = {}
+): Promise<unknown> {
+  const req = new NextRequest(url, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   const res = await handler(req);
   return res.json();
 }
@@ -239,46 +260,41 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       }
       case 'agents:orchestrate': {
         const symbol = String(params?.symbol || 'BTCUSDT');
-        const swarmHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        const swarmHeaders: Record<string, string> = {};
         if (process.env.SWARM_TOKEN) swarmHeaders['x-swarm-token'] = process.env.SWARM_TOKEN;
-        const res = await internalFetch(new URL('/api/a2a/orchestrate', baseUrl), {
-          method: 'POST',
-          headers: swarmHeaders,
-          body: JSON.stringify({ symbol, executeLive: false }),
-        });
+        const res = await invokePostInProcess(
+          a2aOrchestratePOST, new URL('/api/a2a/orchestrate', baseUrl),
+          { symbol, executeLive: false }, swarmHeaders
+        ).catch(() => ({ error: 'orchestrate failed' }));
         return ok(command, `Orchestration for ${symbol} completed`, res, start);
       }
 
-      // ─── BOT CONTROL (POST — needs auth cookie forwarded) ───
+      // ─── BOT CONTROL (POST — in-process, auth headers forwarded) ───
       case 'bot:evaluate': {
-        const res = await internalFetch(new URL('/api/bot', baseUrl), {
-          method: 'POST', headers: auth,
-          body: JSON.stringify({ action: 'evaluate' }),
-        });
+        const res = await invokePostInProcess(
+          botPOST, new URL('/api/bot', baseUrl), { action: 'evaluate' }, auth
+        ).catch(() => ({ error: 'evaluate failed' }));
         return ok(command, 'Evaluation triggered', res, start);
       }
       case 'bot:recalculate': {
-        const res = await internalFetch(new URL('/api/bot', baseUrl), {
-          method: 'POST', headers: auth,
-          body: JSON.stringify({ action: 'recalculate' }),
-        });
+        const res = await invokePostInProcess(
+          botPOST, new URL('/api/bot', baseUrl), { action: 'recalculate' }, auth
+        ).catch(() => ({ error: 'recalculate failed' }));
         return ok(command, 'Performance recalculated', res, start);
       }
       case 'bot:trigger-promoter': {
-        const res = await internalFetch(new URL('/api/bot', baseUrl), {
-          method: 'POST', headers: auth,
-          body: JSON.stringify({ action: 'trigger-promoter' }),
-        });
+        const res = await invokePostInProcess(
+          botPOST, new URL('/api/bot', baseUrl), { action: 'trigger-promoter' }, auth
+        ).catch(() => ({ error: 'trigger-promoter failed' }));
         return ok(command, 'Promoter broadcast triggered', res, start);
       }
 
-      // ─── TRADING MODE (POST — needs auth) ───
+      // ─── TRADING MODE (POST — in-process, auth forwarded) ───
       case 'mode:set': {
         const mode = String(params?.mode || 'PAPER');
-        const res = await internalFetch(new URL('/api/bot', baseUrl), {
-          method: 'POST', headers: auth,
-          body: JSON.stringify({ action: 'configure', config: { mode } }),
-        });
+        const res = await invokePostInProcess(
+          botPOST, new URL('/api/bot', baseUrl), { action: 'configure', config: { mode } }, auth
+        ).catch(() => ({ error: 'mode:set failed' }));
         return ok(command, `Mode set to ${mode}`, res, start);
       }
 
