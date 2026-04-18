@@ -70,13 +70,18 @@ export class SentinelGuard {
       }
     }
 
-    // 2. Consensus Strength Check — LIVE mode requires higher confidence (0.75) than PAPER (0.60)
-    // RECALIBRATED 2026-04-18 FAZA 4: PAPER raised 0.50 → 0.60.
-    // At 0.50, ~80% of signals passed → too much noise polluting gladiator stats.
-    // At 0.60, filters bottom ~30% of garbage while still admitting enough for Darwinian loop.
-    // PAPER has zero capital risk, but stat pollution is real risk (QW-7 artifact lesson).
-    // LIVE stays at 0.75 — institutional standard.
-    const confidenceThreshold = config.mode === 'LIVE' ? 0.75 : 0.60;
+    // 2. Consensus Strength Check — LIVE mode requires higher confidence (0.75) than PAPER (0.25)
+    // PAPER lowered 0.50 → 0.25 (2026-04-18): gladiators at WR=36-45% are confidence-capped
+    // at 0.65 by applyRLModifier, then multiplied by symbolPenalty (0.6-0.85 for negative-
+    // expectancy symbols) → net confidence frequently 30-45%. At 0.50 Sentinel threshold
+    // combined with that stack, ~100% of PAPER signals got "Insufficient Consensus" veto
+    // → json_store.decisions frozen at 25 entries for 1h+ → FAZA B.1c validation blocked.
+    // 0.25 matches applyRLModifier's FLAT_THRESHOLD PAPER. Gates become consistent: if
+    // RL produced a non-FLAT direction, Sentinel doesn't second-guess it in PAPER.
+    // ASSUMPTION CRITIQUE: LIVE threshold 0.75 unchanged — real capital still gated.
+    // If Sentinel threshold is ever raised back in PAPER, addDecision CONFIDENCE_FLOOR
+    // (20%) becomes the floor — keep them aligned.
+    const confidenceThreshold = config.mode === 'LIVE' ? 0.75 : 0.25;
     if (consensus.finalDirection === 'FLAT' || consensus.weightedConfidence < confidenceThreshold) {
       return { safe: false, reason: `Insufficient Consensus (${(consensus.weightedConfidence * 100).toFixed(2)}% < ${(confidenceThreshold * 100).toFixed(0)}% [${config.mode}])` };
     }
