@@ -1,0 +1,56 @@
+name: Admin Command
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Command to execute (e.g., gladiators:reset-stats)'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for the command'
+        required: false
+        default: 'admin-dispatch'
+        type: string
+
+env:
+  SERVICE_URL: https://trade-ai-657910053930.europe-west1.run.app
+
+jobs:
+  execute:
+    name: Execute Admin Command
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get CRON_SECRET from Secret Manager
+        id: secret
+        run: |
+          CRON_SECRET=$(gcloud secrets versions access latest --secret=CRON_SECRET --project=evident-trees-453923-f9)
+          echo "::add-mask::$CRON_SECRET"
+          echo "cron_secret=$CRON_SECRET" >> $GITHUB_OUTPUT
+
+      - name: Execute Command
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ env.SERVICE_URL }}/api/v2/command" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: ${{ steps.secret.outputs.cron_secret }}" \
+            -d '{"command":"${{ inputs.command }}","params":{"reason":"${{ inputs.reason }}"}}')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          if [ "$HTTP_CODE" -ge 400 ]; then
+            echo "::error::Command failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
