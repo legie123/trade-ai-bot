@@ -173,6 +173,7 @@ export async function initDB() {
         if (row.id === 'config') cache.config = row.data || cache.config;
         if (row.id === 'gladiators') cache.gladiators = row.data || [];
         if (row.id === 'gladiator_dna') cache.gladiatorDna = row.data || [];
+        if (row.id === 'phantom_trades') cache.phantomTrades = row.data || [];
         if (row.id === 'invalid_symbols') cache.invalidSymbols = row.data || [];
       }
     }
@@ -818,7 +819,18 @@ export function appendToEquityCurve(dec: DecisionSnapshot, pnlPct: number): void
   if (cache.equityHistory.length > 1000) cache.equityHistory.shift(); 
   
   if (supabaseUrl && dbInitialized) {
-    supabase.from('equity_history').insert(newPoint).then(({ error }) => {
+    // Map in-memory EquityPoint to actual Supabase table schema
+    // Table columns: id, timestamp, equity, cash, positions, pnl_day, pnl_total, mode
+    const dbRow = {
+      timestamp: newPoint.timestamp,
+      equity: newPoint.balance,         // balance → equity column
+      cash: newPoint.balance,           // no separate cash tracking yet
+      positions: [],                    // no position-level detail yet
+      pnl_day: pnlPct,                 // this trade's PnL %
+      pnl_total: newPoint.pnl,         // cumulative PnL %
+      mode: newPoint.mode || 'PAPER',
+    };
+    supabase.from('equity_history').insert(dbRow).then(({ error }) => {
       if (error) log.error('Failed to insert equity history', { error: error.message });
     });
   }
