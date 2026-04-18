@@ -6,7 +6,7 @@
 // Cron endpoints: CRON_SECRET is injected server-side.
 // Bot endpoints: cookie forwarded for isAuthenticated() check.
 // ============================================================
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState, resetDailyTriggers } from '@/lib/core/killSwitch';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
@@ -17,6 +17,19 @@ import { isAuthenticated } from '@/lib/auth';
 // /api/a2a/orchestrate. Cloud Run loop-back esueaza intermitent. Import direct handler-ul
 // GET si apel in-process — acelasi pattern ca fix-ul /api/health.
 import { GET as a2aOrchestrateGET } from '../../a2a/orchestrate/route';
+// FIX 2026-04-18 (QW-9): Bypass self-fetch HTTP loopback pentru toate comenzile P0 cron/collect.
+// Cloud Run apel propriu URL public e nondeterministic (DNS edge, cold start, header strip).
+// In-process import = sub-1ms, zero retele, type-safe (NextRequest IS-A Request, funcția
+// param types sunt contravariant → handler-ele declarate cu Request pot primi NextRequest).
+// Asumpție care invalidează: dacă vreun handler folosește `request.url` pentru rutare absolută
+// (nu doar parsare URL), URL-ul reconstruit local trebuie să respecte același origin (folosim baseUrl).
+import { GET as sentimentCronGET } from '../cron/sentiment/route';
+import { GET as positionsCronGET } from '../cron/positions/route';
+import { GET as newsGET } from '../intelligence/news/route';
+import { GET as autoPromoteGET } from '../cron/auto-promote/route';
+import { GET as polyScanGET } from '../polymarket/cron/scan/route';
+import { GET as polyMtmGET } from '../polymarket/cron/mtm/route';
+import { GET as cronGET } from '../../cron/route';
 
 export const dynamic = 'force-dynamic';
 const log = createLogger('CommandCenter');
@@ -51,9 +64,25 @@ function cronHeaders(): Record<string, string> {
   return h;
 }
 
-/** Safe internal fetch with timeout */
+/** Safe internal fetch with timeout — retained pentru POST-uri cu body (bot:*, mode:set, agents:orchestrate)
+ *  care nu sunt banale de convertit la in-process (handlerul consumă request.json()).
+ *  P0 GET-uri folosesc invokeInProcess (în jos) — bypass complet al self-fetch HTTP. */
 async function internalFetch(url: URL, init?: RequestInit): Promise<unknown> {
   const res = await fetch(url, { ...init, signal: AbortSignal.timeout(15000) });
+  return res.json();
+}
+
+/** QW-9: In-process handler invocation — zero network, zero loopback risk.
+ *  Construiește un NextRequest local cu headers (pentru requireCronAuth etc.) și apelează
+ *  handler-ul direct. Fail-safe: orice eroare sync/async se propagă ca promise rejection,
+ *  caller-ul folosește .catch() pentru graceful fallback la `{ error: 'failed' }`. */
+async function invokeInProcess(
+  handler: (req: NextRequest) => Promise<Response> | Response,
+  url: URL,
+  headers: Record<string, string> = {}
+): Promise<unknown> {
+  const req = new NextRequest(url, { method: 'GET', headers });
+  const res = await handler(req);
   return res.json();
 }
 
@@ -192,22 +221,24 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       }
 
       // ─── DATA COLLECTION (cron endpoints — need CRON_SECRET) ───
+      // QW-9: in-process invoke (was internalFetch self-fetch HTTP)
       case 'collect:sentiment': {
-        const res = await internalFetch(new URL('/api/v2/cron/sentiment', baseUrl), { headers: cron }).catch(() => ({ error: 'failed' }));
+        const res = await invokeInProcess(sentimentCronGET, new URL('/api/v2/cron/sentiment', baseUrl), cron).catch(() => ({ error: 'failed' }));
         return ok(command, 'Sentiment collection triggered', res, start);
       }
       case 'collect:positions': {
-        const res = await internalFetch(new URL('/api/v2/cron/positions', baseUrl), { headers: cron }).catch(() => ({ error: 'failed' }));
+        const res = await invokeInProcess(positionsCronGET, new URL('/api/v2/cron/positions', baseUrl), cron).catch(() => ({ error: 'failed' }));
         return ok(command, 'Position snapshot triggered', res, start);
       }
       case 'collect:news': {
-        const res = await internalFetch(new URL('/api/v2/intelligence/news', baseUrl)).catch(() => ({ error: 'failed' }));
+        const res = await invokeInProcess(newsGET, new URL('/api/v2/intelligence/news', baseUrl)).catch(() => ({ error: 'failed' }));
         return ok(command, 'News collection triggered', res, start);
       }
 
       // ─── GLADIATOR ARENA (cron endpoints) ───
+      // QW-9: arena:promote in-process; arena:status păstrează internalFetch (NU am import handler — adaug în batch P1)
       case 'arena:promote': {
-        const res = await internalFetch(new URL('/api/v2/cron/auto-promote', baseUrl), { headers: cron }).catch(() => ({ error: 'failed' }));
+        const res = await invokeInProcess(autoPromoteGET, new URL('/api/v2/cron/auto-promote', baseUrl), cron).catch(() => ({ error: 'failed' }));
         return ok(command, 'Auto-promote cycle triggered', res, start);
       }
       case 'arena:status': {
@@ -216,12 +247,13 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       }
 
       // ─── POLYMARKET (cron endpoints — need CRON_SECRET) ───
+      // QW-9: in-process invoke
       case 'poly:scan': {
-        const res = await internalFetch(new URL('/api/v2/polymarket/cron/scan', baseUrl), { headers: cron }).catch(() => ({ error: 'failed' }));
+        const res = await invokeInProcess(polyScanGET, new URL('/api/v2/polymarket/cron/scan', baseUrl), cron).catch(() => ({ error: 'failed' }));
         return ok(command, 'Polymarket scan triggered', res, start);
       }
       case 'poly:mtm': {
-        const res = await internalFetch(new URL('/api/v2/polymarket/cron/mtm', baseUrl), { headers: cron }).catch(() => ({ error: 'failed' }));
+        const res = await invokeInProcess(polyMtmGET, new URL('/api/v2/polymarket/cron/mtm', baseUrl), cron).catch(() => ({ error: 'failed' }));
         return ok(command, 'Mark-to-market triggered', res, start);
       }
 
@@ -249,7 +281,8 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       }
 
       case 'cron:kick': {
-        const res = await internalFetch(new URL('/api/cron', baseUrl), { headers: cronHeaders() }).catch(() => ({ error: 'failed' }));
+        // QW-9: in-process invoke (was internalFetch self-fetch HTTP)
+        const res = await invokeInProcess(cronGET, new URL('/api/cron', baseUrl), cronHeaders()).catch(() => ({ error: 'failed' }));
         return ok(command, 'Cron loop kicked', res, start);
       }
 
