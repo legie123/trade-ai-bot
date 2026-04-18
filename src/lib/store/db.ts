@@ -251,9 +251,33 @@ function syncToCloud(id: string, data: unknown) {
   } else {
     syncTasks.push({ id, data });
   }
-  
+
   // Fire and forget
   processSyncQueue().catch(err => log.error('Sync process queue crashed', { error: String(err) }));
+}
+
+/**
+ * FIX: Cloud Run freezes process after HTTP response → async fire-and-forget
+ * syncs never complete → gladiator stats lost on instance restart.
+ * Call this at the end of cron/route.ts BEFORE returning the response.
+ * Waits for all pending syncTasks to drain + any in-flight processSyncQueue().
+ */
+export async function flushPendingSyncs(timeoutMs = 5000): Promise<{ flushed: number; timedOut: boolean }> {
+  const start = Date.now();
+  let flushed = 0;
+
+  // Wait for any in-flight sync to complete, then drain remaining
+  while ((isSyncing || syncTasks.length > 0) && (Date.now() - start) < timeoutMs) {
+    if (!isSyncing && syncTasks.length > 0) {
+      await processSyncQueue();
+    }
+    if (isSyncing) {
+      await new Promise(r => setTimeout(r, 50));
+    }
+    flushed++;
+  }
+
+  return { flushed: totalSyncsCompleted, timedOut: (Date.now() - start) >= timeoutMs };
 }
 
 // ─── Decision Snapshots ────────────────────────────

@@ -56,7 +56,17 @@ export class WsStreamManager extends EventEmitter {
   }
 
   public connect(): void {
-    if (this.isConnected || this.ws) return;
+    // AUDIT FIX C6a: Don't bail if ws is a zombie (non-OPEN ref left over from prior session).
+    // Prior guard `if (this.isConnected || this.ws) return;` trapped us in a dead state where
+    // `ws` exists but readyState !== OPEN → no reconnect ever fired.
+    if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) return;
+
+    // Clean up any zombie ws ref before reconnecting
+    if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+      try { this.ws.removeAllListeners(); this.ws.terminate(); } catch { /* ignore */ }
+      this.ws = null;
+      this.isConnected = false;
+    }
 
     log.info('🔌 [WS] Connecting to MEXC WebSocket...');
     this.ws = new WebSocket('wss://wbs.mexc.com/ws');

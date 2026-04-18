@@ -244,6 +244,15 @@ export async function GET(request: NextRequest) {
     // Mark scan as complete so heartbeat doesn't report RED
     gScan.__autoScan.running = false;
 
+    // FIX: Cloud Run freezes process after HTTP response. All fire-and-forget
+    // Supabase syncs (gladiator stats, phantom trades, DNA) must complete
+    // BEFORE we return — otherwise stats are lost on instance restart/scale-down.
+    const { flushPendingSyncs } = await import('@/lib/store/db');
+    const flushResult = await flushPendingSyncs(4000);
+    if (flushResult.timedOut) {
+      log.warn('flushPendingSyncs timed out — some data may not have persisted');
+    }
+
     return NextResponse.json({
       status: 'ok',
       message: 'Cron tick processed',
