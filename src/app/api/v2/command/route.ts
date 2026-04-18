@@ -8,6 +8,7 @@
 // ============================================================
 import { NextRequest, NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
+import { initDB } from '@/lib/store/db';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState, resetDailyTriggers } from '@/lib/core/killSwitch';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { watchdogPing, getWatchdogState } from '@/lib/core/watchdog';
@@ -167,6 +168,12 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
     return NextResponse.json({ ok: false, command, message: 'Unauthorized', durationMs: Date.now() - start }, { status: 401 });
   }
   log.info(`[CMD] Executing: ${command}`, { params });
+
+  // FIX 2026-04-19 (C3): Hydrate db.ts cache from Supabase before any command.
+  // Without this, cold-start instances return seed defaults (tt=0 for all gladiators)
+  // because gladiatorStore.ensureLoaded() calls getGladiatorsFromDb() which is empty
+  // until initDB completes. initDB is memoized → sub-1ms on warm instances.
+  await initDB();
 
   const baseUrl = new URL(request.url).origin;
   const auth = authHeaders(request);
