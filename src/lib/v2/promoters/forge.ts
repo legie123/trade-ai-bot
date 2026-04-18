@@ -242,11 +242,28 @@ async function miniBacktest(dna: GladiatorDNA): Promise<{ pass: boolean; estimat
       return { pass: true, estimatedWR: 50, sampleSize: 0 };
     }
 
+    // R4a (2026-04-18): enforce rolling time window on mini-backtest sample.
+    // Previous behavior fetched last-50 regardless of timestamp → pre-QW-11
+    // trades (polluted PnL signs + old regime) leaked into DNA screening,
+    // propagating memorization into newly-forged gladiators. Limiting to
+    // FORGE_BACKTEST_WINDOW_DAYS (default 7) forces Forge to validate DNA
+    // against *current* market behavior only.
+    // Assumption: >=10 battles exist in the last 7d at top-gladiator level.
+    // If not → allBattles.length < 10 falls through to bootstrap-pass at L257,
+    // which is the intended safe behavior.
+    // Kill-switch: env FORGE_BACKTEST_WINDOW_DAYS=365 reverts to pre-R4a.
+    const WINDOW_DAYS = parseInt(process.env.FORGE_BACKTEST_WINDOW_DAYS || '7', 10);
+    const SINCE_MS = Date.now() - WINDOW_DAYS * 86_400_000;
+
     // Gather recent battles as market proxy
     const allBattles: Array<{ pnlPercent: number; entryPrice: number; outcomePrice: number; decision: string }> = [];
     for (const g of topGladiators) {
       const battles = await getGladiatorBattles(g.id, 50);
-      allBattles.push(...battles.map(b => ({
+      const fresh = battles.filter(b => {
+        const ts = Date.parse(String(b.timestamp || ''));
+        return Number.isFinite(ts) && ts >= SINCE_MS;
+      });
+      allBattles.push(...fresh.map(b => ({
         pnlPercent: Number(b.pnlPercent) || 0,
         entryPrice: Number(b.entryPrice) || 0,
         outcomePrice: Number(b.outcomePrice) || 0,

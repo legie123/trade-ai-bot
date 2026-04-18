@@ -28,7 +28,7 @@ export async function runDailyRotation() {
 
     // 2. Absolute Execution of Weaklings (The Butcher)
     log.info('🛡️ [2/3] Executare Gladiatori Slabi (The Butcher)...');
-    const executedIds = TheButcher.getInstance().executeWeaklings();
+    const executedIds = await TheButcher.getInstance().executeWeaklings();
 
     if (executedIds.length > 0) {
       log.info(`🛡️ Butcher executed ${executedIds.length} strategies. Initiating Forge.`);

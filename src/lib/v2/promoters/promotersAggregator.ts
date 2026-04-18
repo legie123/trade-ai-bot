@@ -40,7 +40,7 @@ export class PromotersAggregator {
    */
   public async evaluateAndRecruit() {
     // 1. Absolute Execution
-    const executedIds = TheButcher.getInstance().executeWeaklings();
+    const executedIds = await TheButcher.getInstance().executeWeaklings();
     
     if (executedIds.length > 0) {
       log.info(`[Promoters] The Butcher eliminated ${executedIds.length} strategies. Initiating new recruitment.`);
