@@ -96,19 +96,27 @@ export async function runMemeEngineScan(): Promise<MemeResult> {
   const signalsOut: Signal[] = [];
   let signalSentCount = 0;
 
-  for (const profile of validProfiles.slice(0, 5)) { // Luam doar top 5 hype pentru analiza
-    
-    // Extragem prețul real pentru a trece de "Zero-Data Ban" din ManagerVizionar
-    let currentPrice = 0;
-    try {
+  // PERF FIX 2026-04-18: Price fetches were sequential (5 × 3s = 15s worst case).
+  // Prefetch all 5 prices in parallel → max 3s total.
+  const top5Profiles = validProfiles.slice(0, 5);
+  const priceResults = await Promise.allSettled(
+    top5Profiles.map(async (profile) => {
       const priceRes = await fetchWithRetry(`https://api.dexscreener.com/latest/dex/tokens/${profile.tokenAddress}`, { retries: 1, timeoutMs: 3000 });
       const priceData = await priceRes.json();
       if (priceData && priceData.pairs && priceData.pairs.length > 0) {
-        currentPrice = parseFloat(priceData.pairs[0].priceUsd) || 0;
+        return parseFloat(priceData.pairs[0].priceUsd) || 0;
       }
-    } catch (e) {
-      log.warn(`[MemeEngine] Nu am putut extrage prețul pentru ${profile.tokenAddress}`, { error: String(e) });
-    }
+      return 0;
+    })
+  );
+  const prefetchedPrices: Record<string, number> = {};
+  top5Profiles.forEach((p, i) => {
+    const r = priceResults[i];
+    prefetchedPrices[p.tokenAddress] = r.status === 'fulfilled' ? r.value : 0;
+  });
+
+  for (const profile of top5Profiles) {
+    const currentPrice = prefetchedPrices[profile.tokenAddress] || 0;
 
     // Trecem mai departe DOAR dacă avem date de preț (fără phantom data)
     if (currentPrice <= 0) continue;

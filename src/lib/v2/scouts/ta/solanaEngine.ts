@@ -263,14 +263,27 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
   const results: CoinAnalysis[] = [];
   let totalSignals = 0;
 
-  for (const coin of SOLANA_COINS) {
-    if (!isSymbolValid(coin.symbol)) continue;
-    const candles = await fetchOHLC(coin.id);
+  // PERF FIX 2026-04-18: OHLC was sequential (8 coins × 3s = 24s worst case).
+  // Parallelize with concurrency=4 to stay under MEXC rate limits (~20 req/s).
+  // Expected: max(2 batches × 3s) ≈ 6s worst case.
+  const validCoins = SOLANA_COINS.filter(c => isSymbolValid(c.symbol));
+  const OHLC_CONCURRENCY = 4;
+  const ohlcResults: { coin: typeof validCoins[0]; candles: Candle[] }[] = [];
+  for (let i = 0; i < validCoins.length; i += OHLC_CONCURRENCY) {
+    const batch = validCoins.slice(i, i + OHLC_CONCURRENCY);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (coin) => {
+        const candles = await fetchOHLC(coin.id);
+        return { coin, candles };
+      })
+    );
+    for (const r of batchResults) {
+      if (r.status === 'fulfilled') ohlcResults.push(r.value);
+    }
+  }
+  for (const { coin, candles } of ohlcResults) {
     const analysis = analyzeCoin(coin.symbol, coin.name, candles, prices[coin.id] || 0);
     results.push(analysis);
-    // FIX 2026-04-18 (perf): 200ms×8=1.6s waste. MEXC allows ~20 req/s.
-    // 50ms is conservative enough to avoid 429 while saving 1.2s/scan.
-    await new Promise((r) => setTimeout(r, 50));
   }
 
   for (const coin of results) {
