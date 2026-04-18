@@ -35,6 +35,17 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# ═══ Batch 1 (C1) defense-in-depth: scrub any .env leak from image ═══
+# .dockerignore excludes .env at COPY time; this is a belt-and-suspenders
+# guard in case Next.js standalone tracing pulls .env into the output.
+# If a .env exists post-standalone-copy, build FAILS LOUDLY (fail-closed)
+# rather than shipping secrets.
+RUN if find /app -name ".env*" -type f 2>/dev/null | grep -q .; then \
+      echo "SECURITY: .env file leaked into image — FAILING BUILD"; \
+      find /app -name ".env*" -type f; \
+      exit 1; \
+    fi
+
 USER nextjs
 EXPOSE 8080
 ENV PORT=8080

@@ -6,6 +6,7 @@
     "dev": "next dev",
     "prebuild": "rm -rf .next/types .next/dev/types",
     "build": "next build",
+    "postbuild": "find .next/standalone -name '.env*' -type f -delete 2>/dev/null || true",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit"
