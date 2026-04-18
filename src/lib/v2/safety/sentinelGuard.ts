@@ -47,18 +47,27 @@ export class SentinelGuard {
       return { safe: false, reason: 'System is HALTED due to previous risk breach' };
     }
 
-    // ═══ WIN RATE GUARD: Rolling WR on last 20 trades ═══
-    const wrCheck = this.checkWinRate();
-    if (!wrCheck.safe) {
-      await this.triggerKillSwitch(wrCheck.reason!);
-      return { safe: false, reason: wrCheck.reason };
-    }
+    // PAPER mode: skip capital-protection gates (WR guard, streak breaker, daily loss).
+    // These exist to protect real money — in PAPER mode they prevent training data
+    // collection, creating a deadlock where the system can't learn because it can't trade.
+    // The Darwinian loop (phantom trades + recalibrateRanks) handles quality filtering
+    // independently of Sentinel.
+    if (config.mode !== 'LIVE') {
+      // Skip directly to consensus check — only gate that matters in PAPER
+    } else {
+      // ═══ WIN RATE GUARD: Rolling WR on last 20 trades ═══
+      const wrCheck = this.checkWinRate();
+      if (!wrCheck.safe) {
+        await this.triggerKillSwitch(wrCheck.reason!);
+        return { safe: false, reason: wrCheck.reason };
+      }
 
-    // ═══ STREAK BREAKER: Consecutive loss streak ═══
-    const streakCheck = this.checkLossStreak();
-    if (!streakCheck.safe) {
-      await this.triggerKillSwitch(streakCheck.reason!);
-      return { safe: false, reason: streakCheck.reason };
+      // ═══ STREAK BREAKER: Consecutive loss streak ═══
+      const streakCheck = this.checkLossStreak();
+      if (!streakCheck.safe) {
+        await this.triggerKillSwitch(streakCheck.reason!);
+        return { safe: false, reason: streakCheck.reason };
+      }
     }
 
     // 2. Consensus Strength Check — LIVE mode requires higher confidence (0.75) than PAPER (0.50)
@@ -74,16 +83,19 @@ export class SentinelGuard {
     }
 
     // 3. Equity-Curve Drawdown Check (Omega upgrade: real compounding MDD)
-    const mddResult = this.checkEquityDrawdown();
-    if (!mddResult.safe) {
-      await this.triggerKillSwitch(mddResult.reason!);
-      return { safe: false, reason: mddResult.reason };
-    }
+    // Only enforce in LIVE mode — PAPER needs unrestricted data flow
+    if (config.mode === 'LIVE') {
+      const mddResult = this.checkEquityDrawdown();
+      if (!mddResult.safe) {
+        await this.triggerKillSwitch(mddResult.reason!);
+        return { safe: false, reason: mddResult.reason };
+      }
 
-    // 4. Daily Loss Check
-    const dailyCheck = this.checkDailyLoss();
-    if (!dailyCheck.safe) {
-      return { safe: false, reason: dailyCheck.reason };
+      // 4. Daily Loss Check
+      const dailyCheck = this.checkDailyLoss();
+      if (!dailyCheck.safe) {
+        return { safe: false, reason: dailyCheck.reason };
+      }
     }
 
     // 5. Correlation Guard (Step 1.2) — Prevent highly correlated positions
