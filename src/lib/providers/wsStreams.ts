@@ -61,9 +61,41 @@ export class WsStreamManager extends EventEmitter {
     // `ws` exists but readyState !== OPEN → no reconnect ever fired.
     if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
-    // Clean up any zombie ws ref before reconnecting
+    // Clean up any zombie ws ref before reconnecting.
+    //
+    // AUDIT FIX C6c (2026-04-18): calling `terminate()` on a socket in
+    // CONNECTING state triggers an ASYNC 'error' event ("WebSocket was closed
+    // before the connection was established"). Because we already called
+    // `removeAllListeners()`, there is no error handler attached → Node
+    // surfaces it as `uncaughtException`, which can crash the Cloud Run
+    // container. Observed live every ~5min since C6b tick-level health check
+    // amplified the race (tick forces reconnect while prior socket still
+    // CONNECTING).
+    //
+    // Fix: (a) skip terminate() on CONNECTING — socket will close itself or
+    // surface error on its own listener which we keep attached; (b) attach a
+    // noop error handler BEFORE terminate for CLOSING/CLOSED state to absorb
+    // any residual async error.
+    //
+    // ASUMPȚIE: orphaned CONNECTING socket will not leak beyond ~15s because
+    // WebSocket constructor has its own internal connection timeout. If that
+    // asumption breaks, we have a tiny handle leak (acceptable vs. crash).
     if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
-      try { this.ws.removeAllListeners(); this.ws.terminate(); } catch { /* ignore */ }
+      const prev = this.ws;
+      if (prev.readyState === WebSocket.CONNECTING) {
+        // Leave CONNECTING sockets alone — attach noop to absorb any error
+        // from the handshake racing with our new connect(), then drop ref.
+        try { prev.on('error', () => { /* absorb */ }); } catch { /* ignore */ }
+      } else {
+        // CLOSING/CLOSED: safe to terminate, but still guard against async error.
+        try {
+          prev.on('error', () => { /* absorb */ });
+          prev.removeAllListeners('message');
+          prev.removeAllListeners('open');
+          prev.removeAllListeners('close');
+          prev.terminate();
+        } catch { /* ignore */ }
+      }
       this.ws = null;
       this.isConnected = false;
     }
