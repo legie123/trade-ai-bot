@@ -166,30 +166,24 @@ export class OmegaEngine {
     const volatilityScore = Math.min(100, stdDev * 10); // Scale 0-100
 
     // ─── Regime Classification ───
-    // RECALIBRATED 2026-04-18 FAZA 4: Replaced magic multipliers with bounded, documented values.
-    // Bull/Bear signal weight 0.15→0.12 (less reactive to single-signal spikes).
-    // WinRate delta weight 0.5→0.4 (prevents regime flip on 2-3% WR swing).
-    // HIGH_VOL denominator 50→40 (reaches high confidence faster in genuine vol spikes).
-    // RANGE now uses abs(delta) for symmetric confidence around 50%.
-    // TRANSITION confidence 0.3→0.25 (stronger veto on uncertain regimes).
     let regime: MarketRegime = 'RANGE';
     let confidence = 0.5;
 
     if (volatilityScore > 60 && allWinRate > 0.5) {
       regime = 'BULL';
-      confidence = Math.min(1, 0.5 + (bullSignals * 0.12) + (allWinRate - 0.5) * 0.4);
+      confidence = Math.min(1, 0.5 + (bullSignals * 0.15) + (allWinRate - 0.5) * 0.5);
     } else if (volatilityScore > 60 && allWinRate < 0.5) {
       regime = 'BEAR';
-      confidence = Math.min(1, 0.5 + (bearSignals * 0.12) + (0.5 - allWinRate) * 0.4);
+      confidence = Math.min(1, 0.5 + (bearSignals * 0.15) + (0.5 - allWinRate) * 0.5);
     } else if (volatilityScore > 75) {
       regime = 'HIGH_VOL';
-      confidence = Math.min(1, 0.5 + (volatilityScore - 60) / 40);
+      confidence = Math.min(1, 0.5 + (volatilityScore - 60) / 50);
     } else if (Math.abs(allWinRate - 0.5) < 0.1) {
       regime = 'RANGE';
-      confidence = 1.0 - Math.abs(allWinRate - 0.5) * 10; // Symmetric around 50%
+      confidence = 1.0 - (allWinRate - 0.5) * 10; // Higher confidence near 50%
     } else if (this.lastRegime) {
       regime = 'TRANSITION';
-      confidence = 0.25;
+      confidence = 0.3;
     }
 
     confidence = Math.max(0.1, Math.min(1.0, confidence));

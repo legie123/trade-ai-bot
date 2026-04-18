@@ -5,6 +5,7 @@ import { startHeartbeat } from '@/lib/core/heartbeat';
 import { createLogger } from '@/lib/core/logger';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 import { DNAExtractor } from '@/lib/v2/superai/dnaExtractor';
+import { OmegaEngine } from '@/lib/v2/superai/omegaEngine';
 import { initDB, tryAcquireTaskLease, releaseTaskLease, getInstanceId } from '@/lib/store/db';
 
 const log = createLogger('CronLoop');
@@ -336,7 +337,20 @@ export async function GET(request: NextRequest) {
                   pnlPercent: parseFloat(pnlPercent.toFixed(4)),
                   isWin: label === 'WIN',
                   timestamp: Date.now(),
-                  marketContext: { exitType: 'SHADOW_TIME_BASED', holdTimeSec: elapsedMin * 60 }
+                  marketContext: (() => {
+                    // FIX 2026-04-18 (FAZA B.1 ext) — log regime on shadow DNA rows too,
+                    // same discriminator as simulator.ts. Cheap call, sync.
+                    const _omega = OmegaEngine.getInstance();
+                    const _r = _omega.getRegime();
+                    return {
+                      exitType: 'SHADOW_TIME_BASED',
+                      holdTimeSec: elapsedMin * 60,
+                      regime: _r.regime,
+                      regimeConfidence: parseFloat(_r.confidence.toFixed(4)),
+                      regimeVolatilityScore: _r.volatilityScore,
+                      regimeIsFallback: !_omega.hasLiveRegime(),
+                    };
+                  })()
                 });
               } catch (err) {
                 log.error(`Failed to inject shadow DNA for ${dec.id}`, { error: String(err) });
