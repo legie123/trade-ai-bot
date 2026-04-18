@@ -218,8 +218,14 @@ export class SentinelGuard {
 
   private checkDailyLoss(): { safe: boolean; reason?: string } {
     const today = new Date().toISOString().slice(0, 10);
-    const lossesToday = getDecisions().filter((d: DecisionSnapshot) => 
-      d.timestamp.startsWith(today) && d.outcome === 'LOSS'
+    // C16 fix (2026-04-19): guard against decisions with missing/null timestamp.
+    // Cold-start Cloud Run instances read partial rows from json_store → undefined
+    // d.timestamp crashes .startsWith() and propagates as `sentinel.error` through
+    // /api/diagnostics/master. Same class of bug as /api/dashboard C15 fix.
+    const lossesToday = getDecisions().filter((d: DecisionSnapshot) =>
+      typeof d.timestamp === 'string' &&
+      d.timestamp.startsWith(today) &&
+      d.outcome === 'LOSS'
     ).length;
 
     if (lossesToday >= this.dailyLossLimit) {
@@ -287,8 +293,12 @@ export class SentinelGuard {
     const config = getBotConfig();
     const equityCheck = this.checkEquityDrawdown();
     const today = new Date().toISOString().slice(0, 10);
-    const lossesToday = getDecisions().filter((d: DecisionSnapshot) => 
-      d.timestamp.startsWith(today) && d.outcome === 'LOSS'
+    // C16 fix (2026-04-19): same guard as checkDailyLoss — undefined timestamps
+    // on cold-start caused getRiskMetrics to throw and dashboard to show sentinel.error.
+    const lossesToday = getDecisions().filter((d: DecisionSnapshot) =>
+      typeof d.timestamp === 'string' &&
+      d.timestamp.startsWith(today) &&
+      d.outcome === 'LOSS'
     ).length;
 
     return {

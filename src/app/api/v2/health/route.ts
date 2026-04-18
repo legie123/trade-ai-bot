@@ -8,6 +8,9 @@ import { successResponse, errorResponse } from '@/lib/api-response';
 import { getTradingModeSummary } from '@/lib/core/tradingMode';
 import { polyWsClient } from '@/lib/polymarket/polyWsClient';
 import { WsStreamManager } from '@/lib/providers/wsStreams';
+import { getWatchdogState } from '@/lib/core/watchdog';
+import { getFreshHealthSnapshot } from '@/lib/core/heartbeat';
+import { getKillSwitchState } from '@/lib/core/killSwitch';
 
 export const dynamic = 'force-dynamic';
 
@@ -180,9 +183,26 @@ export async function GET() {
       overall_status = statusCounts.ERROR >= 2 ? 'CRITICAL' : 'DEGRADED';
     }
 
+    // C17 fix (2026-04-19): expose heartbeat/watchdog/killSwitch here too so that
+    // dashboard polling fallback (`health.coreMonitor.*`) has real values when
+    // SSE briefly drops. Previously only live-stream SSE carried these fields
+    // → poll-fallback showed "UNKNOWN" for 5+ seconds per reconnect.
+    const watchdog = getWatchdogState();
+    const heartbeat = getFreshHealthSnapshot();
+    const killSwitch = getKillSwitchState();
+    const trading_mode_raw = getTradingModeSummary();
+
     const response: HealthResponse & {
-      trading_mode?: ReturnType<typeof getTradingModeSummary>;
+      trading_mode?: ReturnType<typeof getTradingModeSummary> & { killSwitchEngaged?: boolean };
       feeds?: { polymarketWs: unknown; mexcWs: unknown };
+      coreMonitor?: {
+        heartbeat: string;
+        watchdog: string;
+        killSwitch: string;
+        scanRunning: boolean;
+        lastScanAt: string | null;
+      };
+      systemMode?: string;
     } = {
       timestamp,
       overall_status,
@@ -192,7 +212,18 @@ export async function GET() {
         degraded: statusCounts.UNKNOWN,
         critical: statusCounts.ERROR,
       },
-      trading_mode: getTradingModeSummary(),
+      trading_mode: {
+        ...trading_mode_raw,
+        killSwitchEngaged: killSwitch.engaged,
+      },
+      coreMonitor: {
+        heartbeat: heartbeat?.status || 'UNKNOWN',
+        watchdog: watchdog.status || 'UNKNOWN',
+        killSwitch: killSwitch.engaged ? 'ENGAGED' : 'OFF',
+        scanRunning: heartbeat?.scanLoop?.running ?? false,
+        lastScanAt: heartbeat?.scanLoop?.lastScanAt || null,
+      },
+      systemMode: trading_mode_raw.mode,
       feeds: {
         polymarketWs: polyWsClient.getFeedHealth(),
         mexcWs: WsStreamManager.getInstance().getFeedHealth(),
