@@ -56,6 +56,15 @@ const phantomMutex = new AsyncMutex();
 // Track pending saves so flushPendingSyncs can await them BEFORE draining.
 const pendingGladiatorSaves: Set<Promise<void>> = new Set();
 
+// RUFLO FAZA 3 Batch 2 (C3+C4) 2026-04-19: Same race pattern applies to
+// addDecision (decisions blob) and addPhantomTrade (phantom_trades blob).
+// Both IIFE fire-and-forget → Cloud Run may freeze before sync lands.
+// Fix: Identical tracker pattern to pendingGladiatorSaves.
+// ASUMPȚIE: if tracker overhead causes perf regression, kill-switch via env
+// DB_AWAIT_TRACKERS=0 is not (yet) wired — rollback by git revert instead.
+const pendingDecisionSaves: Set<Promise<void>> = new Set();
+const pendingPhantomSaves: Set<Promise<void>> = new Set();
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 // Upgrade: Prefer Service Role Key for backend operations to bypass RLS restrictions
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -303,10 +312,20 @@ export async function flushPendingSyncs(timeoutMs = 5000): Promise<{ flushed: nu
   // They're awaiting the mutex → haven't called syncToCloud yet → syncTasks empty.
   // Without this wait, drain loop exits immediately and Cloud Run freezes before write lands.
   // Budget: min(half timeout, 2500ms) so we still leave time for the drain loop below.
-  if (pendingGladiatorSaves.size > 0) {
+  //
+  // RUFLO FAZA 3 Batch 2 (C3+C4) 2026-04-19: Same wait applies to decision + phantom
+  // saves. All three trackers share the save budget (single Promise.allSettled call)
+  // to avoid triple-waiting. If all three trackers have pending, we still yield to
+  // drain loop after the combined budget.
+  const combinedPending = pendingGladiatorSaves.size + pendingDecisionSaves.size + pendingPhantomSaves.size;
+  if (combinedPending > 0) {
     const saveBudget = Math.min(Math.floor(timeoutMs / 2), 2500);
     await Promise.race([
-      Promise.allSettled([...pendingGladiatorSaves]),
+      Promise.allSettled([
+        ...pendingGladiatorSaves,
+        ...pendingDecisionSaves,
+        ...pendingPhantomSaves,
+      ]),
       new Promise<void>(r => setTimeout(r, saveBudget)),
     ]);
   }
@@ -371,7 +390,11 @@ export function addDecision(snapshot: DecisionSnapshot): void {
   // PERF FIX 2026-04-18: Remote merge debounced to max once per 60s.
   // Was: full Supabase SELECT + merge on EVERY insert → 50+ roundtrips/tick.
   // Now: local cache is authoritative within a tick, remote merge only when stale.
-  (async () => {
+  //
+  // RUFLO FAZA 3 Batch 2 (C3) 2026-04-19: Track IIFE promise so flushPendingSyncs
+  // can await it before draining. Without tracking, Cloud Run can freeze process
+  // between IIFE launch and syncToCloud() call → decision lost on restart.
+  const p = (async () => {
     const release = await decisionMutex.acquire();
     try {
       const now = Date.now();
@@ -396,6 +419,8 @@ export function addDecision(snapshot: DecisionSnapshot): void {
       release();
     }
   })();
+  pendingDecisionSaves.add(p);
+  p.finally(() => pendingDecisionSaves.delete(p)).catch(() => { /* tracked via add/delete */ });
 }
 
 export function updateDecision(id: string, updates: Partial<DecisionSnapshot>): void {
@@ -665,6 +690,73 @@ export async function getGladiatorBattles(gladiatorId: string, limit = 500): Pro
   }
 }
 
+/**
+ * FAZA 3/5 BATCH 2/4 (2026-04-19) — Dedupe-aware sample size for promotion gate.
+ *
+ * Returns the number of INDEPENDENT trading decisions for a gladiator, deduplicated
+ * by (minute bucket of entry_timestamp, symbol, direction). This addresses the
+ * wash-assignment artifact where 1 signal routed to N gladiators produces N phantom
+ * rows but only 1 independent decision.
+ *
+ * ASUMPȚIE: dacă 2 signale distincte pentru același symbol+direction sosesc în aceeași
+ * minută, se colapsează în 1 sample. Cost acceptabil vs. pollution pe gate LIVE.
+ * Fallback (no DB): numără BattleRecord unici din in-memory cache prin aceeași cheie.
+ *
+ * IMPACT: înlocuiește `stats.totalTrades` în QW-8 gate — previne promovări pe stats
+ * inflate de wash. Dacă 1 gladiator are 50 independent samples, e real.
+ */
+export async function getIndependentSampleSize(gladiatorId: string): Promise<number> {
+  if (!supabaseUrl || !dbInitialized) {
+    // In-memory fallback: dedupe local cache
+    const keys = new Set<string>();
+    for (const r of cache.gladiatorDna) {
+      if (r.gladiatorId !== gladiatorId) continue;
+      const ts = r.timestamp;
+      const minuteBucket = typeof ts === 'number'
+        ? Math.floor(ts / 60000)
+        : Math.floor(new Date(String(ts)).getTime() / 60000);
+      keys.add(`${minuteBucket}|${r.symbol}|${r.decision}`);
+    }
+    return keys.size;
+  }
+  try {
+    // Postgres path: pull timestamp/symbol/decision and dedupe client-side.
+    // Schema (schema.sql:67): gladiator_battles has `timestamp BIGINT` (epoch ms), no separate
+    // entry_timestamp column. Grouping by minute_bucket of timestamp is the correct proxy.
+    // Preferabil aș rula COUNT(DISTINCT ...) în SQL via RPC; fallback client OK sub 10k rows.
+    const { data, error } = await supabase
+      .from('gladiator_battles')
+      .select('timestamp, symbol, decision')
+      .eq('gladiator_id', gladiatorId)
+      .limit(10000);
+    if (error || !data) {
+      // Table absent or query failed → fall back to memory
+      const keys = new Set<string>();
+      for (const r of cache.gladiatorDna) {
+        if (r.gladiatorId !== gladiatorId) continue;
+        const ts = r.timestamp;
+        const minuteBucket = typeof ts === 'number'
+          ? Math.floor(ts / 60000)
+          : Math.floor(new Date(String(ts)).getTime() / 60000);
+        keys.add(`${minuteBucket}|${r.symbol}|${r.decision}`);
+      }
+      return keys.size;
+    }
+    const keys = new Set<string>();
+    for (const row of data as Record<string, unknown>[]) {
+      const ts = row.timestamp;
+      if (ts === undefined || ts === null) continue;
+      const t = typeof ts === 'number' ? ts : new Date(String(ts)).getTime();
+      if (!Number.isFinite(t)) continue;
+      const minuteBucket = Math.floor(t / 60000);
+      keys.add(`${minuteBucket}|${row.symbol}|${row.decision}`);
+    }
+    return keys.size;
+  } catch {
+    return 0;
+  }
+}
+
 // ─── Phantom Trades (Arena Combat Engine) ───────
 export function getPhantomTrades(): PhantomTrade[] {
   return cache.phantomTrades;
@@ -673,7 +765,10 @@ export function getPhantomTrades(): PhantomTrade[] {
 export function addPhantomTrade(trade: PhantomTrade): void {
   // FIX 2026-04-19: phantomMutex prevents concurrent reads of stale localMap
   // (was fire-and-forget IIFE with no lock → duplicates + array corruption)
-  (async () => {
+  //
+  // RUFLO FAZA 3 Batch 2 (C4) 2026-04-19: Track IIFE promise so flushPendingSyncs
+  // can await it before draining. Same race as addDecision / saveGladiatorsToDb.
+  const p = (async () => {
     const release = await phantomMutex.acquire();
     try {
       if (supabaseUrl && dbInitialized) {
@@ -704,6 +799,8 @@ export function addPhantomTrade(trade: PhantomTrade): void {
       release();
     }
   })();
+  pendingPhantomSaves.add(p);
+  p.finally(() => pendingPhantomSaves.delete(p)).catch(() => { /* tracked via add/delete */ });
 }
 
 export function removePhantomTrade(id: string): void {
