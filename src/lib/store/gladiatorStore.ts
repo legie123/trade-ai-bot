@@ -5,6 +5,7 @@ import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
 import type { WalkForwardResult } from '@/lib/v2/validation/walkForwardEngine';
 import { DNAExtractor } from '@/lib/v2/superai/dnaExtractor';
 import { createLogger } from '@/lib/core/logger';
+import { wilsonLowerBound } from '@/lib/core/stats';
 
 const storeLog = createLogger('GladiatorStore');
 
@@ -242,9 +243,17 @@ class GladiatorStore {
       });
   }
 
-  // Quick score fallback if readinessScore not yet computed
+  // Quick score fallback if readinessScore not yet computed.
+  // WILSON FIX (2026-04-18): uses Wilson 95% CI lower bound on win rate, not raw WR.
+  // Why: raw WR on small samples is biased optimism. n=10/WR=80% was beating
+  // n=200/WR=60% under the old formula — the opposite of what we want. Wilson LB
+  // penalizes small samples automatically. Kill-switch via WILSON_SORT_OFF=1 env.
   private computeQuickScore(g: Gladiator): number {
-    const wr = Math.min(100, Math.max(0, g.stats.winRate));
+    const n = g.stats.totalTrades;
+    const wins = Math.round((g.stats.winRate / 100) * n);
+    const wrLB = wilsonLowerBound(wins, n) * 100;
+    const wrRaw = Math.min(100, Math.max(0, g.stats.winRate));
+    const wr = process.env.WILSON_SORT_OFF === '1' ? wrRaw : wrLB;
     const pf = Math.min(100, Math.max(0, g.stats.profitFactor * 25));
     const dd = Math.max(0, 100 - g.stats.maxDrawdown * 3);
     return wr * 0.40 + pf * 0.35 + dd * 0.25;
@@ -330,8 +339,17 @@ class GladiatorStore {
 
     for (const [, group] of arenaGroups) {
       // Performance score: normalized components (all 0-100 scale)
+      // WILSON FIX (2026-04-18): wrScore now uses Wilson 95% CI lower bound, not raw WR.
+      // Why: prior formula let n=10/WR=80% outrank n=200/WR=60% — statistically inverted.
+      // Wilson LB auto-penalizes small samples. tradeBonus kept as secondary recency/maturity
+      // signal. Kill-switch: WILSON_SORT_OFF=1 reverts to raw WR for rollback.
+      // Assumption: trades are independent Bernoulli. Violated under regime flips +
+      // pyramiding correlated entries — re-examine if CB fires frequently post-deploy.
       const scored = group.map(g => {
-        const wrScore = g.stats.winRate; // 0-100
+        const n = g.stats.totalTrades;
+        const wins = Math.round((g.stats.winRate / 100) * n);
+        const wrLB = wilsonLowerBound(wins, n) * 100;
+        const wrScore = process.env.WILSON_SORT_OFF === '1' ? g.stats.winRate : wrLB;
         const pfScore = Math.min(g.stats.profitFactor / 3.0, 1.0) * 100; // PF 3.0 = max 100
         const recencyBonus = (Date.now() - g.lastUpdated) < 3600_000 ? 10 : 0;
         const tradeBonus = Math.min(g.stats.totalTrades / 50, 1.0) * 15; // 50 trades = full 15pts
