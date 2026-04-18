@@ -322,15 +322,20 @@ export default function StatusPage(){
         const raw=hR.value.data||hR.value;
         const sys=raw.systems||{};
         const tm=raw.trading_mode||{};
+        // C17 fix (2026-04-19): /api/v2/health expune coreMonitor la top-level
+        // (raw.coreMonitor.heartbeat = string "GREEN"/"YELLOW"/"RED").
+        // Frontul citea sys.heartbeat.status (object inexistent) → UNKNOWN permanent.
+        // Prefer raw.coreMonitor, cu fallback pe sys.* pentru rev-uri mai vechi.
+        const cm=raw.coreMonitor||{};
         setHealth({
           status:raw.overall_status||'UNKNOWN',
           version:tm.version||'—',
           systemMode:tm.mode||'PAPER',
           uptimeSecs:raw.summary?.uptime||0,
           coreMonitor:{
-            heartbeat:sys.heartbeat?.status||'UNKNOWN',
-            watchdog:sys.watchdog?.status||'UNKNOWN',
-            killSwitch:tm.killSwitchEngaged?'ENGAGED':'SAFE',
+            heartbeat:cm.heartbeat||sys.heartbeat?.status||'UNKNOWN',
+            watchdog:cm.watchdog||sys.watchdog?.status||'UNKNOWN',
+            killSwitch:(cm.killSwitch==='ENGAGED'||tm.killSwitchEngaged)?'ENGAGED':'SAFE',
           },
           trading:{
             autoSelectEnabled:!!tm.autoSelectEnabled,
