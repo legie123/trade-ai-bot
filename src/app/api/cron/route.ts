@@ -125,6 +125,33 @@ export async function GET(request: NextRequest) {
     gScan.__autoScan.scanCount++;
     const scanStart = Date.now();
 
+    // ─── PRE-PHASE 2: Decision eval setup (sync imports + in-memory reads) ───
+    const {
+      getPendingDecisions, getDecisionsWithOpenHorizons, updateDecision, setHorizonOutcome,
+      recalculatePerformance, appendToEquityCurve, getLivePositions, updateLivePosition
+    } = await import('@/lib/store/db');
+
+    const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+    const HORIZONS = [5, 15, 60, 240];
+    const PRIMARY_HORIZON = 15;
+    const WIN_THRESHOLD = 0.3;
+    const envKey = isPaper ? 'PAPER_PENDING_MIN_AGE_MIN' : 'LIVE_PENDING_MIN_AGE_MIN';
+    const minAgeMin = Number(process.env[envKey]) || Math.min(...HORIZONS);
+
+    const pending = getPendingDecisions();
+    const openHorizonDecisions = getDecisionsWithOpenHorizons(HORIZONS);
+    const eligibleDecisions = openHorizonDecisions.filter((dec) => {
+      const elapsedMin = (Date.now() - new Date(dec.timestamp).getTime()) / 60000;
+      return elapsedMin >= minAgeMin;
+    });
+
+    // Shared state — populated by task (D) in Phase 2, consumed by response JSON.
+    // Safe: JS single-threaded event loop, no true parallel mutation.
+    let mainDecisionsEvaluated = 0;
+    let horizonSlotsFilled = 0;
+    let livePositionsUpdated = 0;
+    const priceCache: Record<string, number> = {};
+
     // ═══════════════════════════════════════════════════════════════════
     // PHASE 2: PARALLEL MAIN WORK (2026-04-18 perf)
     // Phantom eval, live positions, scanners, and autoDebug are independent.
@@ -138,19 +165,9 @@ export async function GET(request: NextRequest) {
     //  - evaluateLivePositions reads existing open positions — scanners don't modify these.
     //  - autoDebug is read-only diagnostics.
     //  - All use JS single-threaded event loop — no true parallel memory corruption.
-    //
-    // FIX 2026-04-18 FAZA 5: 120s hard timeout on Phase 2.
-    // Cloud Run default is 300s — if MEXC price fetches stall, Phase 2 could exceed
-    // that and get killed mid-flush (data loss). 120s leaves ~180s for Phase 3
-    // (horizon eval + flush). On timeout, we log but continue to Phase 3.
     // ═══════════════════════════════════════════════════════════════════
 
-    const PHASE2_TIMEOUT_MS = 120_000;
-    const phase2Deadline = new Promise<'TIMEOUT'>((resolve) =>
-      setTimeout(() => resolve('TIMEOUT'), PHASE2_TIMEOUT_MS)
-    );
-
-    const phase2Work = Promise.allSettled([
+    await Promise.allSettled([
       // (A) Phantom + Live position evaluation (sequential within — live depends on phantom stats)
       (async () => {
         await ArenaSimulator.getInstance().evaluatePhantomTrades();
@@ -173,221 +190,140 @@ export async function GET(request: NextRequest) {
         const { autoDebugEngine } = await import('@/lib/v2/safety/autoDebugEngine');
         await autoDebugEngine.runDeterministicDiagnostics();
       })().catch(e => log.warn('autoDebug diagnostics failed', { error: String(e) })),
-    ]);
 
-    const phase2Result = await Promise.race([phase2Work, phase2Deadline]);
-    if (phase2Result === 'TIMEOUT') {
-      log.error(`[CRON] Phase 2 TIMEOUT after ${PHASE2_TIMEOUT_MS}ms — continuing to Phase 3 (horizon eval + flush)`);
-    }
+      // (D) Decision eval + MEXC price fetch + live position updates
+      // PERF FIX 2026-04-18: Was sequential AFTER scanners → added 6-10s to tick.
+      // Decision eval processes OLD decisions (already in cache), independent of
+      // scanner results from this tick. Running parallel saves ~5-8s.
+      (async () => {
+        const uniqueSymbols = [...new Set(eligibleDecisions.map(d => d.symbol))];
+        const livePos = getLivePositions().filter(p => p.status === 'OPEN');
+        const allSymbols = [...new Set([...uniqueSymbols, ...livePos.map(p => p.symbol)])];
+        const toMexc = (s: string) => s.endsWith('USDT') ? s : s + 'USDT';
+        const mexcSymbols = allSymbols.map(toMexc);
 
-    // Evaluate Real/Shadow Main System Decisions — MULTI-HORIZON (2026-04-18)
-    const {
-      getPendingDecisions, getDecisionsWithOpenHorizons, updateDecision, setHorizonOutcome,
-      recalculatePerformance, appendToEquityCurve, getLivePositions, updateLivePosition
-    } = await import('@/lib/store/db');
-    // NOTE: getMexcPrices bypassed — see direct fetch loop below.
-
-    const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
-
-    // MULTI-HORIZON DESIGN (2026-04-18):
-    // Previous single-shot eval at minAgeMin=1min with ±0.3% threshold produced
-    // ~100% NEUTRAL — 1-min noise in crypto directional is sub-threshold.
-    // Fix: evaluate each decision at 4 horizons [5, 15, 60, 240] minutes.
-    // Primary horizon=15min feeds legacy outcome/pnlPercent + equity curve.
-    // Other horizons stored in horizonOutcomes for downstream reliability analysis.
-    // ASSUMPTION: cache size (1000) holds ≥4h of decisions under current rate
-    //             (~144/h × 4h = 576 < 1000). If rate increases, horizons past 240m
-    //             may be dropped before fill. Cache eviction is acceptable data loss
-    //             because 240m is already the longest analyzed horizon.
-    const HORIZONS = [5, 15, 60, 240]; // minutes
-    const PRIMARY_HORIZON = 15;
-    const WIN_THRESHOLD = 0.3; // 0.3% minimum edge over fees — SAME across horizons
-                               // so per-horizon WR is directly comparable.
-
-    // `minAgeMin` is now derived from the SMALLEST horizon (5min). Any decision
-    // younger than that has no open slot to fill this tick. Kept env override
-    // for future experimentation (e.g. adding a 1m horizon).
-    const envKey = isPaper ? 'PAPER_PENDING_MIN_AGE_MIN' : 'LIVE_PENDING_MIN_AGE_MIN';
-    const minAgeMin = Number(process.env[envKey]) || Math.min(...HORIZONS);
-
-    const pending = getPendingDecisions();
-    const openHorizonDecisions = getDecisionsWithOpenHorizons(HORIZONS);
-
-    // Eligible = has open horizon AND is at least as old as the smallest horizon
-    // (otherwise no slot ready to fill this tick).
-    const eligibleDecisions = openHorizonDecisions.filter((dec) => {
-      const elapsedMin = (Date.now() - new Date(dec.timestamp).getTime()) / 60000;
-      return elapsedMin >= minAgeMin;
-    });
-
-    const uniqueSymbols = [...new Set(eligibleDecisions.map(d => d.symbol))];
-
-    // Fetch all unique prices in parallel for decisions and live positions
-    const livePos = getLivePositions().filter(p => p.status === 'OPEN');
-    const liveSymbols = livePos.map(p => p.symbol);
-    const allSymbols = [...new Set([...uniqueSymbols, ...liveSymbols])];
-
-    // FIX: Decisions store 'BTC', MEXC returns 'BTCUSDT'. Normalize to MEXC format.
-    const toMexc = (s: string) => s.endsWith('USDT') ? s : s + 'USDT';
-    const mexcSymbols = allSymbols.map(toMexc);
-
-    // PARALLEL PRICE FETCH 2026-04-18:
-    // Previous implementation was strictly sequential (for-await loop) → ~300ms
-    // per symbol × N symbols = multi-second serverless stalls that risked
-    // Cloud Run request timeout. MEXC REST allows ~20 req/sec per IP; we keep
-    // concurrency conservative at 8 with a 5s per-request budget.
-    // ASSUMPTION: dedicated IP 149.174.89.163 is whitelisted (see memory).
-    //             If IP rate-limit triggers 429, reduce CONCURRENCY.
-    const rawPriceCache: Record<string, number> = {};
-    // AUDIT FIX C2 (2026-04-18): Wire priceHistory → correlationGuard.
-    // Previously recordPrice() existed but was never called → priceHistory empty
-    // → correlation check always returned "no data, allow" → guard was decorative.
-    // ASSUMPTION: one tick ≈ one price sample. For 100-sample LOOKBACK_CLOSES this
-    // means ~100 ticks (~100 minutes at 1-tick/min cron) before correlation has signal.
-    const { recordPrice } = await import('@/lib/v2/safety/correlationGuard');
-    const fetchOne = async (sym: string) => {
-      try {
-        const resp = await fetch(
-          'https://api.mexc.com/api/v3/ticker/price?symbol=' + encodeURIComponent(sym),
-          { signal: AbortSignal.timeout(5000) }
-        );
-        const d = await resp.json() as { symbol?: string; price?: string };
-        if (d.price) {
-          const p = parseFloat(d.price);
-          if (!isNaN(p) && p > 0) {
-            rawPriceCache[sym] = p;
-            recordPrice(sym, p); // feed correlationGuard
-          }
-        }
-      } catch {
-        // swallow — missing price means decision stays pending, not a failure
-      }
-    };
-    const CONCURRENCY = 8;
-    for (let i = 0; i < mexcSymbols.length; i += CONCURRENCY) {
-      const batch = mexcSymbols.slice(i, i + CONCURRENCY);
-      await Promise.allSettled(batch.map(fetchOne));
-    }
-
-    // Build dual-key cache: both 'BTCUSDT' and 'BTC' point to the same price
-    const priceCache: Record<string, number> = {};
-    for (const [mexcSym, price] of Object.entries(rawPriceCache)) {
-      priceCache[mexcSym] = price;
-      // Strip USDT suffix so dec.symbol ('BTC') lookups also work
-      const base = mexcSym.endsWith('USDT') ? mexcSym.slice(0, -4) : mexcSym;
-      priceCache[base] = price;
-    }
-
-    // MULTI-HORIZON EVAL LOOP
-    // Per decision: for each horizon whose age threshold has been crossed AND
-    // whose slot is still empty, compute pnl at NOW and record the slot.
-    // Finalization (legacy outcome/pnl/equity-curve) triggers ONCE at PRIMARY_HORIZON.
-    // DNA learning fires at primary too (so each shadow trade logs exactly once).
-    let mainDecisionsEvaluated = 0; // primary-horizon finalizations this tick
-    let horizonSlotsFilled = 0;     // total slots written (all horizons)
-
-    for (const dec of eligibleDecisions) {
-      const currentPrice = priceCache[dec.symbol];
-      if (!currentPrice || !dec.price) continue;
-
-      const elapsedMin = (Date.now() - new Date(dec.timestamp).getTime()) / 60000;
-      const ho = dec.horizonOutcomes || {};
-
-      // ----- Per-horizon fill pass -----
-      for (const H of HORIZONS) {
-        if (elapsedMin < H) continue;                // too young for this horizon
-        if (ho[String(H)]) continue;                 // already filled
-
-        const pnlDiff = (currentPrice - dec.price) / dec.price;
-        const pnlPercent = (dec.action === 'LONG' || dec.action === 'BUY')
-          ? pnlDiff * 100
-          : -pnlDiff * 100;
-        const label: 'WIN' | 'LOSS' | 'NEUTRAL' =
-          pnlPercent > WIN_THRESHOLD ? 'WIN'
-          : pnlPercent < -WIN_THRESHOLD ? 'LOSS'
-          : 'NEUTRAL';
-
-        setHorizonOutcome(dec.id, H, {
-          price: currentPrice,
-          pnlPercent: parseFloat(pnlPercent.toFixed(4)),
-          label,
-          evaluatedAt: new Date().toISOString(),
-        });
-        horizonSlotsFilled++;
-
-        // Mirror into legacy priceAfterXm columns for backward compat.
-        const legacyPriceField =
-          H === 5 ? 'priceAfter5m'
-          : H === 15 ? 'priceAfter15m'
-          : H === 60 ? 'priceAfter1h'
-          : H === 240 ? 'priceAfter4h'
-          : null;
-        if (legacyPriceField) {
-          updateDecision(dec.id, { [legacyPriceField]: currentPrice });
+        // Parallel price fetch from MEXC (batches of 8, 5s timeout each)
+        const rawPriceCache: Record<string, number> = {};
+        const { recordPrice } = await import('@/lib/v2/safety/correlationGuard');
+        const fetchOne = async (sym: string) => {
+          try {
+            const resp = await fetch(
+              'https://api.mexc.com/api/v3/ticker/price?symbol=' + encodeURIComponent(sym),
+              { signal: AbortSignal.timeout(5000) }
+            );
+            const d = await resp.json() as { symbol?: string; price?: string };
+            if (d.price) {
+              const p = parseFloat(d.price);
+              if (!isNaN(p) && p > 0) {
+                rawPriceCache[sym] = p;
+                recordPrice(sym, p);
+              }
+            }
+          } catch { /* missing price → decision stays pending */ }
+        };
+        const CONCURRENCY = 8;
+        for (let i = 0; i < mexcSymbols.length; i += CONCURRENCY) {
+          await Promise.allSettled(mexcSymbols.slice(i, i + CONCURRENCY).map(fetchOne));
         }
 
-        // ----- Primary-horizon finalization: ONCE per decision -----
-        if (H === PRIMARY_HORIZON) {
-          updateDecision(dec.id, {
-            pnlPercent: parseFloat(pnlPercent.toFixed(4)),
-            outcome: label,
-            evaluatedAt: new Date().toISOString(),
-          });
-          appendToEquityCurve({ ...dec, outcome: label }, pnlPercent);
-          mainDecisionsEvaluated++;
+        // Build dual-key cache (BTCUSDT + BTC → same price)
+        for (const [mexcSym, price] of Object.entries(rawPriceCache)) {
+          priceCache[mexcSym] = price;
+          const base = mexcSym.endsWith('USDT') ? mexcSym.slice(0, -4) : mexcSym;
+          priceCache[base] = price;
+        }
 
-          // DNA LEARNING fires only on primary — one shadow → one DNA row.
-          // Regex hardening (AUDIT FIX C10d 2026-04-18): gladiator ID alphanumeric+_+-
-          if (dec.source.includes('Shadow')) {
-            const gladiatorIdMatch = dec.source.match(/\(([A-Za-z0-9_-]+)\)/);
-            if (gladiatorIdMatch && gladiatorIdMatch[1]) {
-              try {
-                await DNAExtractor.getInstance().logBattle({
-                  id: `shadow_${dec.id}`,
-                  gladiatorId: gladiatorIdMatch[1],
-                  symbol: dec.symbol,
-                  decision: dec.action as 'LONG' | 'SHORT' | 'FLAT',
-                  entryPrice: dec.price,
-                  outcomePrice: currentPrice,
-                  pnlPercent: parseFloat(pnlPercent.toFixed(4)),
-                  isWin: label === 'WIN',
-                  timestamp: Date.now(),
-                  marketContext: (() => {
-                    // FIX 2026-04-18 (FAZA B.1 ext) — log regime on shadow DNA rows too,
-                    // same discriminator as simulator.ts. Cheap call, sync.
-                    const _omega = OmegaEngine.getInstance();
-                    const _r = _omega.getRegime();
-                    return {
-                      exitType: 'SHADOW_TIME_BASED',
-                      holdTimeSec: elapsedMin * 60,
-                      regime: _r.regime,
-                      regimeConfidence: parseFloat(_r.confidence.toFixed(4)),
-                      regimeVolatilityScore: _r.volatilityScore,
-                      regimeIsFallback: !_omega.hasLiveRegime(),
-                    };
-                  })()
-                });
-              } catch (err) {
-                log.error(`Failed to inject shadow DNA for ${dec.id}`, { error: String(err) });
+        // MULTI-HORIZON EVAL LOOP
+        for (const dec of eligibleDecisions) {
+          const currentPrice = priceCache[dec.symbol];
+          if (!currentPrice || !dec.price) continue;
+
+          const elapsedMin = (Date.now() - new Date(dec.timestamp).getTime()) / 60000;
+          const ho = dec.horizonOutcomes || {};
+
+          for (const H of HORIZONS) {
+            if (elapsedMin < H) continue;
+            if (ho[String(H)]) continue;
+
+            const pnlDiff = (currentPrice - dec.price) / dec.price;
+            const pnlPercent = (dec.action === 'LONG' || dec.action === 'BUY')
+              ? pnlDiff * 100 : -pnlDiff * 100;
+            const label: 'WIN' | 'LOSS' | 'NEUTRAL' =
+              pnlPercent > WIN_THRESHOLD ? 'WIN'
+              : pnlPercent < -WIN_THRESHOLD ? 'LOSS' : 'NEUTRAL';
+
+            setHorizonOutcome(dec.id, H, {
+              price: currentPrice,
+              pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+              label,
+              evaluatedAt: new Date().toISOString(),
+            });
+            horizonSlotsFilled++;
+
+            const legacyPriceField =
+              H === 5 ? 'priceAfter5m' : H === 15 ? 'priceAfter15m'
+              : H === 60 ? 'priceAfter1h' : H === 240 ? 'priceAfter4h' : null;
+            if (legacyPriceField) updateDecision(dec.id, { [legacyPriceField]: currentPrice });
+
+            if (H === PRIMARY_HORIZON) {
+              updateDecision(dec.id, {
+                pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+                outcome: label,
+                evaluatedAt: new Date().toISOString(),
+              });
+              appendToEquityCurve({ ...dec, outcome: label }, pnlPercent);
+              mainDecisionsEvaluated++;
+
+              // DNA LEARNING — one shadow → one DNA row
+              if (dec.source.includes('Shadow')) {
+                const gladiatorIdMatch = dec.source.match(/\(([A-Za-z0-9_-]+)\)/);
+                if (gladiatorIdMatch && gladiatorIdMatch[1]) {
+                  try {
+                    await DNAExtractor.getInstance().logBattle({
+                      id: `shadow_${dec.id}`,
+                      gladiatorId: gladiatorIdMatch[1],
+                      symbol: dec.symbol,
+                      decision: dec.action as 'LONG' | 'SHORT' | 'FLAT',
+                      entryPrice: dec.price,
+                      outcomePrice: currentPrice,
+                      pnlPercent: parseFloat(pnlPercent.toFixed(4)),
+                      isWin: label === 'WIN',
+                      timestamp: Date.now(),
+                      marketContext: (() => {
+                        const _omega = OmegaEngine.getInstance();
+                        const _r = _omega.getRegime();
+                        return {
+                          exitType: 'SHADOW_TIME_BASED',
+                          holdTimeSec: elapsedMin * 60,
+                          regime: _r.regime,
+                          regimeConfidence: parseFloat(_r.confidence.toFixed(4)),
+                          regimeVolatilityScore: _r.volatilityScore,
+                          regimeIsFallback: !_omega.hasLiveRegime(),
+                        };
+                      })()
+                    });
+                  } catch (err) {
+                    log.error(`Failed to inject shadow DNA for ${dec.id}`, { error: String(err) });
+                  }
+                }
               }
             }
           }
         }
-      }
-    }
 
-    // Update Floating PnL for live positions
-    let livePositionsUpdated = 0;
-    for (const pos of livePos) {
-      if (priceCache[pos.symbol]) {
-        updateLivePosition(pos.id, {
-          currentPrice: priceCache[pos.symbol],
-          highestPriceObserved: Math.max(pos.highestPriceObserved, priceCache[pos.symbol]),
-          lowestPriceObserved: Math.min(pos.lowestPriceObserved, priceCache[pos.symbol])
-        });
-        livePositionsUpdated++;
-      }
-    }
+        // Update floating PnL for live positions
+        for (const pos of livePos) {
+          if (priceCache[pos.symbol]) {
+            updateLivePosition(pos.id, {
+              currentPrice: priceCache[pos.symbol],
+              highestPriceObserved: Math.max(pos.highestPriceObserved, priceCache[pos.symbol]),
+              lowestPriceObserved: Math.min(pos.lowestPriceObserved, priceCache[pos.symbol])
+            });
+            livePositionsUpdated++;
+          }
+        }
+      })().catch(e => log.error('Decision eval / price fetch failed', { error: String(e) })),
+    ]);
 
     if (mainDecisionsEvaluated > 0) {
       recalculatePerformance();
