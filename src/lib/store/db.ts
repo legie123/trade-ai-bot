@@ -683,7 +683,11 @@ export function addPhantomTrade(trade: PhantomTrade): void {
 
       if (!cache.phantomTrades.some(t => t.id === trade.id)) {
         cache.phantomTrades.unshift(trade);
-        if (cache.phantomTrades.length > 500) cache.phantomTrades.length = 500;
+        // FIX 2026-04-19: was 500 — evicted trades before MAX_HOLD_SEC (3600s) expiry.
+        // At ~24 trades/tick × 12 ticks/hr = ~1440 trades/hr. Cap 2500 = ~1.7hr buffer.
+        // Only trades that have been evaluated (via evaluatePhantomTrades) are removed
+        // by removePhantomTrade(). This cap is safety valve for memory, not flow control.
+        if (cache.phantomTrades.length > 2500) cache.phantomTrades.length = 2500;
       }
 
       syncToCloud('phantom_trades', cache.phantomTrades);
