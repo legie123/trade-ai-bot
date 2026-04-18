@@ -84,7 +84,9 @@ class GladiatorStore {
       },
       lastUpdated: Date.now(),
     });
-    saveGladiatorsToDb(this.gladiators);
+    // NOTE: Do NOT saveGladiatorsToDb here — seed is a local-only fallback.
+    // Saving seeded data would overwrite real Supabase state (isLive, stats)
+    // on every cold start before initDB has a chance to load real data.
   }
 
   /**
