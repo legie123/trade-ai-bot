@@ -61,8 +61,14 @@ export class SentinelGuard {
       return { safe: false, reason: streakCheck.reason };
     }
 
-    // 2. Consensus Strength Check — LIVE mode requires higher confidence (0.75) than PAPER (0.70)
-    const confidenceThreshold = config.mode === 'LIVE' ? 0.75 : 0.70;
+    // 2. Consensus Strength Check — LIVE mode requires higher confidence (0.75) than PAPER (0.50)
+    // PAPER threshold lowered from 0.70 → 0.50: at 70%, most signals (55-65% typical)
+    // were blocked → zero training data collected → Darwinian loop stalled.
+    // 50% admits more noise but that's acceptable: PAPER has zero capital risk,
+    // and noisy data still trains the RL modifier / WR stats correctly.
+    // ASSUMPTION: If crypto consensus routinely lands 50-65%, this threshold
+    // lets ~80% of signals through. Tighten back to 0.65+ once training data exists.
+    const confidenceThreshold = config.mode === 'LIVE' ? 0.75 : 0.50;
     if (consensus.finalDirection === 'FLAT' || consensus.weightedConfidence < confidenceThreshold) {
       return { safe: false, reason: `Insufficient Consensus (${(consensus.weightedConfidence * 100).toFixed(2)}% < ${(confidenceThreshold * 100).toFixed(0)}% [${config.mode}])` };
     }
