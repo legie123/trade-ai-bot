@@ -1,6 +1,21 @@
 // ============================================================
 // Signal Router — normalizes incoming signals from any source
 // Maps TradingView BUY/SELL/LONG/SHORT into unified format
+//
+// CONFIDENCE FIX 2026-04-18 (v3):
+// Previous heuristic piled fixed bonuses onto every well-formed signal,
+// saturating to 100 for any engine-emitted BUY/SELL with price+timeframe.
+// That destroyed signal discrimination and overwhelmed the arena with
+// phantom trades against indistinguishable "100% confidence" signals.
+//
+// New heuristic uses multiplicative-quality factors:
+//   - determinism: did we match the raw signal exactly, via fuzzy include, or not at all?
+//   - direction clarity: directional signals outrank NEUTRAL/ALERT
+//   - timeframe: crypto intraday sweet spot (15m-4h) beats noisy 1m or slow 1w
+//   - source tier: internal engines > shadow gladiators > TradingView > other
+//   - recency: stale signals are penalized, not rewarded
+// Output is clamped to [0, 95]; 100 is reserved as "certainty" which is
+// never claimed by heuristic scoring (matches reality, avoids false trust).
 // ============================================================
 import { Signal, SignalType } from '@/lib/types/radar';
 
@@ -13,7 +28,7 @@ export interface RoutedSignal extends Signal {
   direction: SignalDirection;
   action: SignalAction;
   normalized: SignalType;      // cleaned signal type
-  confidence: number;          // 0–100 based on data completeness
+  confidence: number;          // 0–95 based on data quality; 0 if price invalid
   routed: true;
 }
 
@@ -79,6 +94,27 @@ const ACTION_MAP: Record<SignalType, SignalAction> = {
   'NEUTRAL': 'INFO',
 };
 
+// ---- Determinism classification ----
+// Tracks HOW a raw string was mapped — direct vs fuzzy vs unknown.
+// Drives base confidence: exact-alias matches are more trustworthy than
+// substring inferences like "ENTER_LONG_V2_TEST" → LONG.
+type MatchKind = 'direct' | 'fuzzy' | 'unknown';
+
+function classifyMatch(raw: string): { type: SignalType; match: MatchKind } {
+  const cleaned = raw.toUpperCase().trim();
+  if (SIGNAL_ALIASES[cleaned]) return { type: SIGNAL_ALIASES[cleaned], match: 'direct' };
+
+  // AUDIT FIX T2.10: Check SHORT before SELL to preserve short entry signals
+  if (cleaned.includes('SHORT')) return { type: 'SHORT', match: 'fuzzy' };
+  if (cleaned.includes('LONG')) return { type: 'LONG', match: 'fuzzy' };
+  if (cleaned.includes('BUY')) return { type: 'BUY', match: 'fuzzy' };
+  if (cleaned.includes('SELL')) return { type: 'SELL', match: 'fuzzy' };
+  if (cleaned.includes('BULL')) return { type: 'BUY', match: 'fuzzy' };
+  if (cleaned.includes('BEAR')) return { type: 'SELL', match: 'fuzzy' };
+
+  return { type: 'ALERT', match: 'unknown' };
+}
+
 // ---- Router ----
 
 /**
@@ -86,21 +122,82 @@ const ACTION_MAP: Record<SignalType, SignalAction> = {
  * Handles aliases, partial matches, and messy TradingView text.
  */
 export function normalizeSignalType(raw: string): SignalType {
-  const cleaned = raw.toUpperCase().trim();
+  return classifyMatch(raw).type;
+}
 
-  // Direct match
-  if (SIGNAL_ALIASES[cleaned]) return SIGNAL_ALIASES[cleaned];
+// Crypto-intraday sweet spot — timeframes with enough noise filtering
+// but fast enough for retail edge. Based on empirical crypto momentum studies.
+const TF_TIER_HIGH = new Set(['15m', '30m', '1h', '2h', '4h']);
+const TF_TIER_MID = new Set(['5m', '6h', '8h', '12h', '1d']);
+const TF_TIER_LOW = new Set(['1m', '3m', '3d', '1w']);
 
-  // AUDIT FIX T2.10: Check SHORT before SELL to preserve short entry signals
-  // Previously SHORT was caught by the SELL branch, mapping all shorts to EXIT
-  if (cleaned.includes('SHORT')) return 'SHORT';
-  if (cleaned.includes('LONG')) return 'LONG';
-  if (cleaned.includes('BUY')) return 'BUY';
-  if (cleaned.includes('SELL')) return 'SELL';
-  if (cleaned.includes('BULL')) return 'BUY';
-  if (cleaned.includes('BEAR')) return 'SELL';
+/**
+ * Compute confidence from signal quality factors.
+ *
+ * ASSUMPTIONS (if any breaks, revisit the scoring):
+ *   - signal.price <= 0  → signal is unusable (no entry price) → confidence 0
+ *   - raw signal.signal string is the pre-normalization text
+ *   - signal.timestamp is an ISO-parseable string representing signal origin time
+ *   - source strings follow convention: "BTC Engine", "Solana Engine",
+ *     "Meme OSINT Engine", "TradingView", or contain "shadow"/"gladiator"
+ *   - symbol length 2–10 chars is the reasonable band (BTC, SOL, DOGE, PEPE etc.)
+ */
+function computeConfidence(signal: Signal, match: MatchKind, normalized: SignalType): number {
+  // Hard gate: no valid price means we cannot enter or evaluate → unreliable.
+  if (!signal.price || signal.price <= 0) return 0;
 
-  return 'ALERT';
+  // Base by determinism — direct alias match is worth more than substring inference.
+  let score = match === 'direct' ? 35 : match === 'fuzzy' ? 20 : 10;
+
+  // Direction clarity — directional signals beat informational ones.
+  if (normalized === 'BUY' || normalized === 'SELL' || normalized === 'LONG' || normalized === 'SHORT') {
+    score += 20;
+  } else if (normalized === 'ALERT') {
+    score += 5;
+  }
+  // NEUTRAL adds zero — it's not actionable.
+
+  // Timeframe tier — intraday sweet spot scores highest.
+  const tf = (signal.timeframe || '').toLowerCase();
+  if (TF_TIER_HIGH.has(tf)) score += 15;
+  else if (TF_TIER_MID.has(tf)) score += 10;
+  else if (TF_TIER_LOW.has(tf)) score += 5;
+  // unknown/empty timeframe → 0
+
+  // Source trust tier — internal TA engines pass multi-stage filters.
+  const src = (signal.source || '').toLowerCase();
+  if (src.includes('btc engine') || src.includes('solana engine') || src.includes('meme osint')) {
+    score += 15;
+  } else if (src.includes('shadow') || src.includes('gladiator')) {
+    score += 12;
+  } else if (src === 'tradingview') {
+    score += 10;
+  } else if (src.includes('engine')) {
+    score += 10; // generic engine fallback
+  } else {
+    score += 3; // untrusted external
+  }
+
+  // Recency — stale signals lose confidence, fresh ones gain.
+  try {
+    const ageMs = Date.now() - new Date(signal.timestamp).getTime();
+    if (!isNaN(ageMs) && ageMs >= 0) {
+      if (ageMs < 30_000) score += 10;        // <30s fresh
+      else if (ageMs < 120_000) score += 5;   // <2min still relevant
+      else if (ageMs < 600_000) score += 0;   // <10min OK
+      else score -= 10;                       // stale penalty
+    }
+  } catch {
+    // invalid timestamp — no bonus, no penalty
+  }
+
+  // Symbol sanity — reasonable ticker length band.
+  const symLen = (signal.symbol || '').length;
+  if (symLen >= 2 && symLen <= 10) score += 3;
+
+  // Clamp to [0, 95]. 100 is reserved for certainty which heuristic scoring
+  // never honestly produces — leaving headroom signals "not certain".
+  return Math.max(0, Math.min(score, 95));
 }
 
 /**
@@ -108,24 +205,10 @@ export function normalizeSignalType(raw: string): SignalType {
  * Adds direction, action, confidence, and cleaned signal type.
  */
 export function routeSignal(signal: Signal): RoutedSignal {
-  const normalized = normalizeSignalType(signal.signal);
+  const { type: normalized, match } = classifyMatch(signal.signal);
   const direction = DIRECTION_MAP[normalized];
   const action = determineAction(signal.signal, normalized);
-
-  // Confidence: based on data completeness + source quality
-  // Calibration #10: Internal engines pass through 9 filters → higher base confidence
-  let confidence = 50; // raised from 40 — we have signal + filters
-  if (signal.price > 0) confidence += 15;
-  if (signal.timeframe && signal.timeframe !== '—') confidence += 10;
-  // Source bonus: internal engines are MORE reliable than external
-  const src = (signal.source || '').toLowerCase();
-  if (src.includes('engine') || src.includes('btc') || src.includes('sol')) {
-    confidence += 15; // Internal engine — filtered through VWAP+RSI+Trend
-  } else if (signal.source === 'TradingView') {
-    confidence += 10; // External but structured
-  }
-  if (signal.symbol.length >= 2) confidence += 10;
-  confidence = Math.min(confidence, 100);
+  const confidence = computeConfidence(signal, match, normalized);
 
   const routed: RoutedSignal = {
     ...signal,

@@ -96,15 +96,28 @@ export async function GET(request: NextRequest) {
 
     // Evaluate Real/Shadow Main System Decisions
     const { getPendingDecisions, updateDecision, recalculatePerformance, appendToEquityCurve, getLivePositions, updateLivePosition } = await import('@/lib/store/db');
-    const { getMexcPrices } = await import('@/lib/exchange/mexcClient');
+    // NOTE: getMexcPrices bypassed — see direct fetch loop below.
 
     const pending = getPendingDecisions();
     let mainDecisionsEvaluated = 0;
 
+    // FIX 2026-04-18: 10min threshold was starving paper mode — freshly-issued
+    // signals piled up to 100+ pending, never reaching eligibility. In PAPER
+    // we want fast rotation (1min) so the dashboard reflects real evaluation
+    // loops; in LIVE keep 10min to let positions prove out before marking.
+    // Override with PAPER_PENDING_MIN_AGE_MIN / LIVE_PENDING_MIN_AGE_MIN.
+    // ASSUMPTION: if this threshold is set too low and price feed is jittery,
+    //             WIN/LOSS/NEUTRAL labels may be dominated by noise. The 0.3%
+    //             WIN_THRESHOLD below is the safety floor that absorbs noise.
+    const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
+    const defaultMinAge = isPaper ? 1 : 10;
+    const envKey = isPaper ? 'PAPER_PENDING_MIN_AGE_MIN' : 'LIVE_PENDING_MIN_AGE_MIN';
+    const minAgeMin = Number(process.env[envKey]) || defaultMinAge;
+
     // Batch: fetch unique symbols once instead of per-decision
     const eligibleDecisions = pending.filter(dec => {
       const elapsedMin = (Date.now() - new Date(dec.timestamp).getTime()) / 60000;
-      return elapsedMin > 10;
+      return elapsedMin > minAgeMin;
     });
 
     const uniqueSymbols = [...new Set(eligibleDecisions.map(d => d.symbol))];
@@ -118,10 +131,14 @@ export async function GET(request: NextRequest) {
     const toMexc = (s: string) => s.endsWith('USDT') ? s : s + 'USDT';
     const mexcSymbols = allSymbols.map(toMexc);
 
-    // OMEGA OPTIMIZATION: Use Batch Price fetcher. One request, no rate-limit delay.
-    // DIRECT PRICE FETCH: bypass getMexcPrices entirely — fetch each symbol raw
+    // PARALLEL PRICE FETCH 2026-04-18:
+    // Previous implementation was strictly sequential (for-await loop) → ~300ms
+    // per symbol × N symbols = multi-second serverless stalls that risked
+    // Cloud Run request timeout. MEXC REST allows ~20 req/sec per IP; we keep
+    // concurrency conservative at 8 with a 5s per-request budget.
+    // ASSUMPTION: dedicated IP 149.174.89.163 is whitelisted (see memory).
+    //             If IP rate-limit triggers 429, reduce CONCURRENCY.
     const rawPriceCache: Record<string, number> = {};
-    let priceError = '';
     const fetchOne = async (sym: string) => {
       try {
         const resp = await fetch(
@@ -133,13 +150,14 @@ export async function GET(request: NextRequest) {
           const p = parseFloat(d.price);
           if (!isNaN(p) && p > 0) rawPriceCache[sym] = p;
         }
-      } catch (err) {
-        priceError += sym + ':' + String(err).slice(0, 50) + '; ';
+      } catch {
+        // swallow — missing price means decision stays pending, not a failure
       }
     };
-    // Fetch sequentially to avoid rate limits
-    for (const sym of mexcSymbols) {
-      await fetchOne(sym);
+    const CONCURRENCY = 8;
+    for (let i = 0; i < mexcSymbols.length; i += CONCURRENCY) {
+      const batch = mexcSymbols.slice(i, i + CONCURRENCY);
+      await Promise.allSettled(batch.map(fetchOne));
     }
 
     // Build dual-key cache: both 'BTCUSDT' and 'BTC' point to the same price
@@ -234,6 +252,11 @@ export async function GET(request: NextRequest) {
       mainDecisionsEvaluated,
       livePositionsUpdated,
       pricesFetched: Object.keys(priceCache).length,
+      // Observability — helps diagnose "why is pending stuck?" fast
+      pendingTotal: pending.length,
+      pendingEligible: eligibleDecisions.length,
+      minAgeMin,
+      mode: isPaper ? 'PAPER' : 'LIVE',
       forgeProgress: forgeStats.progressPercent,
       timestamp: new Date().toISOString(),
     });
