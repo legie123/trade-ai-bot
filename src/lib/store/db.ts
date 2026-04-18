@@ -205,6 +205,17 @@ export async function initDB() {
 
     log.info('Supabase database initialized from cloud Postgres tables');
 
+    // FIX: gladiatorStore singleton seeds defaults on import (before initDB runs).
+    // Force-reload from now-populated cache so isLive/status match Supabase.
+    try {
+      const { gladiatorStore } = await import('@/lib/store/gladiatorStore');
+      gladiatorStore.reloadFromDb();
+      const liveCount = cache.gladiators.filter(g => g.isLive === true).length;
+      log.info(`[initDB] Gladiators reloaded from Supabase: ${cache.gladiators.length} total, ${liveCount} live`);
+    } catch (err) {
+      log.warn('[initDB] Failed to reload gladiatorStore', { error: String(err) });
+    }
+
     dbInitialized = true;
   } catch (err) {
     log.error('Supabase init execution error', { error: String(err) });

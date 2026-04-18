@@ -87,6 +87,18 @@ class GladiatorStore {
     saveGladiatorsToDb(this.gladiators);
   }
 
+  /**
+   * Force-reload gladiators from db.ts cache (call after initDB completes).
+   * Fixes race condition: gladiatorStore singleton seeds defaults on import,
+   * before initDB loads real data from Supabase json_store.
+   */
+  public reloadFromDb(): void {
+    const fromDb = getGladiatorsFromDb();
+    if (fromDb && fromDb.length > 0) {
+      this.gladiators = fromDb;
+    }
+  }
+
   public getGladiators(): Gladiator[] {
     this.ensureLoaded();
     return this.gladiators;
