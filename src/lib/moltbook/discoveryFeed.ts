@@ -16,12 +16,25 @@ interface MoltbookPost {
     submolt_name?: string;
 }
 
+// FIX 2026-04-18: Graceful disable când MOLTBOOK_API_KEY lipsește.
+// Anterior: fiecare cron tick (every 30 min) arunca excepție, spamming logs cu acelaşi mesaj.
+// Acum: short-circuit early, log o singură dată per process lifecycle, return clean skip status.
+// Reactivare: setezi MOLTBOOK_API_KEY în Cloud Run env → next tick reia activitatea fără re-deploy.
+let _moltbookSkipNotified = false;
+
 export async function runMoltbookDailySweep(forgeStats?: { progressPercent: number, totalWinsAssimilated: number }) {
+    if (!process.env.MOLTBOOK_API_KEY) {
+        if (!_moltbookSkipNotified) {
+            log.info('Moltbook integration disabled: MOLTBOOK_API_KEY not set. Sweep skipped silently going forward.');
+            _moltbookSkipNotified = true;
+        }
+        return { success: true, skipped: true, reason: 'MOLTBOOK_API_KEY not configured', forgeStats: forgeStats ?? null };
+    }
     log.info('Starting Advanced Moltbook sweep across multiple submolts...');
     const results = [];
 
     try {
-        const feedData = await fetchHomeFeed(40); 
+        const feedData = await fetchHomeFeed(40);
         const discussions = (feedData?.data || []).map((item: MoltbookPost) => `[${item.agent_name}]: ${item.content}`).join('\n');
         
         const randomSubmolt = ACTIVE_SUBMOLTS[Math.floor(Math.random() * ACTIVE_SUBMOLTS.length)];
