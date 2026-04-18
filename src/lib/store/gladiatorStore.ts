@@ -1,6 +1,6 @@
 import { INITIAL_STRATEGIES } from './seedStrategies';
 import { Gladiator, ArenaType } from '../types/gladiator';
-import { getGladiatorsFromDb, saveGladiatorsToDb } from '@/lib/store/db';
+import { getGladiatorsFromDb, saveGladiatorsToDb, getIndependentSampleSize, getGladiatorBattles } from '@/lib/store/db';
 import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
 import type { WalkForwardResult } from '@/lib/v2/validation/walkForwardEngine';
 import { DNAExtractor } from '@/lib/v2/superai/dnaExtractor';
@@ -66,6 +66,12 @@ class GladiatorStore {
   private lastRecalibrateTime: number = 0;
   /** Walk-forward validation cache: gladiatorId → result. Updated by runWalkForwardGate(). */
   private wfCache = new Map<string, WalkForwardResult>();
+  /**
+   * FAZA 3/5 BATCH 2/4 — Independent sample size cache: gladiatorId → count of unique
+   * (minute_bucket, symbol, direction) decisions. Populated by refreshIndependentSampleSizes().
+   * Used in QW-8 promotion gate instead of raw stats.totalTrades (which is wash-contaminated).
+   */
+  private indepSampleCache = new Map<string, number>();
 
   private constructor() {}
 
@@ -320,6 +326,146 @@ class GladiatorStore {
   }
 
   /**
+   * SUB-FAZA D' (2026-04-19) — Stats reconciliation from gladiator_battles ground truth.
+   *
+   * CONTEXT: stats-drift diagnostic confirmed 13/15 gladiators CRITICAL drift
+   * (store.total_tt=336 vs battles.total_tt=8846 — 97% loss). Root cause:
+   * updateGladiatorStats persists via saveGladiatorsToDb(this.gladiators) — full
+   * array rewrite on EVERY increment. Cloud Run multi-instance race: last-write-wins
+   * drops concurrent increments. Rate loss observed ~93% ≈ N instances competing.
+   *
+   * FIX STRATEGY: not patching the increment path (invasive, touches every write
+   * site). Instead, treat gladiator_battles as ledger-of-record. This function
+   * RECOMPUTES stats from battles, persists ONCE at end. Idempotent & convergent.
+   *
+   * WHY idempotent: aggregate(battles) is deterministic. If a concurrent
+   * updateGladiatorStats tick happens mid-reconciliation, the tick's +1 is
+   * captured by the NEXT reconciliation (and the phantom write to battles still
+   * lands). No ticks are permanently lost because battles are the source of truth.
+   *
+   * WHY safe for Butcher: after reconciliation, stats reflect real WR/PF/DD.
+   * Butcher judging becomes sound, not stats-starved.
+   *
+   * ASSUMPȚII CRITICE:
+   *  - gladiator_battles is append-only (never mutated) → replaying is deterministic
+   *  - `pnlPercent` on battle rows reflects the execution-convention clamped value
+   *    (simulator.ts writes `finalPnl` clamped TP/SL; shadow writes `execPnlPercent`
+   *    clamped). If those conventions diverge, equity curve replay is contaminated.
+   *  - limit=10000 per gladiator sufficient for current volume (~1k battles each
+   *    over ~20 days). Needs revisit if battles growth accelerates.
+   *
+   * CONSEQUENCE: isOmega skipped — Omega stats tracked separately in OmegaEngine,
+   * reconciling here would corrupt that.
+   */
+  public async reconcileStatsFromBattles(): Promise<{
+    reconciled: number;
+    skipped: number;
+    details: Array<{
+      id: string;
+      before: { totalTrades: number; winRate: number; profitFactor: number };
+      after: { totalTrades: number; winRate: number; profitFactor: number };
+    }>;
+  }> {
+    this.ensureLoaded();
+    const details: Array<{
+      id: string;
+      before: { totalTrades: number; winRate: number; profitFactor: number };
+      after: { totalTrades: number; winRate: number; profitFactor: number };
+    }> = [];
+    let skipped = 0;
+
+    for (const g of this.gladiators) {
+      if (g.isOmega) { skipped++; continue; }
+
+      const battles = await getGladiatorBattles(g.id, 10000);
+      if (!battles || battles.length === 0) { skipped++; continue; }
+
+      // Replay chronologically ascending — equity curve requires temporal order.
+      // getGladiatorBattles returns desc (newest first); we reverse.
+      const rows = [...battles].sort((a, b) => {
+        const ta = Number((a as Record<string, unknown>).timestamp) || 0;
+        const tb = Number((b as Record<string, unknown>).timestamp) || 0;
+        return ta - tb;
+      });
+
+      let wins = 0;
+      let totalWinPnl = 0;
+      let totalLossPnl = 0;
+      let peakEq = 100;
+      let curEq = 100;
+      let maxDd = 0;
+
+      for (const r of rows as Record<string, unknown>[]) {
+        const isWin = r.isWin === true;
+        const pnl = Number(r.pnlPercent ?? 0);
+        if (isWin) {
+          wins += 1;
+          totalWinPnl += Math.abs(pnl);
+        } else {
+          totalLossPnl += Math.abs(pnl);
+        }
+        curEq *= (1 + pnl / 100);
+        if (curEq > peakEq) peakEq = curEq;
+        const dd = peakEq > 0 ? ((peakEq - curEq) / peakEq) * 100 : 0;
+        if (dd > maxDd) maxDd = dd;
+      }
+
+      const n = rows.length;
+      const before = {
+        totalTrades: g.stats.totalTrades,
+        winRate: parseFloat((g.stats.winRate || 0).toFixed(2)),
+        profitFactor: parseFloat((g.stats.profitFactor || 0).toFixed(2)),
+      };
+
+      g.stats.totalTrades = n;
+      g.stats.winRate = n > 0 ? (wins / n) * 100 : 0;
+
+      // QW-10 guards preserved: MIN_LOSS_FLOOR=0.5 and PF_CAP=10.0
+      const MIN_LOSS_FLOOR = 0.5;
+      const PF_CAP = 10.0;
+      if (totalLossPnl >= MIN_LOSS_FLOOR) {
+        const rawPF = totalWinPnl / totalLossPnl;
+        g.stats.profitFactor = parseFloat(Math.min(rawPF, PF_CAP).toFixed(2));
+      } else {
+        g.stats.profitFactor = 1.0;
+      }
+      g.stats.maxDrawdown = parseFloat(maxDd.toFixed(2));
+
+      // Sync extension fields so subsequent incremental updateGladiatorStats calls
+      // continue from the reconciled equity curve, not from zero.
+      const ext = g as Gladiator & {
+        _totalWinPnl?: number;
+        _totalLossPnl?: number;
+        _peakEquity?: number;
+        _currentEquity?: number;
+      };
+      ext._totalWinPnl = totalWinPnl;
+      ext._totalLossPnl = totalLossPnl;
+      ext._peakEquity = peakEq;
+      ext._currentEquity = curEq;
+
+      g.lastUpdated = Date.now();
+      details.push({
+        id: g.id,
+        before,
+        after: {
+          totalTrades: n,
+          winRate: parseFloat(g.stats.winRate.toFixed(2)),
+          profitFactor: g.stats.profitFactor,
+        },
+      });
+    }
+
+    // Single persist at end (NOT per-gladiator) — reduces race window.
+    // Note: still subject to last-write-wins across instances, but convergent:
+    // next reconciliation call re-derives from battles ground truth.
+    saveGladiatorsToDb(this.gladiators);
+    this.recalibrateRanks();
+    storeLog.info(`[reconcileStatsFromBattles] ${details.length} gladiators reconciled, ${skipped} skipped (Omega or empty)`);
+    return { reconciled: details.length, skipped, details };
+  }
+
+  /**
    * AUTO-PROMOTE / DEMOTE ENGINE
    * Re-ranks gladiators per arena by performance score.
    * Only the Top 3 per arena get isLive = true (real capital access).
@@ -364,14 +510,23 @@ class GladiatorStore {
       // Assign ranks and live status
       // INSTITUTIONAL RULE (QW-8 tightening, 2026-04-18):
       //   tt>=50, WR>=58%, PF>=1.3, WF fail-closed.
+      // FAZA 3/5 BATCH 2/4 (2026-04-19): `tt` now = INDEPENDENT SAMPLE SIZE, not raw totalTrades.
+      //   Raw totalTrades is wash-contaminated (1 signal × N gladiators = N rows, 1 real sample).
+      //   indepSampleCache populated by refreshIndependentSampleSizes(). Fail-closed if cache
+      //   empty → treat as 0 samples → no LIVE promotion until refresh runs.
       // Rationale: sub TP/SL simetric ±0.5%, gate anterior (20/45/1.1) lăsa ~41% false-positives
       // pe strategii pur-noise (Binomial math: p(WR>=55%|n=20,p=0.5)=0.412). Pragurile 58/1.3 + n=50
       // reduc false-positives sub ~10%. WF fail-closed (require explicit pass) elimină gap-ul
       // 20-29 trades unde wfCache era gol și trecea prin !wfResult.
-      // Asumpție critică: TP/SL simetric ±0.5% (QW-7). Dacă se schimbă → recalibrează pragurile.
+      // Asumpție critică: TP/SL asimetric TP=+1.0 / SL=-0.5 (QW-11). Dacă se schimbă → recalibrează.
       scored.forEach((entry, index) => {
         entry.gladiator.rank = index + 1;
-        const meetsThreshold = entry.gladiator.stats.totalTrades >= 50
+        // BATCH 2/4: use indepSampleCache if populated, else fall back to totalTrades minus 1
+        // (fail-closed: if never refreshed, indep defaults to 0 → no promotion).
+        const indepTT = this.indepSampleCache.has(entry.gladiator.id)
+          ? (this.indepSampleCache.get(entry.gladiator.id) ?? 0)
+          : 0;
+        const meetsThreshold = indepTT >= 50
           && entry.gladiator.stats.winRate >= 58
           && entry.gladiator.stats.profitFactor >= 1.3;
         // Walk-Forward gate: fail-closed — require explicit WF pass, not absence.
@@ -401,6 +556,34 @@ class GladiatorStore {
         // Fail-open: if WF errors, don't block the gladiator
       }
     }
+  }
+
+  /**
+   * FAZA 3/5 BATCH 2/4 — Refresh independent sample size cache for all non-Omega gladiators.
+   * Call from cron/auto-promote tick (hourly, not every 5min — DB read cost).
+   *
+   * ASUMPȚIE: indepSampleCache e single-writer (only this function). Dacă e accesat concurent
+   * din mai multe requests, ultimul scris câștigă — acceptabil (counts nu descresc brusc).
+   *
+   * Fail-closed: dacă funcția aruncă pre-populare, cache rămâne gol → gate QW-8 vede 0 samples
+   * → nu promovează. SIGURANȚĂ by default.
+   */
+  public async refreshIndependentSampleSizes(): Promise<void> {
+    this.ensureLoaded();
+    const candidates = this.gladiators.filter(g => !g.isOmega);
+    for (const g of candidates) {
+      try {
+        const count = await getIndependentSampleSize(g.id);
+        this.indepSampleCache.set(g.id, count);
+      } catch {
+        // Fail-closed: do NOT populate cache on error → gate sees 0 → no promotion
+      }
+    }
+  }
+
+  /** Diagnostic accessor: current indep sample size for a gladiator (0 if cache miss). */
+  public getIndependentSampleCount(gladiatorId: string): number {
+    return this.indepSampleCache.get(gladiatorId) ?? 0;
   }
 
   /** Get walk-forward result for a specific gladiator (from cache). */

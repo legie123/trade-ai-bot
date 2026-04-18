@@ -12,7 +12,7 @@
 // ASSUMPTION: battle rows expose { isWin: boolean, decision: string, pnl_percent: number }.
 // If the schema rename (isWin -> is_win) happens, adapter below handles both.
 
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { getGladiatorBattles } from '@/lib/store/db';
 
@@ -147,6 +147,61 @@ export async function GET() {
   } catch (err) {
     return NextResponse.json(
       { error: 'stats-drift analysis failed', detail: (err as Error).message },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/diagnostics/stats-drift
+ * AUTH: requires Authorization: Bearer ${CRON_SECRET}
+ * ACTION: calls gladiatorStore.reconcileStatsFromBattles() — recomputes stats
+ * from gladiator_battles ground truth. Idempotent. Safe to call repeatedly.
+ *
+ * KILL-SWITCH: env STATS_RECONCILE_OFF=1 disables the action (returns 403).
+ *
+ * VALIDATION: compare before/after via a subsequent GET to this endpoint.
+ * Expected: CRITICAL count drops toward 0; store.total_tt ≈ battles.total_tt
+ * for non-Omega gladiators.
+ */
+export async function POST(req: NextRequest) {
+  // Kill-switch
+  if (process.env.STATS_RECONCILE_OFF === '1') {
+    return NextResponse.json(
+      { error: 'reconciliation disabled by STATS_RECONCILE_OFF' },
+      { status: 403 }
+    );
+  }
+
+  // Auth: CRON_SECRET required (same pattern as /api/cron)
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    return NextResponse.json(
+      { error: 'CRON_SECRET not configured' },
+      { status: 500 }
+    );
+  }
+  const auth =
+    req.headers.get('authorization') ||
+    req.headers.get('x-cron-secret') ||
+    req.nextUrl.searchParams.get('secret');
+  if (auth !== cronSecret && auth !== `Bearer ${cronSecret}`) {
+    return NextResponse.json(
+      { error: 'Unauthorized. Set Authorization: Bearer <CRON_SECRET>.' },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const result = await gladiatorStore.reconcileStatsFromBattles();
+    return NextResponse.json({
+      timestamp: new Date().toISOString(),
+      action: 'reconcile-stats-from-battles',
+      ...result,
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'reconciliation failed', detail: (err as Error).message },
       { status: 500 }
     );
   }
