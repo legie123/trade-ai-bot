@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# graphify-safe — secret pre-flight + subpath-enforced wrapper around graphify CLI.
+# Usage:
+#   graphify-safe <subpath> [graphify args...]
+#   graphify-safe --check                 # validate current project integration
+#   graphify-safe --force-root <args>     # EXPLICIT opt-in to scan repo root (dangerous)
+#
+# Exit codes: 0 ok · 2 secrets found · 3 missing config · 4 graphify not installed
+
+set -euo pipefail
+
+RED=$'\033[0;31m'; YLW=$'\033[0;33m'; GRN=$'\033[0;32m'; NC=$'\033[0m'
+log()  { printf "%s[graphify-safe]%s %s\n" "$GRN" "$NC" "$*"; }
+warn() { printf "%s[graphify-safe]%s %s\n" "$YLW" "$NC" "$*" >&2; }
+die()  { printf "%s[graphify-safe ABORT]%s %s\n" "$RED" "$NC" "$*" >&2; exit "${2:-1}"; }
+
+# ── 0. Tool present? ─────────────────────────────────────────────
+command -v graphify >/dev/null 2>&1 || die "graphify CLI not found. Install: pipx install graphifyy==0.4.23 && graphify install" 4
+
+# ── 1. Args ──────────────────────────────────────────────────────
+MODE="run"
+FORCE_ROOT=0
+case "${1:-}" in
+  --check)       MODE="check"; shift ;;
+  --force-root)  FORCE_ROOT=1; shift ;;
+  "")            die "Usage: graphify-safe <subpath> [args...]   |   graphify-safe --check" ;;
+esac
+
+# ── 2. Must be in a git-tracked dir (prevents accidents) ─────────
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[[ -n "$REPO_ROOT" ]] || die "Not inside a git repo. Graphify must run in a versioned project." 3
+
+# ── 3. .graphifyignore present? ──────────────────────────────────
+IGNORE_FILE="$REPO_ROOT/.graphifyignore"
+if [[ ! -f "$IGNORE_FILE" ]]; then
+  die ".graphifyignore missing in $REPO_ROOT
+  Bootstrap with: graphify-new-project.sh" 3
+fi
+
+# ── 4. Check mode: validate integration ──────────────────────────
+if [[ "$MODE" == "check" ]]; then
+  log "Checking integration in $REPO_ROOT"
+  local_ok=1
+  [[ -f "$REPO_ROOT/.graphifyignore" ]]   || { warn "missing .graphifyignore"; local_ok=0; }
+  grep -q "graphify-out" "$REPO_ROOT/.gitignore" 2>/dev/null || { warn "graphify-out/ not in .gitignore"; local_ok=0; }
+  grep -q "GRAPHIFY_PROJECT_BEGIN" "$REPO_ROOT/CLAUDE.md" 2>/dev/null || { warn "CLAUDE.md missing graphify section"; local_ok=0; }
+  [[ -d "$REPO_ROOT/graphify-out" ]] && warn "graphify-out/ exists (regenerable, not committed)"
+  if [[ $local_ok -eq 1 ]]; then log "OK — integration complete"; exit 0
+  else die "integration incomplete — run graphify-new-project.sh" 3; fi
+fi
+
+# ── 5. Resolve target path ───────────────────────────────────────
+TARGET="${1:-}"
+[[ -n "$TARGET" ]] || die "Usage: graphify-safe <subpath> [args...]"
+shift || true
+
+# Reject repo root unless --force-root
+TARGET_ABS="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)/$(basename "$TARGET")" 2>/dev/null || TARGET_ABS="$TARGET"
+if [[ "$FORCE_ROOT" -eq 0 ]]; then
+  if [[ "$TARGET" == "." || "$TARGET" == "./" || "$TARGET_ABS" == "$REPO_ROOT" ]]; then
+    die "Refusing to scan repo root. Use a subpath (./src, ./v2, ./lib) or pass --force-root explicitly." 2
+  fi
+fi
+
+# ── 6. Secret pre-flight inside TARGET ──────────────────────────
+log "Secret pre-flight scan on: $TARGET"
+
+# Patterns to flag (high-confidence: API keys, private key blocks, common env vars)
+# NOTE: grep runs only inside TARGET, not repo root, so .env in root is not scanned here.
+SECRET_PATTERNS=(
+  'AKIA[0-9A-Z]{16}'                                # AWS Access Key
+  'ASIA[0-9A-Z]{16}'                                # AWS Session token
+  'ghp_[0-9A-Za-z]{36,}'                            # GitHub PAT
+  'github_pat_[0-9A-Za-z_]{22,}'                    # GitHub fine-grained PAT
+  'sk-ant-[A-Za-z0-9_-]{20,}'                       # Anthropic API key
+  'sk-[A-Za-z0-9]{32,}'                             # OpenAI/generic
+  'xox[baprs]-[A-Za-z0-9-]{10,}'                    # Slack
+  '-----BEGIN (RSA |OPENSSH |EC |DSA |PGP )?PRIVATE KEY-----'
+  'MEXC_API_(KEY|SECRET)\s*=\s*[A-Za-z0-9]{16,}'
+  'SUPABASE_SERVICE_ROLE_KEY\s*=\s*eyJ'
+  'TELEGRAM_BOT_TOKEN\s*=\s*[0-9]+:[A-Za-z0-9_-]{30,}'
+)
+
+# Build one grep-E pattern
+JOINED="$(IFS='|'; echo "${SECRET_PATTERNS[*]}")"
+
+HITS="$(grep -rEl "$JOINED" "$TARGET" 2>/dev/null || true)"
+if [[ -n "$HITS" ]]; then
+  warn "Potential secrets detected in target scan path:"
+  echo "$HITS" | sed 's/^/  /' >&2
+  die "Aborting. Move secrets out of scan path OR run with GRAPHIFY_ACCEPT_SECRETS=1 (not recommended)." 2
+fi
+
+# Also ensure user isn't about to scan an ignored path explicitly
+while IFS= read -r pattern; do
+  [[ -z "$pattern" || "$pattern" == \#* ]] && continue
+  if [[ "$TARGET" == *"$pattern"* ]]; then
+    die "Target '$TARGET' matches ignore pattern '$pattern'. Refused." 2
+  fi
+done < "$IGNORE_FILE"
+
+# In v0.4.23 the directory-build subcommand is `update`. `watch` is live-mode.
+# Detect explicit subcommand (e.g. user passed `--watch` or another verb), else default to `update`.
+SUB="update"
+NEW_ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --watch)        SUB="watch" ;;
+    --cluster-only) SUB="cluster-only" ;;
+    update|watch|cluster-only) SUB="$a" ;;
+    *) NEW_ARGS+=("$a") ;;
+  esac
+done
+
+log "Pre-flight clean. Invoking: graphify $SUB $TARGET ${NEW_ARGS[*]}"
+exec graphify "$SUB" "$TARGET" "${NEW_ARGS[@]}"

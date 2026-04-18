@@ -72,8 +72,7 @@ docs/gemini_analysis_v2.md
 
 # ═══ Dev Scratch ═══
 scripts/test-forge.ts
-.claude/*
-!.claude/agents/
+.claude/
 .env*
 
 # Claude autonomous deploy credentials (NEVER COMMIT)
@@ -95,3 +94,9 @@ SESSION_INJECT_*.md
 
 # ═══ Supabase Local Temp ═══
 supabase/.temp/
+
+# ═══ Graphify (knowledge graph artifacts — regenerable) ═══
+graphify-out/
+**/graphify-out/
+.graphify/
+**/.graphify/

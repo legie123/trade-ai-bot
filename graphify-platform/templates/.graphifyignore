@@ -1,0 +1,69 @@
+# .graphifyignore — read by graphify-safe wrapper (NOT by graphify itself in v0.4.23)
+# Purpose: tell wrapper which paths must NEVER be scanned.
+# Syntax: gitignore-like glob patterns. One per line. # for comments.
+
+# ═══ Secrets / credentials — BLOCK ═══
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+.claude-creds
+.gcp-*.json
+**/service-account*.json
+credentials/
+secrets/
+*.secret
+*_secret
+*_secret.*
+
+# ═══ VCS / tooling ═══
+.git/
+.gitnexus/
+.graphify/
+graphify-out/
+.swarm/
+.monitoring/
+.obsidian/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ═══ Build artifacts ═══
+node_modules/
+.next/
+.nuxt/
+dist/
+build/
+out/
+target/
+coverage/
+.pytest_cache/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.yarn/
+
+# ═══ Logs & runtime ═══
+*.log
+logs/
+*.sqlite
+*.db
+tmp/
+.tmp/
+.cache/
+.npm-cache/
+
+# ═══ Large binary / data ═══
+data/backups/
+*.bak
+*.tar.gz
+*.zip
+*.mp4
+*.mov
+*.iso
