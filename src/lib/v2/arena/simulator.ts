@@ -4,7 +4,7 @@ import { OmegaEngine } from '../superai/omegaEngine';
 import { createLogger } from '@/lib/core/logger';
 import { RoutedSignal } from '@/lib/router/signalRouter';
 import { addPhantomTrade, getPhantomTrades, removePhantomTrade, PhantomTrade } from '@/lib/store/db';
-import { getOrFetchPrice } from '@/lib/cache/priceCache';
+import { getOrFetchPrice, getCachedPrice as syncCachedPrice } from '@/lib/cache/priceCache';
 import type { Gladiator, GladiatorDNA } from '@/lib/types/gladiator';
 
 const log = createLogger('ArenaSimulator');
@@ -135,11 +135,29 @@ export class ArenaSimulator {
     // Historical trades NOT recalculated — old stats remain, new phantoms produce realistic PF.
     const WIN_THRESHOLD_TP = 1.0;   // Take Profit 1.0% — give winners room to run
     const LOSS_THRESHOLD_SL = -0.5; // Stop Loss -0.5% — cut losers fast
-    const MAX_HOLD_SEC = 1800;      // Maximum 30min — doubled from 15min to let asymmetric TP breathe
+    // F2 (2026-04-19) — Timescale alignment fix. Scouts emit signals with timeframe:'4h'
+    // (btcEngine.ts:439, solanaEngine.ts:327). Previous MAX_HOLD=1800s (30min) forced
+    // premature closures — 46% SL / 0% TP empirical on 2000-battle sample because 4h
+    // directional thesis couldn't play out in 30min. New 3600s (1h) = compromise between
+    // signal timeframe (4h) and learning velocity (need ≥60 samples per gladiator).
+    // ASUMPȚIE: 1h e suficient pentru TP=1% să se realizeze într-un regim cu volatilitate
+    // medie (BTC 1h ATR ~ 0.6-1.2% în 2026). Dacă volatilitatea cade sub 0.5% pe 1h,
+    // NEUTRAL_ZONE va crește proporțional și stats vor evolua lent.
+    const MAX_HOLD_SEC = 3600;      // Maximum 60min — aligned with 1h EMA trend filter in btcEngine.ts
 
     // Batch: get unique symbols and prefetch prices in parallel
     const uniqueSymbols = [...new Set(activePhantoms.map(t => t.symbol))];
     await Promise.all(uniqueSymbols.map(sym => getCachedPrice(sym)));
+
+    // FIX 2026-04-19: Build sync price map from cache after prefetch.
+    // Was: getCachedPrice(trade.symbol) per trade = 1386 async calls.
+    // Now: sync Map lookup = O(1) per trade, zero event loop yields.
+    const priceMap = new Map<string, number>();
+    for (const sym of uniqueSymbols) {
+      const normalized = sym.includes('USDT') ? sym : `${sym}USDT`;
+      const p = syncCachedPrice(normalized);
+      if (p && p > 0) priceMap.set(sym, p);
+    }
 
     // FIX 2026-04-18 (FAZA B.1) — bug #3: regime was always NULL in gladiator_battles.
     // Snapshot once per tick (OmegaEngine.getRegime is sync; `hasLiveRegime` tells us
@@ -154,7 +172,8 @@ export class ArenaSimulator {
     let totalClosed = 0;
 
     for (const trade of activePhantoms) {
-      const currentPrice = await getCachedPrice(trade.symbol);
+      // FIX 2026-04-19: sync map lookup (was: await getCachedPrice per trade)
+      const currentPrice = priceMap.get(trade.symbol) ?? 0;
       if (currentPrice <= 0) continue; // Can't evaluate without a real price
 
       const elapsedSec = (now - new Date(trade.timestamp).getTime()) / 1000;
@@ -192,18 +211,18 @@ export class ArenaSimulator {
       let exitSource: 'HIT_TAKE_PROFIT' | 'HIT_STOP_LOSS' | 'TIME_EXPIRATION';
 
       if (hitTP) {
-        const tpMove = WIN_THRESHOLD_TP / 100; // 0.01 (1%)
+        const tpMove = WIN_THRESHOLD_TP / 100; // 0.005
         exitPrice = isLongSignal
           ? trade.entryPrice * (1 + tpMove)
           : trade.entryPrice * (1 - tpMove);
-        finalPnl = WIN_THRESHOLD_TP; // exactly +1.0% (TP)
+        finalPnl = WIN_THRESHOLD_TP; // exactly +0.5%
         exitSource = 'HIT_TAKE_PROFIT';
       } else if (hitSL) {
-        const slMove = Math.abs(LOSS_THRESHOLD_SL) / 100; // 0.005 (0.5%)
+        const slMove = Math.abs(LOSS_THRESHOLD_SL) / 100; // 0.005
         exitPrice = isLongSignal
           ? trade.entryPrice * (1 - slMove)
           : trade.entryPrice * (1 + slMove);
-        finalPnl = LOSS_THRESHOLD_SL; // exactly -0.5% (SL)
+        finalPnl = LOSS_THRESHOLD_SL; // exactly -0.5%
         exitSource = 'HIT_STOP_LOSS';
       } else {
         // TIME_EXPIRATION: use actual market price — legitimate mark-to-market at window close.
