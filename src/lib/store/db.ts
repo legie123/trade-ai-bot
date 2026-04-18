@@ -181,7 +181,16 @@ export async function initDB() {
     // --- NEW: Load from True Postgres Tables ---
     const { data: equityData, error: eqErr } = await supabase.from('equity_history').select('*').order('timestamp', { ascending: true }).limit(500);
     if (!eqErr && equityData) {
-      cache.equityHistory = equityData;
+      // Map Supabase schema (equity, pnl_total) → in-memory EquityPoint (balance, pnl)
+      cache.equityHistory = equityData.map((row: Record<string, unknown>) => ({
+        timestamp: String(row.timestamp || ''),
+        pnl: Number(row.pnl_total ?? row.pnl ?? 0),
+        balance: Number(row.equity ?? row.balance ?? 0),
+        outcome: String(row.outcome || 'WIN'),
+        signal: String(row.signal || 'SYSTEM'),
+        symbol: String(row.symbol || 'SYSTEM'),
+        mode: (row.mode as 'PAPER' | 'LIVE') || 'PAPER',
+      }));
     }
 
     const { data: auditsData, error: audErr } = await supabase.from('syndicate_audits').select('*').order('timestamp', { ascending: false }).limit(200);

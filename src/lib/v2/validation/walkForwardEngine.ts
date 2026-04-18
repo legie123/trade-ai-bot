@@ -27,14 +27,25 @@ const DISABLED = process.env.DISABLE_WALK_FORWARD === 'true';
 
 // ─── Configuration ──────────────────────────────────────────
 
-/** Minimum trades to run walk-forward (below this, not enough data) */
-const MIN_TRADES = 30;
+/** Minimum trades to run walk-forward (below this, not enough data)
+ *  FIX 2026-04-18 (C9): Raised from 30 → 100. With 30 trades across 5 folds
+ *  each fold sees ~6 trades (4 train + 2 test) — stats are pure noise.
+ *  Sample sizes below ~20/fold cannot distinguish edge from luck.
+ *  Bootstrap override: env WALK_FORWARD_MIN_TRADES (for testing only). */
+const MIN_TRADES = parseInt(process.env.WALK_FORWARD_MIN_TRADES || '100', 10);
 
 /** Default number of folds */
 const DEFAULT_FOLDS = 5;
 
 /** Train/test split ratio (70% train, 30% test per fold) */
 const TRAIN_RATIO = 0.7;
+
+/** Number of bootstrap iterations for significance testing (C9)
+ *  Higher = more precise p-value, lower = faster. 1000 is standard. */
+const BOOTSTRAP_ITERATIONS = 1000;
+
+/** p-value threshold below which a degradation is considered statistically significant */
+const P_VALUE_THRESHOLD = 0.05;
 
 /**
  * Degradation thresholds — if OOS metric drops by more than this
@@ -76,6 +87,10 @@ export interface FoldResult {
   };
   /** True if ANY metric degradation exceeds its threshold */
   overfitFlag: boolean;
+  /** C9: p-value for OOS mean return ≥ 0 via bootstrap. Null if not enough data. */
+  pValueOosPositive: number | null;
+  /** C9: True if OOS performance is statistically NOT better than random (null hypothesis) */
+  statisticallyFlat: boolean;
 }
 
 export interface WalkForwardResult {
@@ -108,7 +123,12 @@ function computeStats(trades: TradeRecord[]): FoldStats {
 
   const totalProfit = wins.reduce((s, t) => s + t.pnlPercent, 0);
   const totalLoss = Math.abs(losses.reduce((s, t) => s + t.pnlPercent, 0));
-  const profitFactor = totalLoss > 0 ? totalProfit / totalLoss : (totalProfit > 0 ? 99 : 1);
+  // FIX 2026-04-18 (C10c): profitFactor=99 was a magic cap. It implied "infinite edge"
+  // when really totalLoss=0 means "not enough losing trades to measure" — small sample
+  // artifact, not genuine perfection. Use NaN (propagates to degradation calc correctly
+  // via safeDivide) and a clean "Infinity" marker that the verdict layer can handle.
+  // Rationale: sub-threshold losing streaks on <30 trades routinely produce this state.
+  const profitFactor = totalLoss > 0 ? totalProfit / totalLoss : (totalProfit > 0 ? Number.POSITIVE_INFINITY : 0);
 
   const avgPnl = trades.reduce((s, t) => s + t.pnlPercent, 0) / trades.length;
 
@@ -131,9 +151,14 @@ function computeStats(trades: TradeRecord[]): FoldStats {
 
 function computeDegradation(is: FoldStats, oos: FoldStats) {
   // Relative degradation: (IS - OOS) / |IS|. Positive = OOS worse.
+  // FIX 2026-04-18 (C10c): guard against Infinity and NaN propagating from
+  // profitFactor edge cases (totalLoss=0). If either side is non-finite or
+  // magnitude explodes, we can't compute a meaningful ratio → return 0 (neutral).
   const safeDivide = (isVal: number, oosVal: number) => {
+    if (!Number.isFinite(isVal) || !Number.isFinite(oosVal)) return 0;
     if (Math.abs(isVal) < 0.0001) return 0; // Avoid division by near-zero
-    return (isVal - oosVal) / Math.abs(isVal);
+    const result = (isVal - oosVal) / Math.abs(isVal);
+    return Number.isFinite(result) ? result : 0;
   };
 
   return {
@@ -151,6 +176,37 @@ function isFoldOverfit(degradation: FoldResult['degradation']): boolean {
     degradation.sharpe > DEGRADATION_THRESHOLDS.sharpe ||
     degradation.avgPnl > DEGRADATION_THRESHOLDS.avgPnl
   );
+}
+
+/**
+ * C9: Bootstrap p-value for H0: OOS mean return ≤ 0 (no edge).
+ *
+ * Algorithm: resample trades with replacement N times, compute mean each iteration.
+ * p-value = fraction of bootstrap means ≤ 0.
+ * Returns null if < 20 trades (sample too small for meaningful bootstrap).
+ *
+ * ASUMPȚIE: trades are i.i.d. within the OOS window. If trades are temporally
+ * autocorrelated (regime persistence), this p-value is OPTIMISTIC — real
+ * significance is weaker than reported. Treat results as upper bound on edge.
+ */
+function bootstrapPValueOosPositive(oosTrades: TradeRecord[]): number | null {
+  if (oosTrades.length < 20) return null;
+
+  const n = oosTrades.length;
+  const returns = oosTrades.map(t => t.pnlPercent);
+  let belowZeroCount = 0;
+
+  for (let iter = 0; iter < BOOTSTRAP_ITERATIONS; iter++) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      // Sample with replacement
+      sum += returns[Math.floor(Math.random() * n)];
+    }
+    const mean = sum / n;
+    if (mean <= 0) belowZeroCount++;
+  }
+
+  return belowZeroCount / BOOTSTRAP_ITERATIONS;
 }
 
 // ─── Aggregate Stats (merge multiple windows) ───────────────
@@ -206,31 +262,50 @@ export class WalkForwardEngine {
       return this.emptyResult(gladiatorId, folds, trades.length, Date.now() - t0);
     }
 
-    // Split into rolling windows using expanding/sliding approach
-    // Each fold uses a contiguous block of trades:
-    //   fold_i train = trades[start..split], test = trades[split..end]
-    //   Windows overlap and slide forward
-    const foldSize = Math.floor(trades.length / folds);
+    // C9 FIX 2026-04-18: EXPANDING WINDOW walk-forward
+    // Old design was disjoint blocks: each fold saw only 1/foldsth of history.
+    // New design: train window GROWS with each fold, test window slides forward.
+    //   fold_0: train=[0..split0],            test=[split0..boundary1]
+    //   fold_1: train=[0..split1],            test=[split1..boundary2]  (split1 > split0)
+    //   ...
+    // This better mimics real-world deployment where each promotion decision
+    // uses ALL historical data up to that point, not an arbitrary slice.
+    //
+    // ASUMPȚIE: gladiatorul nu re-antrenează parametrii continuu. Dacă o face,
+    // expanding window subestimează overfit-ul pentru că amestecă generații.
     const foldResults: FoldResult[] = [];
     const allTrainTrades: TradeRecord[] = [];
     const allTestTrades: TradeRecord[] = [];
 
+    // Determine boundaries: fold_i tests on trades[boundary_i..boundary_{i+1}]
+    // boundary_0 = MIN_TRADES * TRAIN_RATIO (initial minimum train set)
+    const minInitialTrain = Math.max(Math.floor(MIN_TRADES * TRAIN_RATIO), 20);
+    if (trades.length <= minInitialTrain + 10) {
+      // Not enough to split — fall back to non-expanding single fold
+      return this.emptyResult(gladiatorId, folds, trades.length, Date.now() - t0);
+    }
+
+    const testRegionStart = minInitialTrain;
+    const testRegionSize = trades.length - testRegionStart;
+    const testFoldSize = Math.max(Math.floor(testRegionSize / folds), 3);
+
     for (let i = 0; i < folds; i++) {
-      const foldStart = i * foldSize;
-      const foldEnd = i === folds - 1 ? trades.length : (i + 1) * foldSize;
-      const foldTrades = trades.slice(foldStart, foldEnd);
+      const testStart = testRegionStart + i * testFoldSize;
+      const testEnd = i === folds - 1 ? trades.length : testStart + testFoldSize;
+      if (testStart >= trades.length) break;
 
-      if (foldTrades.length < 6) continue; // Need at least 6 trades for meaningful split
+      const trainTrades = trades.slice(0, testStart); // EXPANDING
+      const testTrades = trades.slice(testStart, testEnd);
 
-      const splitIdx = Math.floor(foldTrades.length * TRAIN_RATIO);
-      const trainTrades = foldTrades.slice(0, splitIdx);
-      const testTrades = foldTrades.slice(splitIdx);
-
-      if (trainTrades.length < 3 || testTrades.length < 3) continue;
+      if (trainTrades.length < minInitialTrain || testTrades.length < 3) continue;
 
       const trainStats = computeStats(trainTrades);
       const testStats = computeStats(testTrades);
       const degradation = computeDegradation(trainStats, testStats);
+
+      // C9: Bootstrap p-value on OOS — is the OOS edge statistically real?
+      const pValue = bootstrapPValueOosPositive(testTrades);
+      const statisticallyFlat = pValue !== null && pValue > P_VALUE_THRESHOLD;
 
       allTrainTrades.push(...trainTrades);
       allTestTrades.push(...testTrades);
@@ -241,6 +316,8 @@ export class WalkForwardEngine {
         testStats,
         degradation,
         overfitFlag: isFoldOverfit(degradation),
+        pValueOosPositive: pValue,
+        statisticallyFlat,
       });
     }
 
@@ -251,14 +328,19 @@ export class WalkForwardEngine {
     const overfitCount = foldResults.filter(f => f.overfitFlag).length;
     const overfitScore = parseFloat((overfitCount / foldResults.length).toFixed(3));
 
-    // Verdict thresholds:
-    //   CLEAN:   <= 20% of folds overfit
-    //   SUSPECT: 21-50% of folds overfit
-    //   OVERFIT: > 50% of folds overfit
+    // C9 ADD: combined score — penalize folds that are also statistically flat
+    // A "flat" fold (OOS mean not significantly > 0) contributes 0.5x weight to overfit
+    const flatCount = foldResults.filter(f => f.statisticallyFlat).length;
+    const flatScore = flatCount / foldResults.length;
+
+    // Verdict thresholds — now considers both degradation AND statistical significance:
+    //   CLEAN:   <=20% overfit AND <50% folds statistically flat
+    //   SUSPECT: 20-50% overfit OR 50-80% folds flat
+    //   OVERFIT: >50% overfit OR >80% folds flat (no edge even on OOS)
     const verdict: WalkForwardResult['verdict'] =
-      overfitScore <= 0.2 ? 'CLEAN' :
-      overfitScore <= 0.5 ? 'SUSPECT' :
-      'OVERFIT';
+      (overfitScore > 0.5 || flatScore > 0.8) ? 'OVERFIT' :
+      (overfitScore > 0.2 || flatScore > 0.5) ? 'SUSPECT' :
+      'CLEAN';
 
     const result: WalkForwardResult = {
       gladiatorId,

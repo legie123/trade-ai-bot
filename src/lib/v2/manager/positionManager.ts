@@ -8,13 +8,37 @@ import { DNAExtractor } from '../superai/dnaExtractor';
 import { isLiveTradingEnabled } from '@/lib/core/tradingMode';
 import { isKillSwitchEngaged } from '@/lib/core/killSwitch';
 import { experienceMemory } from '@/lib/v2/memory/experienceMemory';
+// AUDIT FIX C5 (2026-04-18): retrieve stored context at close time
+import { getPositionContext, clearPositionContext, computeSlippageBps } from '@/lib/v2/memory/positionContextStore';
 
 const log = createLogger('PositionManager');
 
-/** Safe PnL calculation — guards against division by zero on entryPrice */
-function calcPnlPercent(currentPrice: number, entryPrice: number, isLong: boolean): number {
+/**
+ * AUDIT FIX C10b (2026-04-18): REALISTIC PnL accounting.
+ * MEXC taker fee = 0.1% per side = 0.2% round-trip.
+ * Slippage on thin-book alts can add another 0.1-0.3% (estimated avg).
+ * Previous calc returned GROSS pnl — systematically overstated edge.
+ * Net PnL = gross - total round-trip cost (entry+exit fee + avg slippage).
+ *
+ * ASUMPȚIE: MEXC fee tier is standard taker (no VIP discount).
+ *   Override via env MEXC_TAKER_FEE_PCT (single side).
+ * ASUMPȚIE: "Slippage penalty" is a constant haircut. Actual slippage varies
+ *   per symbol/regime — tracked separately via positionContextStore for
+ *   post-hoc analysis. The constant here is a CONSERVATIVE estimate to avoid
+ *   promoting strategies whose edge exists only at zero-cost.
+ */
+const MEXC_TAKER_FEE_PCT = parseFloat(process.env.MEXC_TAKER_FEE_PCT || '0.1'); // 0.1% per side
+const ESTIMATED_SLIPPAGE_PCT = parseFloat(process.env.ESTIMATED_SLIPPAGE_PCT || '0.05'); // 0.05% per side
+
+/** Safe PnL calculation — guards against division by zero on entryPrice.
+ *  @param net if true, subtracts fees+estimated slippage (round-trip). */
+function calcPnlPercent(currentPrice: number, entryPrice: number, isLong: boolean, net: boolean = false): number {
   if (!entryPrice || entryPrice <= 0) return 0;
-  return ((currentPrice - entryPrice) / entryPrice) * 100 * (isLong ? 1 : -1);
+  const gross = ((currentPrice - entryPrice) / entryPrice) * 100 * (isLong ? 1 : -1);
+  if (!net) return gross;
+  // Round-trip cost: fee * 2 + slippage * 2
+  const roundTripCost = (MEXC_TAKER_FEE_PCT + ESTIMATED_SLIPPAGE_PCT) * 2;
+  return gross - roundTripCost;
 }
 
 /**
@@ -26,21 +50,39 @@ function recordExperience(pos: LivePosition, exitPrice: number, pnlPercent: numb
   try {
     const isWin = pnlPercent > 0;
     const direction = (pos.side === 'LONG' ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT';
+
+    // AUDIT FIX C5 (2026-04-18): Retrieve context captured at OPEN time
+    // by managerVizionar. If missing (e.g. Cloud Run restarted between open
+    // and close), we fall back to safe defaults but flag it in the log so
+    // ops can spot context-loss rate.
+    const ctx = getPositionContext(pos.id);
+    if (!ctx) {
+      // One warn per loss is enough — don't flood on phantom closes
+      log.warn(`[C5] No context for position ${pos.id} — experience recorded without RL features`);
+    }
+
+    const slippageBps = ctx
+      ? computeSlippageBps(ctx.signalPrice, pos.entryPrice, direction)
+      : null;
+
     experienceMemory.record({
       timestamp: Date.now(),
       symbol: pos.symbol,
       direction,
       outcome: isWin ? 'WIN' : 'LOSS',
-      pnlPercent,
-      regime: null,        // regime not available in positionManager context
-      indicators: {},      // indicators not stored on LivePosition
-      confidence: 0.5,     // confidence not stored on LivePosition
-      debateVerdict: null,
+      pnlPercent, // already net-of-fees at call site when C10b enabled
+      regime: ctx?.regime || null,
+      indicators: ctx?.indicators || {},
+      confidence: ctx?.confidence ?? 0.5,
+      debateVerdict: ctx?.debateVerdict || null,
       gladiatorId: pos.id.replace('pos_', ''),
-      slippageBps: null,
-      latencyMs: null,
+      slippageBps,
+      latencyMs: ctx?.latencyMs ?? null,
       mode: 'LIVE',
     });
+
+    // Free memory — context is consumed at close time
+    clearPositionContext(pos.id);
   } catch {
     // Non-blocking — experience memory recording must never affect exits
   }
@@ -150,7 +192,8 @@ export class PositionManager {
           });
 
           // DNA LEARNING: Log partial TP as a WIN to the RL loop
-          const pnl = calcPnlPercent(currentPrice, pos.entryPrice, isLong);
+          // C10b: use NET pnl (fees + estimated slippage deducted) — RL must learn on what we keep
+          const pnl = calcPnlPercent(currentPrice, pos.entryPrice, isLong, true);
           await DNAExtractor.getInstance().logBattle({
             id: `live_tp_${pos.id}`,
             gladiatorId: pos.id.replace('pos_', ''),
@@ -217,8 +260,8 @@ export class PositionManager {
                lowestPriceObserved
             });
 
-            // DNA LEARNING: Log trailing exit
-            const trailPnl = calcPnlPercent(currentPrice, pos.entryPrice, isLong);
+            // DNA LEARNING: Log trailing exit — C10b: NET pnl
+            const trailPnl = calcPnlPercent(currentPrice, pos.entryPrice, isLong, true);
             await DNAExtractor.getInstance().logBattle({
               id: `live_trail_${pos.id}`,
               gladiatorId: pos.id.replace('pos_', ''),
@@ -277,8 +320,8 @@ export class PositionManager {
                lowestPriceObserved
             });
 
-            // DNA LEARNING: Log stop loss as LOSS — critical for RL
-            const slPnl = calcPnlPercent(currentPrice, pos.entryPrice, isLong);
+            // DNA LEARNING: Log stop loss as LOSS — critical for RL. C10b: NET pnl
+            const slPnl = calcPnlPercent(currentPrice, pos.entryPrice, isLong, true);
             await DNAExtractor.getInstance().logBattle({
               id: `live_sl_${pos.id}`,
               gladiatorId: pos.id.replace('pos_', ''),

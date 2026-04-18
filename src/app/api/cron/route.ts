@@ -49,6 +49,44 @@ export async function GET(request: NextRequest) {
       log.info('Cron loop initialized — heartbeat + WS feeds started');
     }
 
+    // AUDIT FIX C6b (2026-04-18): Check WS health every tick. If any feed reports
+    // disconnected (ws dropped after init, zombie state, Cloud Run cold-start race,
+    // container cycle without module re-init), force a reconnect. Closes the
+    // "loopStarted=true forever but WS dead" failure mode observed live on 2026-04-18
+    // where activeStreams=20 but connected=false for hours.
+    // ASSUMPTION: connect() is idempotent (C6a guard cleans zombie refs before reconnect).
+    try {
+      const { WsStreamManager } = await import('@/lib/providers/wsStreams');
+      const mexcHealth = WsStreamManager.getInstance().getFeedHealth();
+      if (!mexcHealth.connected) {
+        log.warn(`[WS Health] MEXC disconnected — forcing reconnect. stale=${mexcHealth.stale}, lastMsgAgo=${mexcHealth.lastMessageAgoMs}`);
+        WsStreamManager.getInstance().connect();
+      }
+    } catch (err) { log.warn('WS health check (MEXC) failed', { error: String(err) }); }
+
+    try {
+      const { polyWsClient } = await import('@/lib/polymarket/polyWsClient');
+      // polyWsClient.connect() must be idempotent on its own side
+      polyWsClient.connect();
+    } catch (err) { log.warn('WS health check (Polymarket) failed', { error: String(err) }); }
+
+    // AUDIT FIX C1 (2026-04-18): Per-tick safety gate orchestration.
+    //   - ensureDailyReset: idempotent per-UTC-day reset of dailyLoss/exposure/velocity flags
+    //   - Tick-level daily-loss watchdog: even without a new trade opening, if today's
+    //     closed positions drag equity below the limit, engage kill switch.
+    // Fire-and-forget for the tick-level check — do NOT block the cron loop.
+    try {
+      const { ensureDailyReset, computeDailyLossPercent } = await import('@/lib/core/safetyGates');
+      const { checkDailyLossLimit } = await import('@/lib/core/killSwitch');
+      await ensureDailyReset();
+      const dailyLoss = computeDailyLossPercent();
+      if (dailyLoss > 0) {
+        const DAILY_LIMIT = parseFloat(process.env.KILL_SWITCH_DAILY_LOSS_PCT || '5');
+        // fire-and-forget — check handles its own state
+        checkDailyLossLimit(dailyLoss, DAILY_LIMIT).catch(() => { /* ignore */ });
+      }
+    } catch (err) { log.warn('Safety gate tick check failed', { error: String(err) }); }
+
     // Ping watchdog to keep it alive
     watchdogPing();
 
@@ -139,6 +177,12 @@ export async function GET(request: NextRequest) {
     // ASSUMPTION: dedicated IP 149.174.89.163 is whitelisted (see memory).
     //             If IP rate-limit triggers 429, reduce CONCURRENCY.
     const rawPriceCache: Record<string, number> = {};
+    // AUDIT FIX C2 (2026-04-18): Wire priceHistory → correlationGuard.
+    // Previously recordPrice() existed but was never called → priceHistory empty
+    // → correlation check always returned "no data, allow" → guard was decorative.
+    // ASSUMPTION: one tick ≈ one price sample. For 100-sample LOOKBACK_CLOSES this
+    // means ~100 ticks (~100 minutes at 1-tick/min cron) before correlation has signal.
+    const { recordPrice } = await import('@/lib/v2/safety/correlationGuard');
     const fetchOne = async (sym: string) => {
       try {
         const resp = await fetch(
@@ -148,7 +192,10 @@ export async function GET(request: NextRequest) {
         const d = await resp.json() as { symbol?: string; price?: string };
         if (d.price) {
           const p = parseFloat(d.price);
-          if (!isNaN(p) && p > 0) rawPriceCache[sym] = p;
+          if (!isNaN(p) && p > 0) {
+            rawPriceCache[sym] = p;
+            recordPrice(sym, p); // feed correlationGuard
+          }
         }
       } catch {
         // swallow — missing price means decision stays pending, not a failure
@@ -193,8 +240,13 @@ export async function GET(request: NextRequest) {
 
       // DNA LEARNING: Inject pure Shadow mode experience into RL engine
       // Only log if the decision source belongs to a shadow gladiator (V2 Shadow)
+      // AUDIT FIX C10d (2026-04-18): regex hardening
+      //   - Validate gladiator ID format (alphanumeric + _ + -) to avoid
+      //     capturing arbitrary text between parens (e.g. "V2 Shadow (test failed)").
+      //   - If a source string accidentally contains multiple parens, only the
+      //     first match is relevant. Regex is non-greedy → safe for first-capture.
       if (dec.source.includes('Shadow')) {
-        const gladiatorIdMatch = dec.source.match(/\((.*?)\)/);
+        const gladiatorIdMatch = dec.source.match(/\(([A-Za-z0-9_-]+)\)/);
         const elapsedMin = (Date.now() - new Date(dec.timestamp).getTime()) / 60000;
         if (gladiatorIdMatch && gladiatorIdMatch[1]) {
           try {

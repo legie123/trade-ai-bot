@@ -9,6 +9,10 @@ import { addDecision, addLivePosition, acquireTradeLock, releaseTradeLock, isPos
 import { postActivity } from '@/lib/moltbook/moltbookClient';
 import { createLogger } from '@/lib/core/logger';
 import { autoDebugEngine } from '@/lib/v2/safety/autoDebugEngine';
+// AUDIT FIX C1 (2026-04-18): Wire decorative killSwitch limits into execution path
+import { runPreTradeGates, onTradeExecuted } from '@/lib/core/safetyGates';
+// AUDIT FIX C5 (2026-04-18): Capture per-position context for RL learning
+import { storePositionContext, computeSlippageBps } from '@/lib/v2/memory/positionContextStore';
 
 const log = createLogger('ManagerVizionar');
 // Auto-initialize the debug engine
@@ -195,6 +199,22 @@ export class ManagerVizionar {
       return;
     }
 
+    // AUDIT FIX C1 (2026-04-18): PRE-TRADE SAFETY GATES
+    // Checks daily-loss limit, exposure limit, and kill-switch state BEFORE
+    // acquiring the trade lock or touching MEXC. If any gate blocks, we abort
+    // cleanly with no lock held and no API calls made.
+    // Asumpție: runPreTradeGates calls ensureDailyReset internally → safe per tick.
+    try {
+      const gate = await runPreTradeGates(/* newNotional */ null);
+      if (!gate.allowed) {
+        log.warn(`[SAFETY GATE BLOCK] ${payload.symbol}: ${gate.reason}`);
+        return;
+      }
+    } catch (err) {
+      log.error('[SAFETY GATE ERROR] pre-trade gate threw — treating as BLOCK', { error: String(err) });
+      return;
+    }
+
     // 1. STRICT DB VERIFICATION: check Postgres live_positions to prevent Double-Buy across instances
     const isAlreadyOpen = await isPositionOpenStrict(payload.symbol);
     if (isAlreadyOpen) {
@@ -242,18 +262,23 @@ export class ManagerVizionar {
     };
 
     // Execution on MEXC (Currently DRY RUN / Paper Trading per user request)
+    const signalPrice = payload.price; // captured BEFORE execution for slippage calc
+    const executionStartMs = Date.now();
     try {
       const side = consensus.finalDirection === 'LONG' ? 'BUY' : 'SELL';
       // Mapped to MEXC - ACTIVATED FOR LIVE CAPITAL
       const result = await executeMexcTrade(payload.symbol, side, undefined, false);
       if (result.executed) {
         log.info(`[EXECUTION SUCCESS] Trade placed on MEXC for ${payload.symbol} @ ${result.price}`);
-        
+        const latencyMs = Date.now() - executionStartMs;
+
         // Register LivePosition for Asymmetric Trailing TP/SL Engine
+        const positionId = `pos_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const positionSide = consensus.finalDirection === 'LONG' ? 'LONG' : 'SHORT';
         addLivePosition({
-          id: `pos_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          id: positionId,
           symbol: result.symbol,
-          side: consensus.finalDirection === 'LONG' ? 'LONG' : 'SHORT',
+          side: positionSide,
           entryPrice: result.price,
           quantity: result.quantity,
           partialTPHit: false,
@@ -264,8 +289,43 @@ export class ManagerVizionar {
           isPaperTrade: false,
         });
 
+        // AUDIT FIX C5 (2026-04-18): Capture context snapshot for RL learning
+        // when this position closes. Previously recordExperience() hardcoded all
+        // features to zero/null → experienceMemory was decorative.
+        //
+        // ASUMPȚIE: payload.alphaContext carries indicators from AlphaScout.
+        // If absent, we store empty indicators — not fatal, just reduces signal.
+        try {
+          const alpha = (payload as unknown as Record<string, unknown>).alphaContext as Record<string, unknown> | undefined;
+          storePositionContext(positionId, {
+            regime: (alpha?.regime as string | undefined) || null,
+            indicators: {
+              rsi: alpha?.rsi as number | undefined,
+              vwapDeviation: alpha?.vwapDeviation as number | undefined,
+              volumeZ: alpha?.volumeZ as number | undefined,
+              fundingRate: alpha?.fundingRate as number | undefined,
+              sentimentScore: alpha?.sentimentScore as number | undefined,
+            },
+            confidence: consensus.weightedConfidence,
+            debateVerdict: (consensus as unknown as Record<string, unknown>).debateVerdict as string | null || null,
+            signalPrice,
+            latencyMs,
+          });
+          // Slippage observable immediately — log for audit
+          const slippageBps = computeSlippageBps(signalPrice, result.price, positionSide);
+          log.info(`[C5] Position ${positionId} context stored. slippage=${slippageBps}bps, latency=${latencyMs}ms`);
+        } catch (e) {
+          log.warn('[C5] Failed to store position context — experience will degrade', { error: String(e) });
+        }
+
         // 🔗 [MOLTBOOK BROADCAST] Phoenix V2 Live Positioning
         this.broadcastTradeToMoltbook('ENTRY', result.symbol, consensus.finalDirection, result.price, consensus).catch((e) => log.warn('broadcastTradeToMoltbook failed', { error: String(e) }));
+
+        // AUDIT FIX C1 (2026-04-18): Post-trade velocity track. Feeds killSwitch's
+        // rapid-fire detector (max 8 trades in 15min, max 5% cumulative spend).
+        // Fire-and-forget — must NOT block the execution path.
+        const notional = (result.price || 0) * (result.quantity || 0);
+        onTradeExecuted(notional).catch(e => log.warn('onTradeExecuted failed', { error: String(e) }));
 
         log.info(`[POSITION MANAGER] LivePosition registered for ${result.symbol} — Trailing Engine armed.`);
       } else {

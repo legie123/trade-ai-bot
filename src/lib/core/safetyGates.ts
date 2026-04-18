@@ -1,0 +1,190 @@
+/**
+ * Safety Gates — C1 wiring layer (2026-04-18)
+ *
+ * ADDITIVE. Bridges killSwitch limit-checking functions (checkDailyLossLimit,
+ * checkExposureLimit, trackTradeVelocity, resetDailyTriggers) into the real
+ * execution path. Before this module existed the limits were DECORATIVE —
+ * defined but never invoked anywhere → kill switch auto-engagement impossible.
+ *
+ * Three entry points:
+ *   - runPreTradeGates()   — before opening LIVE position. Returns allow/deny.
+ *   - onTradeExecuted()    — after addLivePosition succeeds. Feeds velocity.
+ *   - ensureDailyReset()   — idempotent per-UTC-day reset of daily triggers.
+ *
+ * ASSUMPTIONS which, if broken, invalidate the guarantees:
+ *   - getLivePositions() returns all currently OPEN positions (not closed).
+ *   - equityHistory balance field is in the same currency as position.quantity*price.
+ *   - Initial account balance seeds from config.paperBalance or env.
+ *   - Trade "spendPercent" is computed as notional / accountBalance * 100.
+ *   - A single UTC-day boundary defines "day" for daily-loss aggregation.
+ *
+ * Kill-switch: DISABLE_SAFETY_GATES=true
+ */
+
+import { createLogger } from '@/lib/core/logger';
+import {
+  checkDailyLossLimit,
+  checkExposureLimit,
+  trackTradeVelocity,
+  resetDailyTriggers,
+  isKillSwitchEngaged,
+} from '@/lib/core/killSwitch';
+import { getLivePositions, getEquityCurve, getBotConfig } from '@/lib/store/db';
+
+const log = createLogger('SafetyGates');
+
+const DISABLED = process.env.DISABLE_SAFETY_GATES === 'true';
+
+// Defaults chosen conservatively. Override via env.
+const DAILY_LOSS_LIMIT_PCT = parseFloat(process.env.KILL_SWITCH_DAILY_LOSS_PCT || '5'); // 5%
+const MAX_EXPOSURE_PCT = parseFloat(process.env.KILL_SWITCH_MAX_EXPOSURE_PCT || '30'); // 30%
+
+// Track last UTC day we reset triggers to make ensureDailyReset idempotent.
+// Using module-local state (survives warm Cloud Run instance).
+let lastResetUtcDay: string | null = null;
+
+/**
+ * Compute today's LIVE loss % relative to start-of-day balance.
+ * Uses equityHistory. Returns 0 if no data or only gains.
+ * Positive return value = loss magnitude (e.g. 3.5 means -3.5% drawdown).
+ */
+export function computeDailyLossPercent(): number {
+  const curve = getEquityCurve('LIVE');
+  if (curve.length < 2) return 0;
+
+  const now = new Date();
+  const startOfDayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+  const sodMs = startOfDayUtc.getTime();
+
+  // Find the latest entry BEFORE start-of-day (the "opening balance")
+  // and the most recent entry overall (the "current balance").
+  let startBalance: number | null = null;
+  for (const p of curve) {
+    const ts = new Date(p.timestamp).getTime();
+    if (ts < sodMs) {
+      startBalance = p.balance;
+    } else {
+      break; // curve is chronological
+    }
+  }
+
+  // No pre-SOD snapshot → take earliest today-entry as baseline (first-tick-of-day fallback)
+  if (startBalance === null) {
+    startBalance = curve[0].balance;
+  }
+  const currentBalance = curve[curve.length - 1].balance;
+
+  if (!startBalance || startBalance <= 0) return 0;
+
+  const deltaPct = ((currentBalance - startBalance) / startBalance) * 100;
+  // Return positive loss magnitude; a positive deltaPct (gain) → 0 loss
+  return deltaPct < 0 ? -deltaPct : 0;
+}
+
+/**
+ * Sum of open LIVE position notional (quantity * entryPrice).
+ * Returns { totalExposure, accountBalance } for killSwitch.checkExposureLimit.
+ */
+export function computeExposure(): { totalExposure: number; accountBalance: number } {
+  const open = getLivePositions().filter(p => p.status === 'OPEN' && !p.isPaperTrade);
+  const totalExposure = open.reduce((sum, p) => {
+    const entry = p.entryPrice || 0;
+    const qty = p.quantity || 0;
+    return sum + Math.abs(qty * entry);
+  }, 0);
+
+  const cfg = getBotConfig();
+  // Use latest LIVE equity balance if available, else config paperBalance as fallback.
+  const curve = getEquityCurve('LIVE');
+  const accountBalance = curve.length > 0 ? curve[curve.length - 1].balance : (cfg.paperBalance || 1000);
+
+  return { totalExposure, accountBalance };
+}
+
+/**
+ * Pre-trade gate. Call BEFORE opening a live position.
+ *
+ * Order of checks is intentional — cheapest and most-critical first:
+ *   1. Kill switch already engaged → hard block (no exception)
+ *   2. Daily loss limit → engage kill switch if breached
+ *   3. Exposure limit → engage kill switch if breached
+ *
+ * @param newNotional - optional new trade notional (currency). If provided,
+ *   exposure check includes it. If null, checks only existing exposure.
+ * @returns { allowed, reason } — allowed=false → DO NOT OPEN the position.
+ */
+export async function runPreTradeGates(newNotional: number | null = null): Promise<{ allowed: boolean; reason?: string }> {
+  if (DISABLED) return { allowed: true };
+
+  // (0) Idempotent daily reset — must run before any daily-loss check, else
+  // a lingering flag from yesterday blocks all of today's trades.
+  await ensureDailyReset();
+
+  // (1) Hard block if kill switch engaged
+  if (isKillSwitchEngaged()) {
+    return { allowed: false, reason: 'Kill switch already engaged' };
+  }
+
+  // (2) Daily loss
+  const dailyLoss = computeDailyLossPercent();
+  if (dailyLoss > 0) {
+    const triggered = await checkDailyLossLimit(dailyLoss, DAILY_LOSS_LIMIT_PCT);
+    if (triggered) {
+      log.fatal(`[SafetyGate] Daily loss gate TRIGGERED kill switch: ${dailyLoss.toFixed(2)}%`);
+      return { allowed: false, reason: `Daily loss ${dailyLoss.toFixed(2)}% ≥ ${DAILY_LOSS_LIMIT_PCT}% limit` };
+    }
+  }
+
+  // (3) Exposure (includes the candidate trade if notional provided)
+  const { totalExposure, accountBalance } = computeExposure();
+  const projectedExposure = totalExposure + (newNotional || 0);
+  const triggeredExp = await checkExposureLimit(projectedExposure, accountBalance, MAX_EXPOSURE_PCT);
+  if (triggeredExp) {
+    log.fatal(`[SafetyGate] Exposure gate TRIGGERED kill switch: ${projectedExposure}/${accountBalance}`);
+    return { allowed: false, reason: `Exposure ${(projectedExposure / accountBalance * 100).toFixed(1)}% ≥ ${MAX_EXPOSURE_PCT}% limit` };
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Post-trade hook. Call AFTER addLivePosition succeeds for a LIVE trade.
+ * Feeds trackTradeVelocity (rapid-fire / spend-cluster detection).
+ *
+ * @param notional - trade notional in quote currency (entryPrice * quantity)
+ */
+export async function onTradeExecuted(notional: number): Promise<void> {
+  if (DISABLED) return;
+
+  const { accountBalance } = computeExposure();
+  if (!accountBalance || accountBalance <= 0) return;
+
+  const spendPercent = (notional / accountBalance) * 100;
+  const triggered = await trackTradeVelocity(spendPercent);
+  if (triggered) {
+    log.fatal(`[SafetyGate] Velocity gate TRIGGERED kill switch: spendPct=${spendPercent.toFixed(2)}%`);
+  }
+}
+
+/**
+ * Idempotent per-UTC-day reset. Safe to call every cron tick.
+ * Resets dailyLossTriggered/maxExposureTriggered/velocityTriggered flags
+ * at the UTC day boundary so yesterday's trigger doesn't block today.
+ */
+export async function ensureDailyReset(): Promise<void> {
+  if (DISABLED) return;
+
+  const now = new Date();
+  const today = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+
+  if (lastResetUtcDay === today) return; // already reset today
+
+  // First call of a new UTC day → reset
+  try {
+    await resetDailyTriggers();
+    lastResetUtcDay = today;
+    log.info(`[SafetyGate] Daily triggers reset for UTC day ${today}`);
+  } catch (err) {
+    log.warn('[SafetyGate] resetDailyTriggers failed', { error: (err as Error).message });
+  }
+}

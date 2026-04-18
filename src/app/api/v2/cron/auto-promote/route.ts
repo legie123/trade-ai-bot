@@ -9,6 +9,8 @@ import { MonteCarloEngine } from '@/lib/v2/superai/monteCarloEngine';
 import { sendMessage } from '@/lib/alerts/telegram';
 import { requireCronAuth } from '@/lib/core/cronAuth';
 import { emitPromotion } from '@/lib/v2/alerts/eventHub';
+// AUDIT FIX C3 (2026-04-18): Walk-forward validation gate
+import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,6 +147,48 @@ export async function GET(request: Request) {
               totalTrades: candidate.stats.totalTrades,
               ruinProbability: mc.ruinProbability,
             },
+          });
+          continue;
+        }
+
+        // AUDIT FIX C3 (2026-04-18): WALK-FORWARD GATE — detects overfitting
+        // by comparing in-sample vs out-of-sample performance across rolling
+        // windows. Must pass BEFORE promotion to LIVE capital.
+        //
+        // ASUMPȚIE: engineul are >= MIN_TRADES (100 post-C9) pentru rezultate
+        // robuste. Dacă insufficient data, emptyResult returnează verdict='CLEAN'
+        // — nu blocăm pe lack of data (bootstrap-friendly), doar pe OVERFIT explicit.
+        //
+        // Kill-switch: DISABLE_WALK_FORWARD=true (inherited from engine)
+        try {
+          const wfResult = await WalkForwardEngine.getInstance().validate(candidate.id);
+          if (wfResult.verdict === 'OVERFIT') {
+            results.push({
+              gladiatorId: candidate.id,
+              gladiatorName: candidate.name,
+              action: 'SKIPPED',
+              reason: `Walk-forward OVERFIT: ${(wfResult.overfitScore * 100).toFixed(0)}% of folds degraded (IS WR ${(wfResult.aggregateIS.winRate*100).toFixed(0)}% → OOS ${(wfResult.aggregateOOS.winRate*100).toFixed(0)}%)`,
+              stats: {
+                winRate: candidate.stats.winRate,
+                profitFactor: candidate.stats.profitFactor,
+                totalTrades: candidate.stats.totalTrades,
+                ruinProbability: mc.ruinProbability,
+              },
+            });
+            continue;
+          }
+          if (wfResult.verdict === 'SUSPECT') {
+            // Log but don't block — suspect is a warning not a veto
+            console.warn(`[AUTO-PROMOTE] ${candidate.name} walk-forward SUSPECT (overfit=${(wfResult.overfitScore * 100).toFixed(0)}%) — proceeding with caution`);
+          }
+        } catch (wfErr) {
+          // Walk-forward error → fail closed (block promotion): we cannot
+          // verify overfit, so we don't risk live capital.
+          results.push({
+            gladiatorId: candidate.id,
+            gladiatorName: candidate.name,
+            action: 'FAILED',
+            reason: `Walk-forward validation threw: ${(wfErr as Error).message}`,
           });
           continue;
         }
