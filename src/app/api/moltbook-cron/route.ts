@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runMoltbookDailySweep } from '@/lib/moltbook/discoveryFeed';
+import { runKarmaActive, getKarmaTelemetry } from '@/lib/moltbook/karmaBuilder';
 import { createLogger } from '@/lib/core/logger';
 import { getWatchdogState } from '@/lib/core/watchdog';
 import { extractWinningBehaviors } from '@/lib/v2/forge/dnaExtractor';
@@ -35,11 +36,22 @@ export async function GET(request: Request) {
       forgeStats = undefined;
     }
 
-    const sweepResult = await runMoltbookDailySweep(forgeStats);
-    
+    // Engine selection via env flag:
+    //   MOLTBOOK_ENGINE=karma (default) -> new karmaBuilder (safe, throttled, crypto/polymarket focus)
+    //   MOLTBOOK_ENGINE=legacy          -> old runMoltbookDailySweep (kept for rollback)
+    const engine = (process.env.MOLTBOOK_ENGINE || 'karma').toLowerCase();
+    let sweepResult: unknown;
+    if (engine === 'legacy') {
+      sweepResult = await runMoltbookDailySweep(forgeStats);
+    } else {
+      sweepResult = await runKarmaActive(forgeStats);
+    }
+
     return NextResponse.json({
         success: true,
+        engine,
         forge: forgeStats || { message: 'Forge stats unavailable' },
+        telemetry: getKarmaTelemetry(),
         data: sweepResult
     });
   } catch (err: unknown) {

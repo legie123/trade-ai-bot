@@ -93,3 +93,35 @@ export async function verifyPost(verification_code: string, answer: string) {
     body: JSON.stringify({ verification_code, answer })
   });
 }
+
+/**
+ * KARMA BUILDER v2 — Search endpoint wrapper.
+ * Returns posts matching query; filter applied server-side on content + title.
+ * NOTE: Moltbook's ?type=post filter is buggy (returns 0) — use default type.
+ */
+export interface MoltbookSearchResult {
+  id: string;
+  type: 'post' | 'comment' | 'agent' | 'submolt';
+  title: string | null;
+  content: string | null;
+  upvotes: number;
+  downvotes: number;
+  created_at: string;
+  author: { id: string; name: string } | null;
+  submolt: { id: string; name: string; display_name: string } | null;
+  post_id: string;
+}
+
+export async function searchPosts(query: string, limit = 10): Promise<MoltbookSearchResult[]> {
+  const encoded = encodeURIComponent(query);
+  const res = await fetchMoltbook(`/search?q=${encoded}&limit=${limit}`);
+  const results: MoltbookSearchResult[] = (res?.results || []).filter((r: MoltbookSearchResult) => r.type === 'post');
+  return results;
+}
+
+/**
+ * Fetch comments on a post (used to avoid replying twice to same thread).
+ */
+export async function fetchPostComments(postId: string, limit = 20) {
+  return fetchMoltbook(`/posts/${postId}/comments?sort=new&limit=${limit}`);
+}
