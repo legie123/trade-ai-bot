@@ -48,6 +48,13 @@ let _lastDecisionRemoteMerge = 0;
 let _lastGladiatorRemoteMerge = 0;
 const gladiatorMutex = new AsyncMutex();
 
+// FAZA A FIX 2026-04-19: Stats persistence race.
+// saveGladiatorsToDb launches fire-and-forget IIFE awaiting gladiatorMutex.
+// Before IIFE reaches syncToCloud(), flushPendingSyncs could see empty syncTasks,
+// drain instantly, return, and Cloud Run freezes the process → update lost.
+// Track pending saves so flushPendingSyncs can await them BEFORE draining.
+const pendingGladiatorSaves: Set<Promise<void>> = new Set();
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 // Upgrade: Prefer Service Role Key for backend operations to bypass RLS restrictions
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -291,6 +298,18 @@ export async function flushPendingSyncs(timeoutMs = 5000): Promise<{ flushed: nu
   const start = Date.now();
   let flushed = 0;
 
+  // FAZA A FIX 2026-04-19: Wait for in-flight saveGladiatorsToDb IIFEs FIRST.
+  // They're awaiting the mutex → haven't called syncToCloud yet → syncTasks empty.
+  // Without this wait, drain loop exits immediately and Cloud Run freezes before write lands.
+  // Budget: min(half timeout, 2500ms) so we still leave time for the drain loop below.
+  if (pendingGladiatorSaves.size > 0) {
+    const saveBudget = Math.min(Math.floor(timeoutMs / 2), 2500);
+    await Promise.race([
+      Promise.allSettled([...pendingGladiatorSaves]),
+      new Promise<void>(r => setTimeout(r, saveBudget)),
+    ]);
+  }
+
   // Wait for any in-flight sync to complete, then drain remaining
   while ((isSyncing || syncTasks.length > 0) && (Date.now() - start) < timeoutMs) {
     if (!isSyncing && syncTasks.length > 0) {
@@ -471,11 +490,13 @@ export async function refreshGladiatorsFromCloud(): Promise<void> {
 }
 
 
-export function saveGladiatorsToDb(gladiators: Gladiator[]): void {
+export function saveGladiatorsToDb(gladiators: Gladiator[]): Promise<void> {
   // AUDIT FIX T2.2: Mutex-protected read-merge-write to prevent gladiator data loss
   // PERF FIX 2026-04-18: Remote merge debounced to max once per 60s.
   // Was: full Supabase SELECT+merge on EVERY updateGladiatorStats → 50+ roundtrips/tick.
-  (async () => {
+  // FAZA A FIX 2026-04-19: Return Promise so flushPendingSyncs can await in-flight writes
+  // before draining syncTasks. Existing fire-and-forget callers unaffected (ignore Promise).
+  const p = (async () => {
     const release = await gladiatorMutex.acquire();
     try {
       const now = Date.now();
@@ -510,6 +531,10 @@ export function saveGladiatorsToDb(gladiators: Gladiator[]): void {
       release();
     }
   })();
+
+  pendingGladiatorSaves.add(p);
+  p.finally(() => pendingGladiatorSaves.delete(p)).catch(() => { /* tracked via add/delete */ });
+  return p;
 }
 
 // ─── DNA Bank (Gladiator Battles) ────────────────
