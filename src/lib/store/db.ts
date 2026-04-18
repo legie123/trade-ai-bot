@@ -42,6 +42,10 @@ class AsyncMutex {
 }
 
 const decisionMutex = new AsyncMutex();
+// PERF FIX: Debounce remote merge in addDecision/saveGladiatorsToDb.
+// Remote fetch was happening on EVERY insert (50+ Supabase roundtrips/tick).
+let _lastDecisionRemoteMerge = 0;
+let _lastGladiatorRemoteMerge = 0;
 const gladiatorMutex = new AsyncMutex();
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -338,11 +342,15 @@ export function addDecision(snapshot: DecisionSnapshot): void {
   cache.decisions.unshift(snapshot);
   if (cache.decisions.length > 1000) cache.decisions.length = 1000;
 
-  // Async: merge remote decisions + sync to Supabase (background, non-blocking)
+  // PERF FIX 2026-04-18: Remote merge debounced to max once per 60s.
+  // Was: full Supabase SELECT + merge on EVERY insert → 50+ roundtrips/tick.
+  // Now: local cache is authoritative within a tick, remote merge only when stale.
   (async () => {
     const release = await decisionMutex.acquire();
     try {
-      if (supabaseUrl && dbInitialized) {
+      const now = Date.now();
+      if (supabaseUrl && dbInitialized && now - _lastDecisionRemoteMerge > 60_000) {
+        _lastDecisionRemoteMerge = now;
         try {
           const { data } = await supabase.from('json_store').select('data').eq('id', 'decisions').single();
           if (data?.data) {
@@ -465,10 +473,14 @@ export async function refreshGladiatorsFromCloud(): Promise<void> {
 
 export function saveGladiatorsToDb(gladiators: Gladiator[]): void {
   // AUDIT FIX T2.2: Mutex-protected read-merge-write to prevent gladiator data loss
+  // PERF FIX 2026-04-18: Remote merge debounced to max once per 60s.
+  // Was: full Supabase SELECT+merge on EVERY updateGladiatorStats → 50+ roundtrips/tick.
   (async () => {
     const release = await gladiatorMutex.acquire();
     try {
-      if (supabaseUrl && dbInitialized) {
+      const now = Date.now();
+      if (supabaseUrl && dbInitialized && now - _lastGladiatorRemoteMerge > 60_000) {
+        _lastGladiatorRemoteMerge = now;
         try {
           const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiators').single();
           if (data?.data) {

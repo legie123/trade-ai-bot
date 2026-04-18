@@ -38,11 +38,14 @@ interface PostMetadata {
 }
 
 // Bot detection patterns
+// FIX 2026-04-18 AUDIT: Removed /g flag. RegExp.test() with /g is stateful
+// (remembers lastIndex between calls) → intermittent false negatives where
+// bot posts slip through on alternating calls. /i alone is sufficient.
 const BOT_PATTERNS = [
-  /congratulation|felicitat/gi,
-  /you.*won.*prize|ต่อนขว|เฟื่อ/gi,
-  /verify.*account|update.*information/gi,
-  /click.*here|urgent.*action.*required/gi,
+  /congratulation|felicitat/i,
+  /you.*won.*prize|ต่อนขว|เฟื่อ/i,
+  /verify.*account|update.*information/i,
+  /click.*here|urgent.*action.*required/i,
 ];
 
 const SHILL_PHRASES = [

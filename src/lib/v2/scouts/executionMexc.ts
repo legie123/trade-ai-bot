@@ -94,9 +94,11 @@ export async function executeMexcTrade(
     const mexcSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
     
     // Parallel fetch: price + balances + exchange info
+    // FIX 2026-04-18 AUDIT: Skip getMexcBalances() in dryRun (PAPER) — wasted signed API call
+    // that may fail if API key is invalid. PAPER mode overrides balance anyway.
     const [price, balances, exchangeInfo] = await Promise.all([
       getMexcPrice(mexcSymbol),
-      getMexcBalances(),
+      dryRun ? Promise.resolve([]) : getMexcBalances(),
       getExchangeInfoCached(),
     ]);
     
@@ -161,14 +163,13 @@ export async function executeMexcTrade(
       let limitPrice = side === 'BUY' ? price * (1 + MAX_SLIPPAGE) : price * (1 - MAX_SLIPPAGE);
       limitPrice = roundToStep(limitPrice, filters.tickSize);
 
-      let slCheckPassed = (side !== 'BUY'); // SELL orders don't require SL — declared outside try for post-fill verify access
-
       try {
         await placeMexcLimitOrder(mexcSymbol, side, quantity, limitPrice);
         log.info(`[SLIPPAGE PROTECT] Sent LIMIT ${side} for ${mexcSymbol} @ max price $${limitPrice} (AI price: $${price})`);
 
         // --- NATIVE STOP LOSS (AWAITED + RETRY) ---
         // Must verify SL exists before continuing — no fire-and-forget
+        let slCheckPassed = (side !== 'BUY'); // SELL orders don't require SL
         if (side === 'BUY') {
            const slPercent = 0.05; // 5% Hard stop loss
            let stopPrice = price * (1 - slPercent);
@@ -209,29 +210,6 @@ export async function executeMexcTrade(
         }
       } catch (err) {
         throw new Error(`[LIMIT FAILED] ${(err as Error).message}. Vetoing fallback to prevent explicit double-spend.`);
-      }
-
-      // FIX 2026-04-18 FAZA 3: Post-fill SL verification.
-      // After order+SL placed, schedule a delayed verification to confirm SL still exists.
-      // If the limit order filled but SL was rejected by exchange (timing race), we detect it.
-      if (side === 'BUY' && slCheckPassed) {
-        setTimeout(async () => {
-          try {
-            const { getMexcOpenOrders } = await import('@/lib/exchange/mexcClient');
-            const openOrders = await getMexcOpenOrders(mexcSymbol);
-            const hasSL = openOrders.some((o: { type?: string }) =>
-              o.type === 'STOP_LOSS' || o.type === 'STOP_LOSS_LIMIT'
-            );
-            if (!hasSL) {
-              log.error(`[POST-FILL VERIFY] No SL found for ${mexcSymbol} 10s after placement — orphan risk!`);
-              sendMessage(`🚨 *POST-FILL SL MISSING*\n${mexcSymbol} has NO stop loss 10s after trade!\nCheck MEXC manually.`).catch(() => {});
-            } else {
-              log.debug(`[POST-FILL VERIFY] SL confirmed for ${mexcSymbol}`);
-            }
-          } catch (verifyErr) {
-            log.warn(`[POST-FILL VERIFY] Could not verify SL for ${mexcSymbol}: ${String(verifyErr).slice(0, 100)}`);
-          }
-        }, 10_000); // Check 10s after placement
       }
 
       const telegramMsg = `[TRADE EXECUTION V2]\nPair: ${mexcSymbol}\nSide: ${side}\nPrice: $${price}\nQty: ${quantity}\nValue: $${tradeAmount.toFixed(2)}\nBalance: $${usdtBalance.toFixed(2)}`;

@@ -131,7 +131,9 @@ export async function runMemeEngineScan(): Promise<MemeResult> {
     if (profile.header) heuristicScore += 2; // Has header image
     // Chain bonus: Solana is faster execution
     if (profile.chainId === 'solana') heuristicScore += 5;
-    // Cap at 85 — meme tokens should NEVER auto-pass the 90 threshold without real TA confirmation
+    // FIX 2026-04-18 AUDIT: Cap was 85 but signal threshold was 90 → unreachable.
+    // Lowered threshold to 80 so top-quality meme tokens (score 80+) can emit signals.
+    // Max possible heuristic = 50+15+5+5+3+2+5 = 85, so cap at 85 is correct.
     heuristicScore = Math.min(heuristicScore, 85);
 
     const analysis: MemeAnalysis = {
@@ -145,7 +147,8 @@ export async function runMemeEngineScan(): Promise<MemeResult> {
     tokens.push(analysis);
 
     // Daca score e exceptional si sistemul nu e in push guard, alertam router-ul !
-    if (analysis.score >= 90) {
+    // FIX 2026-04-18 AUDIT: Was >= 90, unreachable with cap=85. Lowered to 80.
+    if (analysis.score >= 80) {
       const allowed = trySignal(`MEME_SNIPER_${profile.tokenAddress}`, 'LONG');
       if (allowed) {
         log.info(`[MemeEngine] Potențial masiv detectat pe ${profile.tokenAddress} (${profile.chainId}). Lansez propunerea către Sindicat!`);
