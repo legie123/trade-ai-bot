@@ -23,6 +23,10 @@ export interface KillSwitchState {
   dailyLossTriggered: boolean;
   maxExposureTriggered: boolean;
   velocityTriggered: boolean;  // Faza 9: rapid-spend detection
+  // RUFLO FAZA 3 / F3 fix — Balance at moment of auto-engage.
+  // Used by resetDailyTriggers() to gate auto-disengage behind equity recovery.
+  // null => not-set (manual engage, legacy state, or snapshot failed).
+  engagedEquitySnapshot: number | null;
 }
 
 // ─── Velocity Kill Switch — Faza 9 ────────────────
@@ -57,13 +61,14 @@ function defaultState(): KillSwitchState {
     dailyLossTriggered: false,
     maxExposureTriggered: false,
     velocityTriggered: false,
+    engagedEquitySnapshot: null,
   };
 }
 
 // AUDIT FIX T2.3: Hydrate from Supabase on first use (async, non-blocking init)
-// FIX CRITICAL: Moved hydrated flag AFTER successful fetch to prevent stale state on network failure
 async function hydrateFromSupabase(): Promise<void> {
   if (g.__killSwitchHydrated || !supabase) return;
+  g.__killSwitchHydrated = true;
   try {
     const { data } = await supabase
       .from('json_store')
@@ -75,10 +80,8 @@ async function hydrateFromSupabase(): Promise<void> {
       Object.assign(state, remote);
       log.info('Kill switch state hydrated from Supabase', { engaged: state.engaged });
     }
-    g.__killSwitchHydrated = true; // Only mark hydrated on SUCCESS
   } catch (err) {
-    // DO NOT set hydrated flag — next call will retry
-    log.warn('Failed to hydrate kill switch from Supabase — will retry next call', { error: (err as Error).message });
+    log.warn('Failed to hydrate kill switch from Supabase', { error: (err as Error).message });
   }
 }
 
@@ -104,6 +107,28 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
   state.reason = reason;
   state.autoEngaged = auto;
   state.manualOverride = !auto;
+
+  // RUFLO FAZA 3 / F3 fix — Snapshot equity AT engagement time (auto only).
+  // resetDailyTriggers() uses this as recovery threshold: auto-disengage ONLY if
+  // current balance >= snapshot. Manual engage leaves snapshot=null (no gate).
+  //
+  // ASUMPȚIE: getEquityCurve() returns the most recent equity point. If curve is
+  // empty (DB bootstrap / stale), snapshot=null → downstream check fails closed.
+  if (auto) {
+    try {
+      const { getEquityCurve } = await import('@/lib/store/db');
+      const curve = getEquityCurve();
+      const last = curve.length > 0 ? curve[curve.length - 1] : null;
+      state.engagedEquitySnapshot = last ? Number(last.balance) : null;
+      log.info('[KillSwitch] Equity snapshot at auto-engage', { snapshot: state.engagedEquitySnapshot });
+    } catch (err) {
+      log.warn('[KillSwitch] Failed to snapshot equity on engage — fail-closed', { error: (err as Error).message });
+      state.engagedEquitySnapshot = null;
+    }
+  } else {
+    state.engagedEquitySnapshot = null;
+  }
+
   await persistState();
 
   log.fatal(`KILL SWITCH ENGAGED: ${reason}`, { auto, reason });
@@ -190,6 +215,7 @@ export async function disengageKillSwitch(): Promise<void> {
   state.manualOverride = false;
   state.dailyLossTriggered = false;
   state.maxExposureTriggered = false;
+  state.engagedEquitySnapshot = null; // RUFLO FAZA 3 / F3 fix — clear snapshot on disengage
   await persistState();
 
   log.info('Kill switch disengaged');
@@ -295,13 +321,50 @@ export async function resetDailyTriggers(): Promise<void> {
   while (velocityWindow.length > 0 && velocityWindow[0].timestamp < cutoff24h) {
     velocityWindow.shift();
   }
-  // FIX: Only auto-disengage if triggered by daily loss limit, NOT velocity or exposure
-  // Velocity/exposure triggers indicate systemic issues that persist across days
-  if (state.autoEngaged && !state.manualOverride && state.dailyLossTriggered && !state.velocityTriggered && !state.maxExposureTriggered) {
-    await disengageKillSwitch();
-    log.info('Kill switch auto-disengaged on new day (daily loss trigger only)');
-  } else if (state.autoEngaged) {
-    log.warn('Kill switch NOT auto-disengaged — velocity or exposure trigger still active, requires manual disengage');
+  if (state.autoEngaged && !state.manualOverride) {
+    // RUFLO FAZA 3 / F3 fix — Equity-recovery gate.
+    // Previously: new UTC day → auto-disengage unconditional (even mid-drawdown).
+    // Now: disengage ONLY if current balance >= engagedEquitySnapshot (flat/up vs engage).
+    //
+    // Rollback: env KILL_SWITCH_AUTO_RECOVERY_OFF=1 → legacy unconditional behavior.
+    //
+    // ASUMPȚII care, dacă se rup, invalidează gate-ul:
+    //   1) getEquityCurve() reflects REALIZED equity (not mid-trade mark-to-market).
+    //      If curve is bootstrapped during DB cold-start, we may read stale value.
+    //      Fail-closed: curve empty / snapshot null → deny auto-disengage, require manual.
+    //   2) Snapshot taken at engagement time. If bot crashed pre-persist, snapshot=null → fail-closed.
+    //   3) PAPER vs LIVE bifurcation NOT handled here — uses raw curve (all modes).
+    //      Acceptable because kill-switch is mode-agnostic by design (blocks everything).
+    const recoveryOff = process.env.KILL_SWITCH_AUTO_RECOVERY_OFF === '1';
+    let canAutoDisengage = recoveryOff; // env override → legacy behavior
+
+    if (!recoveryOff) {
+      try {
+        const { getEquityCurve } = await import('@/lib/store/db');
+        const curve = getEquityCurve();
+        const last = curve.length > 0 ? curve[curve.length - 1] : null;
+        const current = last ? Number(last.balance) : null;
+        const snapshot = state.engagedEquitySnapshot;
+
+        if (current !== null && snapshot !== null && current >= snapshot) {
+          canAutoDisengage = true;
+          log.info('[KillSwitch] Equity recovered — auto-disengage permitted', { current, snapshot });
+        } else {
+          log.warn('[KillSwitch] Equity NOT recovered — auto-disengage DENIED, manual override required', {
+            current, snapshot,
+          });
+        }
+      } catch (err) {
+        log.warn('[KillSwitch] Equity-recovery check failed — fail-closed (manual unlock required)', {
+          error: (err as Error).message,
+        });
+      }
+    }
+
+    if (canAutoDisengage) {
+      await disengageKillSwitch();
+      log.info('Kill switch auto-disengaged on new day');
+    }
   }
   await persistState();
 }
