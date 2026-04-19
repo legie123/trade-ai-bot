@@ -181,6 +181,7 @@ export async function getMexcPrices(symbols?: string[]): Promise<Record<string, 
 
   const CONCURRENCY = 8;
   const results: Record<string, number> = {};
+  const mexcFails: string[] = [];
 
   // Bounded parallel fetch — prevent MEXC rate-limit on large symbol sets.
   for (let i = 0; i < symbols.length; i += CONCURRENCY) {
@@ -189,14 +190,55 @@ export async function getMexcPrices(symbols?: string[]): Promise<Record<string, 
       try {
         const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol: sym }, false);
         const price = parseFloat(data.price as string);
-        if (!isNaN(price) && price > 0) results[sym] = price;
+        if (!isNaN(price) && price > 0) {
+          results[sym] = price;
+        } else {
+          mexcFails.push(sym); // zero/NaN — try Binance fallback
+        }
       } catch (fetchErr) {
         log.warn(`[MEXC] Individual price fetch failed for ${sym}: ${String(fetchErr).slice(0, 100)}`);
+        mexcFails.push(sym);
       }
     }));
   }
 
-  log.info(`[MEXC] Parallel fetch: ${symbols.length} requested, ${Object.keys(results).length} returned (concurrency=${CONCURRENCY})`);
+  // RUFLO FAZA 3 Batch 8 (H4) 2026-04-19: Binance cross-exchange fallback.
+  // WHY: Per-symbol MEXC failures were silently dropped, so downstream
+  // consumers saw PARTIAL price maps (e.g. BTCUSDT returned but SOLUSDT missing
+  // because MEXC had a 1-req blip). Those partial maps feed risk sizing; a
+  // missing symbol translated to sizing=0 → phantom decisions logged with no
+  // real risk. Now, per failed symbol we try Binance once before giving up.
+  //
+  // ASUMPȚIE: Binance API is reachable from the IP (same allowlist as MEXC).
+  //   If Binance is ALSO blocked, fallback is a no-op — results map keeps
+  //   the missing symbol missing. Feed circuit-breaker (Batch 7) then trips.
+  //
+  // Kill-switch: env DISABLE_MEXC_BINANCE_FALLBACK=1 → skip fallback, legacy
+  //   behavior restored (partial map as before).
+  if (mexcFails.length > 0 && process.env.DISABLE_MEXC_BINANCE_FALLBACK !== '1') {
+    try {
+      const { getBinancePrice } = await import('@/lib/exchange/binanceClient');
+      // Same CONCURRENCY bound — don't DoS Binance either.
+      for (let i = 0; i < mexcFails.length; i += CONCURRENCY) {
+        const batch = mexcFails.slice(i, i + CONCURRENCY);
+        await Promise.allSettled(batch.map(async (sym) => {
+          try {
+            const p = await getBinancePrice(sym);
+            if (p > 0) {
+              results[sym] = p;
+              log.info(`[MEXC→Binance fallback] Recovered ${sym} from Binance (MEXC failed)`);
+            }
+          } catch {
+            // silent — both exchanges failed, circuit-breaker will catch pattern
+          }
+        }));
+      }
+    } catch (impErr) {
+      log.warn(`[MEXC] Binance client import failed, skipping fallback: ${String(impErr).slice(0, 100)}`);
+    }
+  }
+
+  log.info(`[MEXC] Parallel fetch: ${symbols.length} requested, ${Object.keys(results).length} returned (concurrency=${CONCURRENCY}, binance_recoveries=${mexcFails.filter(s => results[s]).length})`);
   return results;
 }
 
