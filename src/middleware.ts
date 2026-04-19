@@ -39,6 +39,7 @@ const PUBLIC_PREFIXES = [
   '/api/telegram',         // Telegram connectivity check (read-only)
   '/api/bot',              // Bot status (read-only)
   '/api/metrics',          // Prometheus scrape — Bearer METRICS_TOKEN checked internally
+  '/api/live-metrics',     // Grafana Cloud Prom proxy — read-only KPIs for /crypto-radar
   '/api/polymarket/ingest', // Goldsky webhook — x-trade-auth header checked internally
 ];
 
