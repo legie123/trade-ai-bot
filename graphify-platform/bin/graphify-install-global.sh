@@ -33,11 +33,24 @@ fi
 log "registering /graphify skill (writes ~/.claude/skills/graphify/SKILL.md)"
 graphify install
 
-# ── 4. Global protocol file ──────────────────────────────────────
+# ── 4. Global protocol files ─────────────────────────────────────
 GLOBAL_KB="$HOME/.claude/antigravity/knowledge"
 mkdir -p "$GLOBAL_KB"
 cp -f "$PLATFORM_DIR/GRAPHIFY_PROTOCOL.md" "$GLOBAL_KB/Graphify_Protocol.md"
+cp -f "$PLATFORM_DIR/AI_INTEROP.md" "$GLOBAL_KB/AI_INTEROP.md"
 log "wrote $GLOBAL_KB/Graphify_Protocol.md"
+log "wrote $GLOBAL_KB/AI_INTEROP.md"
+
+# ── 4b. Mirror to Gemini knowledge (cross-AI standard) ───────────
+GEMINI_KB="$HOME/.gemini/antigravity/knowledge"
+if [[ -d "$HOME/.gemini" ]]; then
+  mkdir -p "$GEMINI_KB"
+  cp -f "$PLATFORM_DIR/AI_INTEROP.md" "$GEMINI_KB/AI_INTEROP.md"
+  cp -f "$PLATFORM_DIR/GRAPHIFY_PROTOCOL.md" "$GEMINI_KB/Graphify_Protocol.md"
+  log "mirrored to $GEMINI_KB/ (Gemini parity)"
+else
+  warn "~/.gemini/ not present — skipping Gemini mirror (run again after Gemini install)"
+fi
 
 # ── 5. Patch global CLAUDE.md ───────────────────────────────────
 CLAUDE_MD="$HOME/.claude/CLAUDE.md"

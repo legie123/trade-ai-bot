@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# post-commit hook — auto-refresh Graphify map + Obsidian bridge + digest after every commit.
+# Installed by: bash graphify-platform/bin/graphify-hook-install.sh
+# Removed by:   rm .git/hooks/post-commit
+#
+# Cost: incremental rebuild ~1-3s on TRADE AI scale. ZERO Claude tokens.
+# Skips silently if graphify CLI not installed (CI-safe).
+
+set -e
+
+# Bail if disabled via env (useful for `git commit --no-verify`-style flows)
+[[ "${GRAPHIFY_HOOK_ENABLED:-1}" = "0" ]] && exit 0
+
+# Bail if graphify not installed (don't break commits)
+command -v graphify >/dev/null 2>&1 || exit 0
+
+# Resolve repo root + scan target
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+SCAN_TARGET="${GRAPHIFY_SCAN_TARGET:-./src}"
+
+# Bail if scan target doesn't exist
+[[ -d "$REPO_ROOT/$SCAN_TARGET" ]] || exit 0
+
+# Only rebuild if commit touched files inside scan target
+CHANGED_IN_SCAN=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E "^${SCAN_TARGET#./}/" | head -1)
+[[ -z "$CHANGED_IN_SCAN" ]] && exit 0
+
+cd "$REPO_ROOT"
+
+# Find platform dir (prefer GRAPHIFY_PLATFORM env, fallback to symlink target)
+PLATFORM_DIR="${GRAPHIFY_PLATFORM:-}"
+if [[ -z "$PLATFORM_DIR" && -L scripts/graphify-safe ]]; then
+  PLATFORM_DIR="$(dirname "$(dirname "$(readlink scripts/graphify-safe)")")"
+fi
+[[ -d "$PLATFORM_DIR" ]] || exit 0
+
+OUT_DIR="$REPO_ROOT/$SCAN_TARGET/graphify-out"
+
+# Rebuild graphify (incremental if exists, fresh if not)
+if [[ -d "$OUT_DIR" ]]; then
+  graphify "$SCAN_TARGET" --update >/dev/null 2>&1 || exit 0
+else
+  bash "$PLATFORM_DIR/bin/graphify-safe" "$SCAN_TARGET" >/dev/null 2>&1 || exit 0
+fi
+
+# Run bridge + digest
+python3 "$PLATFORM_DIR/bin/graphify-obsidian-bridge.py" "$OUT_DIR" --min-nodes 1 >/dev/null 2>&1 || true
+python3 "$PLATFORM_DIR/bin/graphify-digest.py" "$OUT_DIR" >/dev/null 2>&1 || true
+
+echo "[graphify-hook] map refreshed: $OUT_DIR/_GRAPHIFY_DIGEST.md"

@@ -67,6 +67,19 @@ else
   log "symlinked scripts/graphify-bridge -> $PLATFORM_DIR/bin/graphify-obsidian-bridge.py"
 fi
 
+# ── 4c. scripts/graphify-digest symlink (TL;DR for session-init) ─
+if [[ -e scripts/graphify-digest && ! -L scripts/graphify-digest ]]; then
+  warn "scripts/graphify-digest exists and is not a symlink — skipping"
+else
+  ln -sf "$PLATFORM_DIR/bin/graphify-digest.py" scripts/graphify-digest
+  log "symlinked scripts/graphify-digest -> $PLATFORM_DIR/bin/graphify-digest.py"
+fi
+
+# ── 4d. post-commit hook (opt-out via env: GRAPHIFY_HOOK_INSTALL=0) ─
+if [[ "${GRAPHIFY_HOOK_INSTALL:-1}" != "0" ]]; then
+  bash "$PLATFORM_DIR/bin/graphify-hook-install.sh" || warn "hook install failed (non-fatal)"
+fi
+
 # ── 5. Verify graphify CLI available ─────────────────────────────
 if ! command -v graphify >/dev/null 2>&1; then
   warn "graphify CLI not found globally. Install: pipx install graphifyy==0.4.23 && graphify install"
