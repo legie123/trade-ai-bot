@@ -16,7 +16,8 @@ import client from 'prom-client';
 const g = globalThis as unknown as { __tradeAiMetrics?: {
   registry: client.Registry;
   tradeExecutions: client.Counter<string>;
-  tradePnlSum: client.Counter<string>;
+  tradePnlPositiveSum: client.Counter<string>;
+  tradePnlLossAbsSum: client.Counter<string>;
   tradeDuration: client.Histogram<string>;
   gladiatorKills: client.Counter<string>;
   gladiatorForges: client.Counter<string>;
@@ -46,9 +47,19 @@ function build() {
     registers: [registry],
   });
 
-  const tradePnlSum = new client.Counter({
-    name: 'tradeai_trade_pnl_percent_sum',
-    help: 'Sum of closed-trade pnlPercent (net of fees+slippage). Can go negative via gauge trick — use increase() cautiously.',
+  // FAZA A Batch 5b — split into two monotonic Counters.
+  // prom-client.Counter.inc() rejects negative values, so a single signed counter is impossible.
+  // Net PnL% via PromQL: increase(tradePnlPositiveSum) - increase(tradePnlLossAbsSum).
+  const tradePnlPositiveSum = new client.Counter({
+    name: 'tradeai_trade_pnl_positive_sum',
+    help: 'Cumulative sum of positive pnlPercent from closed trades (wins only).',
+    labelNames: ['mode'] as const,
+    registers: [registry],
+  });
+
+  const tradePnlLossAbsSum = new client.Counter({
+    name: 'tradeai_trade_pnl_loss_abs_sum',
+    help: 'Cumulative sum of |pnlPercent| from losing trades (absolute value of negative pnl).',
     labelNames: ['mode'] as const,
     registers: [registry],
   });
@@ -156,7 +167,7 @@ function build() {
 
   return {
     registry,
-    tradeExecutions, tradePnlSum, tradeDuration,
+    tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
     gladiatorKills, gladiatorForges, gladiatorPromotions,
     decisions,
     arenaPoolSize, arenaAlive, arenaKilled,

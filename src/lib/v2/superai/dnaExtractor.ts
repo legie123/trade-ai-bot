@@ -1,9 +1,10 @@
 import { createLogger } from '@/lib/core/logger';
 import { addGladiatorDna, addGladiatorDnaBatch, getGladiatorDna, getGladiatorBattles } from '@/lib/store/db';
-// FAZA A BATCH 5 — trade closure observability.
-// tradePnlSum left UNWIRED here pending redesign (Counter rejects negative
-// values; needs Histogram with negative buckets — see Batch 5b TODO).
-import { metrics, safeObserve } from '@/lib/observability/metrics';
+// FAZA A BATCH 5 + 5b — trade closure observability.
+// Batch 5: tradeDuration histogram per mode.
+// Batch 5b: split pnlPercent into two monotonic Counters (positive / |loss|)
+//           because prom-client.Counter.inc() rejects negatives.
+import { metrics, safeObserve, safeInc } from '@/lib/observability/metrics';
 
 const log = createLogger('DNAExtractor');
 
@@ -22,6 +23,19 @@ function readHoldSeconds(ctx: Record<string, unknown> | undefined): number | nul
   if (typeof v !== 'number' || !Number.isFinite(v)) return null;
   if (v < 0 || v > 86400 * 7) return null;
   return v;
+}
+
+/** FAZA A BATCH 5b helper — record pnlPercent into split counters.
+ *  Hard cap ±100% to drop garbage rows. Zero is a no-op. */
+function recordPnlPercent(pnlPercent: number, mode: 'live' | 'paper'): void {
+  if (!Number.isFinite(pnlPercent)) return;
+  if (pnlPercent > 100 || pnlPercent < -100) return; // drop outliers
+  if (pnlPercent > 0) {
+    safeInc(metrics.tradePnlPositiveSum, { mode }, pnlPercent);
+  } else if (pnlPercent < 0) {
+    safeInc(metrics.tradePnlLossAbsSum, { mode }, Math.abs(pnlPercent));
+  }
+  // pnlPercent === 0 → no-op
 }
 
 export interface BattleRecord {
@@ -83,10 +97,11 @@ export class DNAExtractor {
     } catch (err) {
       log.error('Failed to log battle DNA', { error: (err as Error).message });
     }
-    // FAZA A BATCH 5 — trade duration observability (fail-soft, never blocks).
+    // FAZA A BATCH 5 + 5b — trade closure observability (fail-soft, never blocks).
     const mode = modeFromBattleId(record.id);
     const hold = readHoldSeconds(record.marketContext as Record<string, unknown> | undefined);
     if (hold !== null) safeObserve(metrics.tradeDuration, hold, { mode });
+    recordPnlPercent(record.pnlPercent, mode);
   }
 
   // C10 (2026-04-19) — Batch DNA write. Replaces N sequential logBattle calls
@@ -100,11 +115,12 @@ export class DNAExtractor {
     } catch (err) {
       log.error(`[DNA Bank] Batch log failed for ${records.length} records`, { error: (err as Error).message });
     }
-    // FAZA A BATCH 5 — trade duration observability per record (fail-soft).
+    // FAZA A BATCH 5 + 5b — trade closure observability per record (fail-soft).
     for (const record of records) {
       const mode = modeFromBattleId(record.id);
       const hold = readHoldSeconds(record.marketContext as Record<string, unknown> | undefined);
       if (hold !== null) safeObserve(metrics.tradeDuration, hold, { mode });
+      recordPnlPercent(record.pnlPercent, mode);
     }
   }
 
