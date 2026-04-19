@@ -10,8 +10,13 @@ const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
 // ─── ADDITIVE SAFETY: refuse weak defaults in non-dev environments ───
 // Logs loudly at module init. Does not crash dev. In production, throws on first use.
 const IS_PROD = (process.env.NODE_ENV || '').toLowerCase() === 'production';
-// OWNER OVERRIDE 2026-04-19: min length lowered 12→5 per explicit user directive. Risk: brute-force in minutes. Empty + "admin123" blacklist retained.
-const WEAK_PASSWORD = !DASHBOARD_PASSWORD || DASHBOARD_PASSWORD === 'admin123' || DASHBOARD_PASSWORD.length < 5;
+// OWNER EXCEPTION 2026-04-19: explicit allowlist for short passwords per user directive.
+// All other values still require length >= 12. Keeps global guard strong.
+const OWNER_ALLOWED_SHORT: ReadonlySet<string> = new Set(['dss33']);
+const WEAK_PASSWORD =
+  !DASHBOARD_PASSWORD ||
+  DASHBOARD_PASSWORD === 'admin123' ||
+  (!OWNER_ALLOWED_SHORT.has(DASHBOARD_PASSWORD) && DASHBOARD_PASSWORD.length < 12);
 const WEAK_SECRET = !AUTH_SECRET || AUTH_SECRET === 'trading-ai-secret-2026' || AUTH_SECRET.length < 24;
 
 if (WEAK_PASSWORD) {
