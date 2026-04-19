@@ -39,6 +39,16 @@ const DISABLED = process.env.DISABLE_SAFETY_GATES === 'true';
 const DAILY_LOSS_LIMIT_PCT = parseFloat(process.env.KILL_SWITCH_DAILY_LOSS_PCT || '5'); // 5%
 const MAX_EXPOSURE_PCT = parseFloat(process.env.KILL_SWITCH_MAX_EXPOSURE_PCT || '30'); // 30%
 
+// RUFLO FAZA 3 Batch 6 (C6) 2026-04-19: Open-position count hard cap.
+// WHY: Exposure gate enforces NOTIONAL but not COUNT. Operational limits
+// (MEXC rate-limits per symbol, cognitive load on positionManager, diversification
+// failure mode where 20 positions = 20 correlated bets on same regime) justify
+// a hard count cap independent of notional. Default 5 matches auto-promote
+// maxLiveGladiators * ~1.6 safety factor (LIVE gladiators × ~1.6 positions/each).
+// Override via env; kill-switch via DISABLE_SAFETY_GATES or setting very high.
+// ASUMPȚIE: LIVE-only gate. PAPER positions are excluded via !isPaperTrade.
+const MAX_OPEN_POSITIONS = parseInt(process.env.MAX_OPEN_POSITIONS || '5', 10);
+
 // Track last UTC day we reset triggers to make ensureDailyReset idempotent.
 // Using module-local state (survives warm Cloud Run instance).
 let lastResetUtcDay: string | null = null;
@@ -158,6 +168,18 @@ export async function runPreTradeGates(newNotional: number | null = null): Promi
   if (triggeredExp) {
     log.fatal(`[SafetyGate] Exposure gate TRIGGERED kill switch: ${projectedExposure}/${accountBalance}`);
     return { allowed: false, reason: `Exposure ${(projectedExposure / accountBalance * 100).toFixed(1)}% ≥ ${MAX_EXPOSURE_PCT}% limit` };
+  }
+
+  // (4) RUFLO FAZA 3 Batch 6 (C6) 2026-04-19: Open-position count cap.
+  // Denies new positions if we would exceed MAX_OPEN_POSITIONS (LIVE only).
+  // DOES NOT engage kill switch — this is a soft block, not a catastrophic
+  // fault. Caller simply skips this tick and retries when a slot frees up.
+  const openLiveCount = getLivePositions().filter(p => p.status === 'OPEN' && !p.isPaperTrade).length;
+  if (openLiveCount >= MAX_OPEN_POSITIONS) {
+    return {
+      allowed: false,
+      reason: `Open-position cap reached: ${openLiveCount}/${MAX_OPEN_POSITIONS} — skip tick, wait for a close`,
+    };
   }
 
   return { allowed: true };
