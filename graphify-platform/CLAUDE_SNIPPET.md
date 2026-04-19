@@ -16,15 +16,18 @@
 - `graphify` complementeaza `gitnexus`, nu-l inlocuieste. gitnexus = impact surgical. graphify = exploratory.
 - Pinned version: `graphifyy==0.4.23`. Upgrade manual dupa CHANGELOG.
 
-**Cand Claude vede /graphify sau cere "map", "arhitectura", "relatii intre fisiere":**
-1. Citeste `<project>/graphify-out/GRAPH_REPORT.md` daca exista.
-2. Daca nu exista → propune `graphify-safe ./src` mai intai.
-3. Foloseste god-nodes + community clusters din raport pentru sinteza.
-4. NU amesteca concluzii graphify cu raspunsuri gitnexus — cita fiecare sursa.
+**ON SESSION START (orice repo cu Graphify activ):**
+1. Citeste DOAR `<project>/graphify-out/_GRAPHIFY_DIGEST.md` (~150-200 tokeni, ~35× mai ieftin decat raportul full).
+2. NU citi `GRAPH_REPORT.md` la session-init. Citeste-l doar la intrebare arhitecturala explicita ("how does X work", "show me god-nodes").
+3. Daca digestul lipseste → propune `./scripts/graphify-safe ./src && ./scripts/graphify-bridge ./src/graphify-out && ./scripts/graphify-digest ./src/graphify-out`.
+4. Citation contract obligatoriu: `[graphify:digest|report|community-N]`, `[gitnexus:impact]`, `[grep:source]`.
+5. NU amesteca concluzii graphify cu raspunsuri gitnexus.
 
 **Proiect nou:**
 `bash /path/to/graphify-platform/bin/graphify-new-project.sh`
-(bootstrap .graphifyignore + CLAUDE.md hook + .gitignore + symlink wrapper + symlink bridge)
+(bootstrap .graphifyignore + CLAUDE.md hook + .gitignore + symlink wrapper + bridge + digest + post-commit hook)
 
-**Obsidian:** dupa fiecare rebuild → `./scripts/graphify-bridge ./src/graphify-out` rezolva wiki-links `[[_COMMUNITY_Community N]]` din GRAPH_REPORT.md.
+**Auto-mentenanta:** post-commit hook ruleaza graphify --update + bridge + digest la fiecare commit care atinge scan-target. Cost: 1-3s, 0 tokeni Claude. Disable per-commit: `GRAPHIFY_HOOK_ENABLED=0 git commit ...`.
+
+**Cross-AI:** standardul e in `~/.claude/antigravity/knowledge/AI_INTEROP.md` si `~/.gemini/antigravity/knowledge/AI_INTEROP.md`. Toti AI-agentii (Claude, Gemini, DeepSeek, Llama, Cursor, Continue, Aider) urmeaza aceleasi reguli de detection + citation.
 <!-- GRAPHIFY_PROTOCOL_END -->

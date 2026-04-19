@@ -148,11 +148,12 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 # Graphify — Knowledge Graph Layer
 
 ## ON SESSION START (mandatory pentru orice sesiune Claude pe TRADE AI)
-1. **Citeste** `src/graphify-out/GRAPH_REPORT.md` daca exista (sectiunile: Summary, God Nodes, Communities) — fara aceasta nu raspunzi la intrebari de arhitectura.
-2. **Daca lipseste sau e >7 zile vechi**, ruleaza `./scripts/graphify-session-init.sh` — printeaza TL;DR + freshness, sugereaza rebuild la nevoie. Cost: 0 tokeni.
-3. **Daca raportul e absent total**, executa `./scripts/graphify-rebuild.sh` (target ./src, fara Claude subagents → 0 tokeni, ~2s pe TRADE AI).
+1. **Citeste DOAR** `src/graphify-out/_GRAPHIFY_DIGEST.md` — TL;DR ~160 tokeni (vs ~5,567 raportul full). Confirmat 34.6× reducere.
+2. **NU citi `GRAPH_REPORT.md` la session-init.** Citeste-l doar la intrebare arhitecturala explicita ("how does X work", "what's the structure", "show me god-nodes"). Comunitatile (`_COMMUNITY_*.md`) doar pe demand specific.
+3. **Daca digestul lipseste sau e >7 zile vechi**, executa `./scripts/graphify-safe ./src --update` apoi `./scripts/graphify-bridge ./src/graphify-out` apoi `./scripts/graphify-digest ./src/graphify-out`. Sau lasa hook-ul post-commit sa o faca automat (auto-instalat de `graphify-new-project.sh`).
 4. **Cand utilizatorul intreaba "cum functioneaza X"**, foloseste `graphify query "X"` SAU citeste sectiunea relevanta din `GRAPH_REPORT.md`. NU grep blind pe codebase pentru intrebari arhitecturale.
 5. **Cand utilizatorul cere refactor major**, ruleaza graphify update inainte de raportul final (verifica daca god-nodes s-au mutat).
+6. **Citation contract:** marcheaza sursa in raspuns: `[graphify:digest]` (am citit doar TL;DR), `[graphify:report]` (am citit raport full), `[graphify:community-N]` (am citit community stub), `[gitnexus:impact]` (impact surgical), `[grep:source]` (grep direct, motiv: graphify nu acopera).
 
 Graphify completeaza gitnexus: **gitnexus = impact surgical, graphify = exploratory / god-nodes / community clusters**. Nu inlocuiesc unul pe celalalt.
 
