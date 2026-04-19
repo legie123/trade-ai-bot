@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+import { initDB } from '@/lib/store/db';
 import { calculateAdaptiveSize } from '@/lib/v2/safety/adaptiveSizing';
 import { omegaEngine } from '@/lib/v2/superai/omegaEngine';
 
@@ -75,6 +76,10 @@ export async function POST(request: Request) {
 
   log.info(`[Risk] Evaluating ${symbol} ${proposedDirection} conf=${confidence} equity=${currentEquity}`);
 
+  // COLD-START FIX (2026-04-18): Hydrate gladiatorStore before reading leaderboard.
+  // Without this, cold-booted instances see 0 live gladiators → sizing falls back to defaults.
+  await initDB();
+
   const denialReasons: string[] = [];
 
   // ── Sentinel checks ──
@@ -110,7 +115,20 @@ export async function POST(request: Request) {
   const confidenceScaledRisk = baseRisk * confidence;
 
   // Adaptive sizing: adjust based on regime, drawdown, volatility, streak
-  const currentRegime = body.regime || omegaEngine.getRegime().regime || 'unknown';
+  //
+  // RUFLO FAZA 3 / R2 fix (audit P1) — hasLiveRegime() guard.
+  // Previously: `omegaEngine.getRegime().regime` returns 'RANGE' even when
+  //   OmegaEngine has NOT run a regime analysis yet (emptyRegime() fallback
+  //   defaults to 'RANGE' with confidence 0.3). This caused adaptiveSizing
+  //   to apply RANGE multiplier (0.7) — penalizing position size by 30%
+  //   based on fabricated regime data.
+  // Now: if no live regime, pass 'unknown' → explicit unknown multiplier (0.6)
+  //   which is semantically correct ("we don't know") rather than fabricated RANGE.
+  // Env rollback: REGIME_LIVE_GUARD_OFF=1 → legacy fallback behavior.
+  const regimeLiveGuardOff = process.env.REGIME_LIVE_GUARD_OFF === '1';
+  const regimeIsLive = omegaEngine.hasLiveRegime() || regimeLiveGuardOff;
+  const currentRegime = body.regime
+    || (regimeIsLive ? (omegaEngine.getRegime().regime || 'unknown') : 'unknown');
   const adaptiveResult = calculateAdaptiveSize({
     baseRiskFraction: confidenceScaledRisk,
     regime: currentRegime,

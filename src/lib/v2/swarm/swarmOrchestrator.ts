@@ -193,11 +193,19 @@ export class SwarmOrchestrator {
 
     if (riskApproved && candidateDirection !== 'FLAT') {
       try {
+        // RUFLO FAZA 3 / R2 fix (audit P1) — hasLiveRegime() guard for debate.
+        // `getRegime().regime` returns 'RANGE' from emptyRegime() fallback even
+        // before any live analysis. Passing fabricated regime to DebateEngine
+        // adds spurious bull/bear bonuses (debateEngine lines 168-180). If we
+        // haven't analyzed the regime live, pass null → debate skips regime logic.
+        // Env rollback: REGIME_LIVE_GUARD_OFF=1 → legacy fallback behavior.
+        const _regimeGuardOff = process.env.REGIME_LIVE_GUARD_OFF === '1';
+        const _regimeLive = omegaEngine.hasLiveRegime() || _regimeGuardOff;
         const debateResult = await DebateEngine.getInstance().debate({
           symbol,
           proposedDirection: candidateDirection as 'LONG' | 'SHORT',
           confidence: finalConfidence,
-          regime: omegaEngine.getRegime().regime || null,
+          regime: _regimeLive ? (omegaEngine.getRegime().regime || null) : null,
           indicators: context.indicators as Record<string, number> || {},
           recentWinRate: context.currentWinRate,
           recentLossStreak: context.currentLossStreak,
