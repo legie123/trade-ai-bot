@@ -1452,4 +1452,26 @@ export function savePolyGladiatorsToCloud(gladiators: unknown[]): void {
   syncToCloud('poly_gladiators', gladiators);
 }
 
+// Persist/restore scanner results cross-instance — fixes lastScans=0 artifact
+// when Cron writes on instance A and UI reads from instance B (in-memory only).
+export function savePolyLastScansToCloud(scans: Record<string, unknown>): void {
+  syncToCloud('poly_last_scans', scans);
+}
+
+export async function loadPolyLastScansFromCloud(): Promise<Record<string, unknown> | null> {
+  if (!supabaseUrl || !dbInitialized) return null;
+  try {
+    const { data, error } = await supabase
+      .from('json_store')
+      .select('data')
+      .eq('id', 'poly_last_scans')
+      .maybeSingle();
+    if (error) { log.warn('Failed to load poly_last_scans', { error: error.message }); return null; }
+    return (data?.data as Record<string, unknown>) || null;
+  } catch (err) {
+    log.warn('Failed to load poly_last_scans', { error: String(err) });
+    return null;
+  }
+}
+
 export { supabase }; // Export for diagnostics endpoint

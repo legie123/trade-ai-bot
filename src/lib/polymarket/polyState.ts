@@ -10,6 +10,8 @@ import {
   loadPolyStateFromCloud,
   savePolyWalletToCloud,
   savePolyGladiatorsToCloud,
+  loadPolyLastScansFromCloud,
+  savePolyLastScansToCloud,
   initDB,
 } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
@@ -102,6 +104,16 @@ async function _doInit(): Promise<void> {
       await persistWallet();
     }
 
+    // Hydrate lastScans cross-instance (was in-memory only → /api/v2/polymarket reported lastScans:0)
+    try {
+      const savedScans = await loadPolyLastScansFromCloud();
+      if (savedScans && typeof savedScans === 'object') {
+        lastScanResults = savedScans;
+      }
+    } catch (err) {
+      log.warn('Failed to hydrate lastScans — starting empty', { error: String(err) });
+    }
+
     initialized = true;
     log.info('PolyState initialized', {
       gladiatorCount: polyGladiators.length,
@@ -139,6 +151,8 @@ export function getLastScans(): Record<string, unknown> {
 
 export function setLastScans(results: Record<string, unknown>): void {
   lastScanResults = results;
+  // Fire-and-forget persist to Supabase; debounced by syncToCloud queue.
+  try { savePolyLastScansToCloud(results); } catch { /* non-fatal */ }
 }
 
 // ── Persistence ──

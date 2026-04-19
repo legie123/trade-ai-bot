@@ -21,6 +21,14 @@ const log = createLogger('PolymarketCronScan');
 
 export const dynamic = 'force-dynamic';
 
+// ── Threshold knobs (env-configurable; safe restore via env change) ──
+// Rationale: with defaults 50/50 and current markets, 12 scans in 45min produced 0 phantom bets.
+// Lowering lets training loop start. Risk bounded: PAPER wallet + phantomBets don't touch capital
+// unless gladiator.isLive === true, which requires WR>55 + readiness>70 + ≥20 bets.
+// Kill/restore: unset POLY_EDGE_MIN / POLY_CONF_MIN → defaults to historical 50/50.
+const EDGE_MIN = Number.parseInt(process.env.POLY_EDGE_MIN ?? '50', 10);
+const CONF_MIN = Number.parseInt(process.env.POLY_CONF_MIN ?? '50', 10);
+
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
@@ -59,12 +67,12 @@ export async function GET(request: Request) {
 
         // Evaluate each opportunity and place phantom bets
         for (const opportunity of result.opportunities) {
-          if (opportunity.edgeScore < 50) continue; // Skip low edge scores
+          if (opportunity.edgeScore < EDGE_MIN) continue; // Skip low edge scores (env POLY_EDGE_MIN)
 
           const evaluation = evaluateMarket(gladiator, opportunity.market, opportunity);
 
-          // Place phantom bet if direction is clear
-          if (evaluation.direction !== 'SKIP' && evaluation.confidence >= 50) {
+          // Place phantom bet if direction is clear (env POLY_CONF_MIN)
+          if (evaluation.direction !== 'SKIP' && evaluation.confidence >= CONF_MIN) {
             // Create phantom bet on gladiator
             const resolvedOutcomeId = opportunity.market.outcomes.find(
                 o => (evaluation.direction === 'BUY_YES' && o.name.toUpperCase() === 'YES') ||
