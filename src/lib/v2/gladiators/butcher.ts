@@ -5,6 +5,28 @@ import { Gladiator } from '../../types/gladiator';
 
 const log = createLogger('TheButcher');
 
+// RUFLO FAZA 3 Batch 4 (C8) 2026-04-19: Wilson score interval lower bound.
+// Previous Butcher used raw WR<40 at n>=20 — at n=20 this has 95% CI that
+// easily spans from 20% to 60%, so killing at raw 40 is statistically
+// indefensible (false positives: kill legit gladiators on unlucky streak).
+//
+// wilsonLower = (p + z²/2n - z*sqrt((p(1-p)+z²/4n)/n)) / (1 + z²/n)
+// z = 1.96 → 95% confidence.
+// Example: 8 wins / 20 trades = 40% raw WR
+//   wilsonLower ≈ 0.217 → killer would NOT fire (need more trades)
+// Example: 15 wins / 50 trades = 30% raw WR
+//   wilsonLower ≈ 0.185 → kill (sustained underperformance)
+function wilsonLower(successes: number, n: number): number {
+  if (n === 0) return 0;
+  const z = 1.96;
+  const p = successes / n;
+  const z2 = z * z;
+  const denom = 1 + z2 / n;
+  const center = p + z2 / (2 * n);
+  const margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n);
+  return (center - margin) / denom;
+}
+
 export class TheButcher {
   private static instance: TheButcher;
 
@@ -95,9 +117,30 @@ export class TheButcher {
         continue;
       }
 
+      // RUFLO FAZA 3 Batch 4 (C8) 2026-04-19: Wilson CI lower bound.
+      // Old raw thresholds at n=20 have 95% CI ~ ±20pp — statistically
+      // unsafe for kill decisions. New: require n>=30 for kill and use
+      // Wilson lower bound for WR (even pessimistic estimate must fail).
+      // PF threshold kept at 1.0 but n-gated to avoid small-sample PF noise.
+      // Kill-switch: env BUTCHER_USE_WILSON=0 reverts to raw formula.
+      const useWilson = process.env.BUTCHER_USE_WILSON !== '0';
+      const MIN_N_FOR_KILL = 30;
+
       // Judgment Criteria (OR logic — fail ANY condition = elimination)
-      const failsWinRate = g.stats.winRate < 40;
-      const failsProfitFactor = g.stats.profitFactor < 1.0;
+      let failsWinRate: boolean;
+      let failsProfitFactor: boolean;
+      if (useWilson) {
+        // Require larger sample + Wilson lower bound < 0.35 (= 35%)
+        // i.e. even 95% pessimistic WR estimate is below 35
+        const wins = Math.round((g.stats.winRate / 100) * g.stats.totalTrades);
+        const wrLower = wilsonLower(wins, g.stats.totalTrades);
+        failsWinRate = g.stats.totalTrades >= MIN_N_FOR_KILL && wrLower < 0.35;
+        // PF: require same min n to avoid single-loss-ratio skew
+        failsProfitFactor = g.stats.totalTrades >= MIN_N_FOR_KILL && g.stats.profitFactor < 1.0;
+      } else {
+        failsWinRate = g.stats.winRate < 40;
+        failsProfitFactor = g.stats.profitFactor < 1.0;
+      }
       const failsPnL = (g.stats as Record<string, unknown>).totalPnlPercent !== undefined && ((g.stats as Record<string, unknown>).totalPnlPercent as number) < -5;
 
       // R4b: anti-memorization
