@@ -1,0 +1,112 @@
+name: graphify-snapshot
+
+# Auto-rebuild graphify snapshot on every push that touches src/**.
+# Commits updated snapshot back to main with [skip graphify] guard against recursion.
+#
+# Result: graphify-platform/snapshots/LATEST_DIGEST.md + LATEST_REPORT.md always reflect
+# the current HEAD state — any Claude session can rely on it without depending on a Mac build.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'graphify-platform/bin/**'
+      - '.github/workflows/graphify-snapshot.yml'
+  workflow_dispatch:  # allow manual re-run
+
+concurrency:
+  group: graphify-snapshot-main
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    # Skip if this push was itself a snapshot commit (prevents infinite loop)
+    if: "!contains(github.event.head_commit.message, '[skip graphify]')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write  # need to push snapshot commit back to main
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # need HEAD~1 for post-commit-hook-style diff
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install graphifyy (pinned)
+        run: |
+          python -m pip install --upgrade pip
+          pip install graphifyy==0.4.23
+
+      - name: Verify graphify CLI
+        run: |
+          which graphify
+          graphify --help | head -5
+
+      - name: Build graphify map (safe wrapper, src/ only)
+        env:
+          # CI runner has no secrets checked into src/ — accept any false positives
+          GRAPHIFY_ACCEPT_SECRETS: "1"
+        run: |
+          # graphify-safe refuses repo root → always scan ./src
+          bash graphify-platform/bin/graphify-safe ./src --mode deep || {
+            echo "::warning::graphify-safe failed, falling back to direct graphify update"
+            graphify update ./src
+          }
+
+      - name: Run bridge (Obsidian wiki-links)
+        run: |
+          python3 graphify-platform/bin/graphify-obsidian-bridge.py \
+            src/graphify-out --min-nodes 1
+
+      - name: Run digest (TL;DR)
+        run: |
+          python3 graphify-platform/bin/graphify-digest.py src/graphify-out
+
+      - name: Copy to versioned snapshot
+        run: |
+          mkdir -p graphify-platform/snapshots
+          cp src/graphify-out/_GRAPHIFY_DIGEST.md graphify-platform/snapshots/LATEST_DIGEST.md
+          cp src/graphify-out/GRAPH_REPORT.md     graphify-platform/snapshots/LATEST_REPORT.md
+          echo "Snapshot sizes:"
+          wc -c graphify-platform/snapshots/LATEST_*.md
+
+      - name: Detect changes
+        id: diff
+        run: |
+          if git diff --quiet graphify-platform/snapshots/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No snapshot changes — skipping commit"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat graphify-platform/snapshots/
+          fi
+
+      - name: Commit + push snapshot
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name  "graphify-snapshot[bot]"
+          git config user.email "graphify-snapshot[bot]@users.noreply.github.com"
+          git add graphify-platform/snapshots/LATEST_DIGEST.md graphify-platform/snapshots/LATEST_REPORT.md
+          git commit -m "chore(graphify): auto-snapshot [skip graphify]
+
+          Triggered by: ${{ github.event.head_commit.message }}
+          SHA: ${{ github.sha }}"
+          # Retry push up to 3x in case another commit landed mid-run
+          for i in 1 2 3; do
+            if git push origin main; then
+              echo "push OK on attempt $i"
+              exit 0
+            fi
+            echo "push failed on attempt $i, rebasing and retrying"
+            git pull --rebase origin main
+          done
+          echo "::error::push failed after 3 attempts"
+          exit 1

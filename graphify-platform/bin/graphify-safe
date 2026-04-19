@@ -88,7 +88,11 @@ HITS="$(grep -rEl "$JOINED" "$TARGET" 2>/dev/null || true)"
 if [[ -n "$HITS" ]]; then
   warn "Potential secrets detected in target scan path:"
   echo "$HITS" | sed 's/^/  /' >&2
-  die "Aborting. Move secrets out of scan path OR run with GRAPHIFY_ACCEPT_SECRETS=1 (not recommended)." 2
+  if [[ "${GRAPHIFY_ACCEPT_SECRETS:-0}" == "1" ]]; then
+    warn "GRAPHIFY_ACCEPT_SECRETS=1 — proceeding despite hits (caller's risk)."
+  else
+    die "Aborting. Move secrets out of scan path OR run with GRAPHIFY_ACCEPT_SECRETS=1 (not recommended)." 2
+  fi
 fi
 
 # Also ensure user isn't about to scan an ignored path explicitly

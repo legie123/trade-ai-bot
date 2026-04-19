@@ -2,10 +2,14 @@
 ## GRAPHIFY (knowledge graph layer)
 
 ### ON SESSION START (mandatory)
-1. Citeste DOAR `<scan-target>/graphify-out/_GRAPHIFY_DIGEST.md` (~150-200 tokeni). NU citi `GRAPH_REPORT.md` la init.
-2. Citeste `GRAPH_REPORT.md` SAU `_COMMUNITY_*.md` doar la intrebare arhitecturala explicita.
-3. Daca digestul lipseste sau e stale → `./scripts/graphify-safe <subpath> --update && ./scripts/graphify-bridge <subpath>/graphify-out && ./scripts/graphify-digest <subpath>/graphify-out`. Sau lasa hook-ul post-commit sa o faca automat.
-4. Citation contract: `[graphify:digest|report|community-N]`, `[gitnexus:impact]`, `[grep:source]`.
+1. **Digest fallback chain (citeste primul care exista):**
+   a. PRIMARY: `<scan-target>/graphify-out/_GRAPHIFY_DIGEST.md` (local, fresh ≤7d). ~150-200 tokeni.
+   b. FALLBACK: `graphify-platform/snapshots/LATEST_DIGEST.md` — versionat in repo, auto-refreshed de `.github/workflows/graphify-snapshot.yml` la fiecare push pe `src/**`. Garanteaza ca orice sesiune Claude (chiar fara build local) are digest curent.
+2. Raport full fallback chain (doar la intrebare arhitecturala explicita):
+   a. PRIMARY: `<scan-target>/graphify-out/GRAPH_REPORT.md`
+   b. FALLBACK: `graphify-platform/snapshots/LATEST_REPORT.md`
+3. Daca AMBELE lipsesc → `./scripts/graphify-safe <subpath> --update && ./scripts/graphify-bridge <subpath>/graphify-out && ./scripts/graphify-digest <subpath>/graphify-out`. Sau lasa hook-ul post-commit / GitHub Action sa o faca automat.
+4. Citation contract: `[graphify:digest|report|community-N|snapshot]`, `[gitnexus:impact]`, `[grep:source]`.
 
 ### Build / Update
 - Initial: `./scripts/graphify-safe ./src` (sau subpath echivalent, NU repo root).

@@ -17,10 +17,12 @@
 - Pinned version: `graphifyy==0.4.23`. Upgrade manual dupa CHANGELOG.
 
 **ON SESSION START (orice repo cu Graphify activ):**
-1. Citeste DOAR `<project>/graphify-out/_GRAPHIFY_DIGEST.md` (~150-200 tokeni, ~35× mai ieftin decat raportul full).
-2. NU citi `GRAPH_REPORT.md` la session-init. Citeste-l doar la intrebare arhitecturala explicita ("how does X work", "show me god-nodes").
-3. Daca digestul lipseste → propune `./scripts/graphify-safe ./src && ./scripts/graphify-bridge ./src/graphify-out && ./scripts/graphify-digest ./src/graphify-out`.
-4. Citation contract obligatoriu: `[graphify:digest|report|community-N]`, `[gitnexus:impact]`, `[grep:source]`.
+1. **Digest fallback chain** (citeste primul care exista):
+   a. PRIMARY: `<project>/graphify-out/_GRAPHIFY_DIGEST.md` (~150-200 tokeni, ~35× mai ieftin decat raportul full)
+   b. FALLBACK: `graphify-platform/snapshots/LATEST_DIGEST.md` — versionat, auto-refreshed de GitHub Action `graphify-snapshot.yml`. Garanteaza disponibilitate cross-machine.
+2. NU citi `GRAPH_REPORT.md` / `LATEST_REPORT.md` la session-init. Citeste-l doar la intrebare arhitecturala explicita ("how does X work", "show me god-nodes").
+3. Daca AMBELE lipsesc → propune `./scripts/graphify-safe ./src && ./scripts/graphify-bridge ./src/graphify-out && ./scripts/graphify-digest ./src/graphify-out`.
+4. Citation contract obligatoriu: `[graphify:digest|report|community-N|snapshot]`, `[gitnexus:impact]`, `[grep:source]`.
 5. NU amesteca concluzii graphify cu raspunsuri gitnexus.
 
 **Proiect nou:**

@@ -148,9 +148,11 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 # Graphify — Knowledge Graph Layer
 
 ## ON SESSION START (mandatory pentru orice sesiune Claude pe TRADE AI)
-1. **Citeste DOAR** `src/graphify-out/_GRAPHIFY_DIGEST.md` — TL;DR ~160 tokeni (vs ~5,567 raportul full). Confirmat 34.6× reducere.
-2. **NU citi `GRAPH_REPORT.md` la session-init.** Citeste-l doar la intrebare arhitecturala explicita ("how does X work", "what's the structure", "show me god-nodes"). Comunitatile (`_COMMUNITY_*.md`) doar pe demand specific.
-3. **Daca digestul lipseste sau e >7 zile vechi**, executa `./scripts/graphify-safe ./src --update` apoi `./scripts/graphify-bridge ./src/graphify-out` apoi `./scripts/graphify-digest ./src/graphify-out`. Sau lasa hook-ul post-commit sa o faca automat (auto-instalat de `graphify-new-project.sh`).
+1. **Citeste digest cu fallback chain:**
+   a. PRIMARY: `src/graphify-out/_GRAPHIFY_DIGEST.md` (dacă există, local fresh ≤7d) — TL;DR ~170 tokeni (vs ~5,567 raportul full). Confirmat 34.6× reducere.
+   b. FALLBACK: `graphify-platform/snapshots/LATEST_DIGEST.md` — mereu prezent, auto-refreshed de GitHub Action `graphify-snapshot` la fiecare push pe `src/**`. Folosit cand local `graphify-out/` lipseste (sesiune fresh pe masina noua) sau hook-ul post-commit nu a rulat.
+2. **NU citi `GRAPH_REPORT.md` la session-init.** Citeste-l doar la intrebare arhitecturala explicita. Fallback chain aceeasi: `src/graphify-out/GRAPH_REPORT.md` → `graphify-platform/snapshots/LATEST_REPORT.md`. Comunitatile (`_COMMUNITY_*.md`) doar pe demand specific.
+3. **Daca digestul lipseste COMPLET** (nici local nici snapshot), executa `./scripts/graphify-safe ./src --update` apoi `./scripts/graphify-bridge ./src/graphify-out` apoi `./scripts/graphify-digest ./src/graphify-out`. Sau lasa hook-ul post-commit sa o faca automat (auto-instalat de `graphify-new-project.sh`). GitHub Action face acelasi lucru pe server fara interventie umana.
 4. **Cand utilizatorul intreaba "cum functioneaza X"**, foloseste `graphify query "X"` SAU citeste sectiunea relevanta din `GRAPH_REPORT.md`. NU grep blind pe codebase pentru intrebari arhitecturale.
 5. **Cand utilizatorul cere refactor major**, ruleaza graphify update inainte de raportul final (verifica daca god-nodes s-au mutat).
 6. **Citation contract:** marcheaza sursa in raspuns: `[graphify:digest]` (am citit doar TL;DR), `[graphify:report]` (am citit raport full), `[graphify:community-N]` (am citit community stub), `[gitnexus:impact]` (impact surgical), `[grep:source]` (grep direct, motiv: graphify nu acopera).
