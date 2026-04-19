@@ -4,6 +4,7 @@ import { createLogger } from '@/lib/core/logger';
 import { initDB, getLivePositions } from '@/lib/store/db';
 import { requireCronAuth } from '@/lib/core/cronAuth';
 import { isKillSwitchEngaged } from '@/lib/core/killSwitch';
+import { instrumentCron } from '@/lib/observability/cronInstrument';
 
 const log = createLogger('Cron-PositionManager');
 
@@ -11,7 +12,7 @@ const log = createLogger('Cron-PositionManager');
 // Designed to run every 1 minute.
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request) {
+export const GET = instrumentCron('positions', async (request: Request) => {
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
@@ -54,4 +55,4 @@ export async function GET(request: Request) {
     log.error('Position Manager Cron Failed:', { error: errorMsg });
     return NextResponse.json({ status: 'error', message: errorMsg }, { status: 500 });
   }
-}
+});

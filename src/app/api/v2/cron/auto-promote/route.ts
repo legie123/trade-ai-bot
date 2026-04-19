@@ -14,6 +14,8 @@ import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 // FAZA A BATCH 1: domain metrics hook
 import { metrics, safeInc } from '@/lib/observability/metrics';
+// FAZA A BATCH 3: cron run/duration instrumentation
+import { instrumentCron } from '@/lib/observability/cronInstrument';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,7 +68,7 @@ interface PromotionResult {
   };
 }
 
-export async function GET(request: Request) {
+export const GET = instrumentCron('auto-promote', async (request: Request) => {
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
@@ -388,4 +390,4 @@ export async function GET(request: Request) {
       timestamp: new Date().toISOString(),
     }, { status: 500 });
   }
-}
+});

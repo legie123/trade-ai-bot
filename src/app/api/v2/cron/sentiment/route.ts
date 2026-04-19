@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
 import { analyzeSentimentLLM } from '@/lib/v2/superai/llmSentiment';
 import { requireCronAuth } from '@/lib/core/cronAuth';
+import { instrumentCron } from '@/lib/observability/cronInstrument';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,7 +59,7 @@ function classifyPost(text: string): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
   return 'NEUTRAL';
 }
 
-export async function GET(request: Request) {
+export const GET = instrumentCron('sentiment', async (request: Request) => {
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
@@ -182,4 +183,4 @@ export async function GET(request: Request) {
     log.error('[Sentiment Heartbeat] Error', { error: (err as Error).message });
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
-}
+});
