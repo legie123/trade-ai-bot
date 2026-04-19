@@ -444,6 +444,7 @@ export function setHorizonOutcome(
   horizonMin: number,
   result: { price: number; pnlPercent: number; label: 'WIN' | 'LOSS' | 'NEUTRAL'; evaluatedAt: string }
 ): void {
+  // Local write first (sync) — same-tick reads see our write.
   const idx = cache.decisions.findIndex((d) => d.id === id);
   if (idx === -1) return;
   const dec = cache.decisions[idx];
@@ -452,7 +453,77 @@ export function setHorizonOutcome(
     ...dec,
     horizonOutcomes: { ...existing, [String(horizonMin)]: result },
   };
-  syncToCloud('decisions', cache.decisions);
+
+  // RUFLO FAZA 3 / BATCH 5 / F6 fix (P1) — cross-instance merge-before-sync.
+  //
+  // BUG (pre-fix): Two Cloud Run instances can both fill horizons for the same
+  // decision (A fills HO[5], B fills HO[15]) based on their own in-memory
+  // cache.decisions. syncToCloud() writes the WHOLE decisions array → the
+  // second instance to sync overwrites the first's horizon. Even with lease
+  // on cron:main-tick (50s TTL), warm instances can hydrate stale decisions
+  // from Supabase BEFORE leader's sync lands, then overwrite on next
+  // leadership transition.
+  //
+  // FIX: Spawn async IIFE under decisionMutex that fetches remote decisions,
+  // merges horizonOutcomes for THIS decision (UNION semantics; local wins on
+  // conflict because we just wrote it), pulls in remote-only decisions,
+  // then syncToCloud with the merged view.
+  //
+  // COST: +1 Supabase SELECT per horizon fill (~20 × 4 = ~80/tick). Accepted
+  // because F6 data loss is correctness-critical; addDecision's 60s debounce
+  // pattern is INSUFFICIENT for horizons (same decision ID gets written 4
+  // times across horizons, often from different instances).
+  //
+  // Env rollback: HORIZON_UPSERT_OFF=1 → legacy direct overwrite.
+  //
+  // ASUMPȚII invalidatoare:
+  //   1) remote SELECT < 3s. Tracked via pendingDecisionSaves; flushPendingSyncs
+  //      awaits it.
+  //   2) Local horizon = "latest". Cron lease prevents same-tick concurrency;
+  //      cross-tick conflict on same horizon is extremely rare.
+  if (process.env.HORIZON_UPSERT_OFF === '1' || !supabaseUrl || !dbInitialized) {
+    syncToCloud('decisions', cache.decisions);
+    return;
+  }
+
+  const p = (async () => {
+    const release = await decisionMutex.acquire();
+    try {
+      try {
+        const { data } = await supabase.from('json_store').select('data').eq('id', 'decisions').single();
+        if (data?.data) {
+          const remote = data.data as DecisionSnapshot[];
+          const remoteIdx = remote.findIndex(d => d.id === id);
+          const localDec = cache.decisions.find(d => d.id === id);
+          const localHO = localDec?.horizonOutcomes || {};
+          if (remoteIdx !== -1 && localDec) {
+            const remoteHO = remote[remoteIdx].horizonOutcomes || {};
+            // UNION — local wins on key conflict (we just wrote it).
+            const mergedHO = { ...remoteHO, ...localHO };
+            const cacheIdx = cache.decisions.findIndex(d => d.id === id);
+            if (cacheIdx !== -1) {
+              cache.decisions[cacheIdx] = { ...cache.decisions[cacheIdx], horizonOutcomes: mergedHO };
+            }
+          }
+          // Pull remote decisions not in local (addDecision pattern) so sync
+          // doesn't clobber new decisions from other instances.
+          const localMap = new Map(cache.decisions.map(d => [d.id, d]));
+          for (const rd of remote) {
+            if (!localMap.has(rd.id)) cache.decisions.push(rd);
+          }
+          cache.decisions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          if (cache.decisions.length > 1000) cache.decisions.length = 1000;
+        }
+      } catch (err) {
+        log.warn('[Horizon] merge-before-write failed, proceeding with local state', { error: String(err) });
+      }
+      syncToCloud('decisions', cache.decisions);
+    } finally {
+      release();
+    }
+  })();
+  pendingDecisionSaves.add(p);
+  p.finally(() => pendingDecisionSaves.delete(p)).catch(() => { /* tracked */ });
 }
 
 /**
