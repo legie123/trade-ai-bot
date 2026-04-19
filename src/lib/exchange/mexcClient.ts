@@ -87,9 +87,7 @@ async function mexcRequest(
       await rateLimiter.wait();
 
       const controller = new AbortController();
-      // FIX CRITICAL: Increased timeout from 8s to 15s — 8s was too tight for Cloud Run cold starts
-      // and caused batch price fetch cascade failures
-      const timer = setTimeout(() => controller.abort(), 15000);
+      const timer = setTimeout(() => controller.abort(), 8000);
 
       const res = await fetch(url, { method, headers, signal: controller.signal });
       clearTimeout(timer);
@@ -181,13 +179,13 @@ export async function getMexcPrices(symbols?: string[]): Promise<Record<string, 
     return {};
   }
 
-  const CHUNK_SIZE = 5;
+  const CONCURRENCY = 8;
   const results: Record<string, number> = {};
 
-  // Chunked parallel fetch — concurrency=5 to stay under MEXC rate limit (10 req/s signed)
-  for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
-    const chunk = symbols.slice(i, i + CHUNK_SIZE);
-    await Promise.allSettled(chunk.map(async (sym) => {
+  // Bounded parallel fetch — prevent MEXC rate-limit on large symbol sets.
+  for (let i = 0; i < symbols.length; i += CONCURRENCY) {
+    const batch = symbols.slice(i, i + CONCURRENCY);
+    await Promise.allSettled(batch.map(async (sym) => {
       try {
         const data = await mexcRequest('GET', '/api/v3/ticker/price', { symbol: sym }, false);
         const price = parseFloat(data.price as string);
@@ -198,7 +196,7 @@ export async function getMexcPrices(symbols?: string[]): Promise<Record<string, 
     }));
   }
 
-  log.info(`[MEXC] Chunked fetch: ${symbols.length} requested, ${Object.keys(results).length} returned`);
+  log.info(`[MEXC] Parallel fetch: ${symbols.length} requested, ${Object.keys(results).length} returned (concurrency=${CONCURRENCY})`);
   return results;
 }
 
@@ -347,6 +345,44 @@ export async function sellAllAssetsToUsdt(): Promise<void> {
       console.error(`[Kill Switch] Failed to sell ${b.asset}:`, err);
     }
   }
+}
+
+/**
+ * RUFLO FAZA 3 / BATCH 8 / F9 helper — cancel-all-orders across ALL symbols.
+ *
+ * Emergency-only: iterates non-USDT balances, issues cancelAllMexcOrders per
+ * symbol. Best-effort; per-symbol errors are logged and swallowed so one bad
+ * symbol does not block the rest of the flash-crash liquidation.
+ *
+ * WHY this (not getMexcOpenOrders without symbol): MEXC SPOT sometimes
+ * restricts `/openOrders` without symbol param. Iterating balances is
+ * authoritative — if there's an open order, the quantity is locked on an
+ * asset we hold.
+ */
+export async function cancelAllOpenOrdersEmergency(): Promise<{ cancelled: string[]; failed: string[] }> {
+  assertLiveTradingAllowedForEmergencyExit('cancelAllOpenOrdersEmergency');
+  const cancelled: string[] = [];
+  const failed: string[] = [];
+  let balances: { asset: string; free: number; locked: number }[] = [];
+  try {
+    balances = await getMexcBalances();
+  } catch (err) {
+    log.error('[Kill Switch][Cancel-All] getMexcBalances failed — cannot enumerate symbols', { error: (err as Error).message });
+    return { cancelled, failed: ['BALANCES_FETCH'] };
+  }
+  const candidates = balances.filter(b => b.asset !== 'USDT' && (b.locked > 0 || b.free > 0));
+  for (const b of candidates) {
+    const symbol = `${b.asset}USDT`;
+    try {
+      await cancelAllMexcOrders(symbol);
+      cancelled.push(symbol);
+    } catch (err) {
+      // Per-symbol failure is not fatal — we still want to try the rest.
+      log.warn(`[Kill Switch][Cancel-All] ${symbol} failed`, { error: (err as Error).message });
+      failed.push(symbol);
+    }
+  }
+  return { cancelled, failed };
 }
 
 // ─── Connection test ───────────────────────────

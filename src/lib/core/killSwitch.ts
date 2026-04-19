@@ -133,6 +133,41 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
 
   log.fatal(`KILL SWITCH ENGAGED: ${reason}`, { auto, reason });
 
+  // RUFLO FAZA 3 / BATCH 8 / F9 fix (P1) — flash-crash hardening.
+  //
+  // BUG (pre-fix): sellAllAssetsToUsdt() runs market SELLs on `free` balance,
+  // but `free` excludes quantity locked in open LIMIT / STOP_LOSS orders.
+  // If we try to liquidate while SL orders are live, we sell only the
+  // unlocked sliver and leave the rest exposed. Verify loop then ran at
+  // 5min cadence — way too slow for a flash-crash context.
+  //
+  // FIX:
+  //   1) Cancel-all-orders across every non-USDT symbol FIRST (emergency
+  //      helper in mexcClient), unlocking balances before market-sell.
+  //   2) Compress verify loop from 5min to 30s (maxAttempts kept at the
+  //      same ~60min total).
+  //
+  // NOT IN SCOPE (honest — out of sniper edit):
+  //   • Separate HTTP client with 3s timeout bypassing rate-limiter. Would
+  //     need dedicated signing path; we'd be duplicating mexcClient. If
+  //     live flash-crash proves the current mexcRequest rate-limiter
+  //     stalls >3s on burst, spin up a separate HOT-PATH client as B8.5.
+  //   • Exchange-side cancelAllAfter (dead-man's switch). MEXC SPOT API
+  //     does NOT expose this (Binance has it, MEXC doesn't).
+  //
+  // Env rollback: KS_FLASH_GUARD_OFF=1 → legacy (no cancel-all, 5min poll).
+  const flashGuardOff = process.env.KS_FLASH_GUARD_OFF === '1';
+
+  if (!flashGuardOff) {
+    try {
+      const { cancelAllOpenOrdersEmergency } = await import('@/lib/exchange/mexcClient');
+      const res = await cancelAllOpenOrdersEmergency();
+      log.info(`[KILL SWITCH] Pre-liquidation cancel-all: cancelled=[${res.cancelled.join(',')}] failed=[${res.failed.join(',')}]`);
+    } catch (err) {
+      log.error('[KILL SWITCH] Pre-liquidation cancel-all threw — proceeding to market-sell anyway', { error: (err as Error).message });
+    }
+  }
+
   // CRITICAL: Actually close all positions on MEXC with retries and exponential backoff
   const { sellAllAssetsToUsdt } = await import('@/lib/exchange/mexcClient');
   const maxRetries = 3;
@@ -162,10 +197,12 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
       error: lastError.message
     });
 
-    // AUDIT FIX T2.3: Bounded verification loop with proper cleanup
+    // RUFLO FAZA 3 / BATCH 8 — verify poll compressed from 5min → 30s.
+    // Kill-switch: KS_FLASH_GUARD_OFF=1 → legacy 5min cadence.
+    // Total verification window kept at ~60min via matching maxVerifyAttempts.
     let verifyAttempts = 0;
-    const maxVerifyAttempts = 12; // 60 minutes total
-    const verifyInterval = 5 * 60_000; // 5 minutes
+    const verifyInterval = flashGuardOff ? 5 * 60_000 : 30_000;
+    const maxVerifyAttempts = flashGuardOff ? 12 : 120; // ~60 min either way
 
     const verifyLoop = setInterval(async () => {
       verifyAttempts++;
@@ -177,14 +214,15 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
           clearInterval(verifyLoop);
           return;
         }
-        log.warn(`[KILL SWITCH VERIFICATION] Still ${openPos.length} open position(s) on MEXC after ${verifyAttempts * 5}min`);
+        const elapsedMin = (verifyAttempts * verifyInterval) / 60_000;
+        log.warn(`[KILL SWITCH VERIFICATION] Still ${openPos.length} open position(s) on MEXC after ${elapsedMin.toFixed(1)}min`);
       } catch (err) {
         log.error(`[KILL SWITCH VERIFICATION] Query failed: ${(err as Error).message}`);
       }
 
       if (verifyAttempts >= maxVerifyAttempts) {
         clearInterval(verifyLoop);
-        log.fatal('KILL SWITCH VERIFICATION: Timeout — Could not verify position closure after 60 minutes. MANUAL INTERVENTION CRITICAL.');
+        log.fatal('KILL SWITCH VERIFICATION: Timeout — Could not verify position closure after ~60 minutes. MANUAL INTERVENTION CRITICAL.');
       }
     }, verifyInterval);
 
