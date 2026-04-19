@@ -35,6 +35,35 @@ from pathlib import Path
 
 DIGEST_NAME = "_GRAPHIFY_DIGEST.md"
 
+# Denylist: framework boilerplate + unresolved accessor calls.
+# Without this, top god-nodes get dominated by Next.js route handler exports
+# (GET/POST/PUT/DELETE/PATCH/OPTIONS/HEAD) and unresolved method calls (.get, .set,
+# .fetch, .map, etc.) that have no business semantics. Filtering them surfaces real
+# domain functions like findBestGladiator, executeTrade, karmaBuilder.
+FILE_EXTS = (".ts", ".py", ".js", ".tsx", ".jsx", ".mjs", ".cjs")
+HTTP_EXPORTS = {
+    "GET", "GET()", "POST", "POST()", "PUT", "PUT()", "DELETE", "DELETE()",
+    "PATCH", "PATCH()", "OPTIONS", "OPTIONS()", "HEAD", "HEAD()",
+}
+GENERIC_HANDLERS = {
+    "default", "default()", "handler", "handler()", "middleware", "middleware()",
+    "constructor", "constructor()", "render", "render()",
+}
+
+
+def _is_noise_label(label: str) -> bool:
+    """Return True if label is framework boilerplate, unresolved call, or file node."""
+    if not label:
+        return True
+    if any(label.endswith(ext) for ext in FILE_EXTS):
+        return True
+    if label in HTTP_EXPORTS or label in GENERIC_HANDLERS:
+        return True
+    # Unresolved method calls show up as ".methodname" or ".methodname()"
+    if label.startswith("."):
+        return True
+    return False
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Graphify TL;DR digest generator")
@@ -73,10 +102,10 @@ def main() -> int:
     # Resolve top god-nodes (use label, not id)
     id_to_label = {n["id"]: n.get("label", n["id"]) for n in nodes}
     top_gods = []
-    for nid, d in deg.most_common(args.top_gods * 2):  # buffer for skipping file nodes
+    # Buffer 6x because filtering can be aggressive on noisy graphs
+    for nid, d in deg.most_common(args.top_gods * 6):
         label = id_to_label.get(nid, nid)
-        # Skip pure file nodes (label ending in .ts/.py/.js)
-        if any(label.endswith(ext) for ext in [".ts", ".py", ".js", ".tsx", ".jsx"]):
+        if _is_noise_label(label):
             continue
         top_gods.append((label, d))
         if len(top_gods) >= args.top_gods:
