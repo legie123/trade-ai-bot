@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useBotStats } from '@/hooks/useBotStats';
 import BottomNav from '@/components/BottomNav';
 import HelpTooltip from '@/components/HelpTooltip';
+import LiveAnalyticsStrip from '@/components/LiveAnalyticsStrip';
 
 const HELP = {
   kpi: {
@@ -356,6 +357,9 @@ export default function CryptoRadarPage() {
             </div>
           ))}
         </div>
+
+        {/* ── LIVE TELEMETRY (Grafana × Prometheus) ─────── */}
+        <LiveAnalyticsStrip />
 
         {/* ── MAINFRAME GRID ─────────────────────────── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(380px, 1fr) 1fr', gap: 24 }}>
