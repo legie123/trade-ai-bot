@@ -4,6 +4,8 @@ import { PolyDivision } from '@/lib/polymarket/polyTypes';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
 import { evaluateMarket } from '@/lib/polymarket/polyGladiators';
 import { openPosition } from '@/lib/polymarket/polyWallet';
+import { correlateDecision } from '@/lib/polymarket/correlationLayer';
+import { logDecision } from '@/lib/polymarket/decisionLog';
 import {
   ensureInitialized,
   getWallet,
@@ -71,8 +73,29 @@ export async function GET(request: Request) {
 
           const evaluation = evaluateMarket(gladiator, opportunity.market, opportunity);
 
-          // Place phantom bet if direction is clear (env POLY_CONF_MIN)
-          if (evaluation.direction !== 'SKIP' && evaluation.confidence >= CONF_MIN) {
+          // FAZA 3.3: Correlate decision cross-source (edge × goldsky × karma × liquidity).
+          // Runs async (may hit Goldsky subgraph) but is budget-bounded: only
+          // calls Goldsky when evaluation edge >= MIN_EDGE_FOR_GOLDSKY (default 40).
+          // Graceful degradation: any source unavailable → multiplier=1.0 (neutru).
+          const correlated = await correlateDecision(gladiator, opportunity.market, evaluation, opportunity);
+
+          // Always log decision (acted or not). Best-effort persist — never blocks.
+          // This row is the audit trail for FAZA 3.4 drill-down.
+          void logDecision({
+            gladiator,
+            market: opportunity.market,
+            decision: correlated,
+            opportunity,
+            acted: correlated.shouldAct,
+          });
+
+          // Place phantom bet if correlation says so (replaces old plain CONF_MIN gate).
+          // Back-compat: if correlation is disabled, correlated.shouldAct falls back to
+          // the classic (direction!=SKIP && confidence>=50) condition.
+          // NOTE: explicit `direction !== 'SKIP'` is redundant with shouldAct but
+          // restores TypeScript flow-narrowing for the openPosition() call below,
+          // which requires direction ∈ {BUY_YES, BUY_NO}.
+          if (correlated.shouldAct && evaluation.direction !== 'SKIP' && evaluation.confidence >= CONF_MIN) {
             // Create phantom bet on gladiator.
             // Outcome resolution: prefer literal YES/NO match, fallback to
             // positional [0]=YES/[1]=NO for markets with arbitrary labels
@@ -96,7 +119,7 @@ export async function GET(request: Request) {
               entryPrice: opportunity.market.outcomes[0]?.price || 0.5,
               shares: 0,
               confidence: evaluation.confidence,
-              reasoning: evaluation.reasoning,
+              reasoning: `${evaluation.reasoning} | final=${correlated.finalScore.toFixed(1)} [edge×gs×km×liq=${correlated.edgeScore}×${correlated.goldskyConfirm.toFixed(2)}×${correlated.moltbookKarma.toFixed(2)}×${correlated.liquiditySanity.toFixed(2)}]`,
               placedAt: new Date().toISOString(),
             };
 
