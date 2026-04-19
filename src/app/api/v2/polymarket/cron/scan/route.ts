@@ -6,6 +6,7 @@ import { evaluateMarket } from '@/lib/polymarket/polyGladiators';
 import { openPosition } from '@/lib/polymarket/polyWallet';
 import { correlateDecision } from '@/lib/polymarket/correlationLayer';
 import { logDecision } from '@/lib/polymarket/decisionLog';
+import { startScanRun, finishScanRun } from '@/lib/polymarket/scanHistory';
 import {
   ensureInitialized,
   getWallet,
@@ -48,7 +49,19 @@ export async function GET(request: Request) {
 
     let betsPlaced = 0;
     let opportunitiesFound = 0;
+    let decisionsLogged = 0;
     const scannedDivisions: string[] = [];
+    const scanErrors: Array<{ division: string; error: string }> = [];
+
+    // FAZA 3.4 — open scan-history run for audit trail + drill-down
+    const envSnapshot = {
+      EDGE_MIN,
+      CONF_MIN,
+      ACT_THRESHOLD: process.env.POLY_FINAL_ACT_THRESHOLD ?? '45',
+      CORRELATION_ENABLED: process.env.POLYMARKET_CORRELATION_ENABLED !== '0',
+      GOLDSKY_CORRELATION: process.env.POLYMARKET_GOLDSKY_CORRELATION !== '0',
+    };
+    const { runId, startedAt } = await startScanRun(envSnapshot);
 
     // Scan the 3 priority divisions
     for (const division of priorityDivisions) {
@@ -80,13 +93,16 @@ export async function GET(request: Request) {
           const correlated = await correlateDecision(gladiator, opportunity.market, evaluation, opportunity);
 
           // Always log decision (acted or not). Best-effort persist — never blocks.
-          // This row is the audit trail for FAZA 3.4 drill-down.
+          // This row is the audit trail for FAZA 3.4 drill-down. runId links
+          // the decision to its scan-history row (nullable — scan history is soft).
+          decisionsLogged++;
           void logDecision({
             gladiator,
             market: opportunity.market,
             decision: correlated,
             opportunity,
             acted: correlated.shouldAct,
+            runId,
           });
 
           // Place phantom bet if correlation says so (replaces old plain CONF_MIN gate).
@@ -158,7 +174,9 @@ export async function GET(request: Request) {
           }
         }
       } catch (err) {
-        log.error('Error scanning division', { division, error: String(err) });
+        const errStr = String(err);
+        log.error('Error scanning division', { division, error: errStr });
+        scanErrors.push({ division, error: errStr });
       }
     }
 
@@ -166,11 +184,23 @@ export async function GET(request: Request) {
     await persistWallet();
     await persistGladiators();
 
-    return NextResponse.json({
-      status: 'ok',
+    // FAZA 3.4 — close scan-history run (best-effort; never throws upstream)
+    await finishScanRun(runId, startedAt, {
       divisionsScanned: scannedDivisions,
       opportunitiesFound,
       betsPlaced,
+      decisionsLogged,
+      errors: scanErrors,
+      envSnapshot,
+    });
+
+    return NextResponse.json({
+      status: 'ok',
+      runId,
+      divisionsScanned: scannedDivisions,
+      opportunitiesFound,
+      betsPlaced,
+      decisionsLogged,
       gladiatorsActive: gladiators.filter(g => g.isLive).length,
       walletBalance: wallet.totalBalance,
       timestamp: Date.now(),

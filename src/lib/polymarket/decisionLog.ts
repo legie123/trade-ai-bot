@@ -34,6 +34,7 @@ export async function logDecision(args: {
   decision: CorrelatedDecision;
   opportunity?: PolyOpportunity;
   acted: boolean;
+  runId?: string; // FAZA 3.4 — links decision to its scan run for drill-down
 }): Promise<{ inserted: boolean; decisionId: string; reason?: string }> {
   const decisionId = uuid();
   if (!supa) return { inserted: false, decisionId, reason: 'supabase_unconfigured' };
@@ -55,6 +56,7 @@ export async function logDecision(args: {
     skip_reason: args.decision.skipReason || null,
     rationale: args.decision.rationale,
     raw_opportunity: args.opportunity ?? null,
+    run_id: args.runId ?? null,
   };
 
   try {
