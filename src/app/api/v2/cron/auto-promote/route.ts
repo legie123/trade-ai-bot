@@ -15,6 +15,28 @@ import { gladiatorStore } from '@/lib/store/gladiatorStore';
 
 export const dynamic = 'force-dynamic';
 
+// RUFLO FAZA 3 Batch 5 (C9) 2026-04-19: Wilson score interval lower bound.
+// Symmetric to Butcher C8 kill gate. Prevents promoting gladiators on a
+// lucky streak: at WR=58% with n=50, 95% CI spans ~44–72% — promoting at
+// raw 58 means we may be promoting a true-WR-45% gladiator.
+//
+// wilsonLower = (p + z²/2n - z*sqrt((p(1-p)+z²/4n)/n)) / (1 + z²/n)
+// z = 1.96 → 95% confidence.
+// Example: 29 wins / 50 trades = 58% raw WR
+//   wilsonLower ≈ 0.439 → NOT promoted under strict gate (WILSON_WR_FLOOR=0.50)
+// Example: 35 wins / 50 trades = 70% raw WR
+//   wilsonLower ≈ 0.560 → promoted (confident >50% true WR)
+function wilsonLower(successes: number, n: number): number {
+  if (n === 0) return 0;
+  const z = 1.96;
+  const p = successes / n;
+  const z2 = z * z;
+  const denom = 1 + z2 / n;
+  const center = p + z2 / (2 * n);
+  const margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n);
+  return (center - margin) / denom;
+}
+
 // FAZA 3/5 BATCH 2/4 (2026-04-19) — auto-promote criteria aligned with QW-8 gate.
 // PRIOR: 20/45/1.1 was dangerously loose — allowed LIVE promotion on 20 wash-contaminated
 // phantom rows (potentially = 3-5 independent signals).
@@ -104,13 +126,20 @@ export async function GET(request: Request) {
       // cheap upper bound: if raw totalTrades < threshold, indep can't exceed it
       g.stats.totalTrades >= PROMO_CRITERIA.minPhantomTrades
     );
+    // RUFLO FAZA 3 Batch 5 (C9) 2026-04-19: Wilson CI floor for promotion.
+    // Even after passing raw WR≥58 + indep count ≥50, we demand 95% pessimistic
+    // WR estimate to be ≥50%. This symmetrically mirrors Butcher (kill < 0.35).
+    // Gate zone: Butcher spares [0.35, 0.50]; Promoter blocks [0.35, 0.50] too
+    // → these gladiators stay in PHANTOM until more data resolves ambiguity.
+    // Kill-switch: env PROMOTE_USE_WILSON=0 reverts to raw WR gate.
+    const useWilsonPromo = process.env.PROMOTE_USE_WILSON !== '0';
+    const WILSON_WR_FLOOR = 0.50;
+
     const candidates: typeof preliminary = [];
     for (const g of preliminary) {
       try {
         const indepCount = await getIndependentSampleSize(g.id);
-        if (indepCount >= PROMO_CRITERIA.minPhantomTrades) {
-          candidates.push(g);
-        } else {
+        if (indepCount < PROMO_CRITERIA.minPhantomTrades) {
           results.push({
             gladiatorId: g.id,
             gladiatorName: g.name,
@@ -118,7 +147,25 @@ export async function GET(request: Request) {
             reason: `Insufficient INDEPENDENT samples: ${indepCount} (raw ${g.stats.totalTrades}) < ${PROMO_CRITERIA.minPhantomTrades} — wash-contaminated`,
             stats: { winRate: g.stats.winRate, profitFactor: g.stats.profitFactor, totalTrades: g.stats.totalTrades },
           });
+          continue;
         }
+        // Wilson floor — based on INDEPENDENT sample size (indepCount) not raw
+        // totalTrades, to avoid overstating confidence from wash trades.
+        if (useWilsonPromo) {
+          const wins = Math.round((g.stats.winRate / 100) * indepCount);
+          const wrLower = wilsonLower(wins, indepCount);
+          if (wrLower < WILSON_WR_FLOOR) {
+            results.push({
+              gladiatorId: g.id,
+              gladiatorName: g.name,
+              action: 'SKIPPED',
+              reason: `Wilson WR lower bound ${(wrLower*100).toFixed(1)}% < ${(WILSON_WR_FLOOR*100).toFixed(0)}% — statistical confidence insufficient (raw WR ${g.stats.winRate}%, indep n=${indepCount})`,
+              stats: { winRate: g.stats.winRate, profitFactor: g.stats.profitFactor, totalTrades: g.stats.totalTrades },
+            });
+            continue;
+          }
+        }
+        candidates.push(g);
       } catch {
         results.push({
           gladiatorId: g.id,
