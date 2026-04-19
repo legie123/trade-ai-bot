@@ -35,7 +35,7 @@ interface DriftRow {
   battles_short_n: number;
   battles_long_wr_pct: number;
   battles_short_wr_pct: number;
-  severity: 'OK' | 'MINOR' | 'MAJOR' | 'CRITICAL';
+  severity: 'NO_DATA' | 'OK' | 'MINOR' | 'MAJOR' | 'CRITICAL';
 }
 
 function pickWin(b: Record<string, unknown>): boolean | null {
@@ -90,13 +90,25 @@ export async function GET() {
       const drift_tt = stats_tt - battles_tt;
       const drift_wr_pct = stats_wr_pct - battles_wr_pct;
 
-      // Severity heuristic — tuned for operational alerting, not statistical testing
-      let severity: DriftRow['severity'] = 'OK';
+      // Severity heuristic — tuned for operational alerting, not statistical testing.
+      // AUDIT FIX 2026-04-19: NO_DATA explicit — prevents false-HEALTHY when the
+      // serving instance has empty in-memory state AND DB fetch returns nothing
+      // (cold-start fallback). Previously 0/0 was classified as 'OK' which masked
+      // a broken reconcile pipeline behind a green verdict.
+      let severity: DriftRow['severity'];
       const absDriftTt = Math.abs(drift_tt);
       const absDriftWr = Math.abs(drift_wr_pct);
-      if (battles_tt >= 20 && (absDriftTt >= 20 || absDriftWr >= 20)) severity = 'CRITICAL';
-      else if (battles_tt >= 10 && (absDriftTt >= 10 || absDriftWr >= 10)) severity = 'MAJOR';
-      else if (absDriftTt >= 3 || absDriftWr >= 5) severity = 'MINOR';
+      if (stats_tt === 0 && battles_tt === 0) {
+        severity = g.isOmega ? 'OK' : 'NO_DATA';
+      } else if (battles_tt >= 20 && (absDriftTt >= 20 || absDriftWr >= 20)) {
+        severity = 'CRITICAL';
+      } else if (battles_tt >= 10 && (absDriftTt >= 10 || absDriftWr >= 10)) {
+        severity = 'MAJOR';
+      } else if (absDriftTt >= 3 || absDriftWr >= 5) {
+        severity = 'MINOR';
+      } else {
+        severity = 'OK';
+      }
 
       rows.push({
         id: g.id,
@@ -118,8 +130,8 @@ export async function GET() {
       });
     }
 
-    // Sort: CRITICAL first, then MAJOR, then MINOR
-    const sevRank: Record<DriftRow['severity'], number> = { CRITICAL: 0, MAJOR: 1, MINOR: 2, OK: 3 };
+    // Sort: CRITICAL first, then MAJOR, then MINOR, then OK, then NO_DATA last
+    const sevRank: Record<DriftRow['severity'], number> = { CRITICAL: 0, MAJOR: 1, MINOR: 2, OK: 3, NO_DATA: 4 };
     rows.sort((a, b) => sevRank[a.severity] - sevRank[b.severity]);
 
     const agg = {
@@ -128,13 +140,17 @@ export async function GET() {
       major: rows.filter(r => r.severity === 'MAJOR').length,
       minor: rows.filter(r => r.severity === 'MINOR').length,
       ok: rows.filter(r => r.severity === 'OK').length,
+      no_data: rows.filter(r => r.severity === 'NO_DATA').length,
       total_stats_tt: rows.reduce((s, r) => s + r.stats_tt, 0),
       total_battles_tt: rows.reduce((s, r) => s + r.battles_tt, 0),
     };
 
-    // Operational verdict
+    // Operational verdict. NO_DATA majority → distinct from HEALTHY (fail-noisy,
+    // not fail-silent) so that an instance with empty in-memory state + empty DB
+    // fetch stops reporting green.
     let verdict = 'STATS_SYNC_HEALTHY';
-    if (agg.critical > 0) verdict = 'STATS_SYNC_BROKEN';
+    if (agg.gladiators > 0 && agg.no_data >= Math.ceil(agg.gladiators / 2)) verdict = 'STATS_SYNC_NO_DATA';
+    else if (agg.critical > 0) verdict = 'STATS_SYNC_BROKEN';
     else if (agg.major > 0) verdict = 'STATS_SYNC_DRIFTING';
     else if (agg.minor > agg.ok) verdict = 'STATS_SYNC_NOISY';
 

@@ -641,36 +641,67 @@ export async function getGladiatorBattles(gladiatorId: string, limit = 500): Pro
       .slice(0, limit);
   }
 
+  // AUDIT FIX 2026-04-19 (RUFLO pagination): PostgREST caps .limit(N) silently
+  // at the PostgREST-configured max-rows (default 1000). When a caller needs
+  // the full history (e.g. reconcileStatsFromBattles), a bare .limit(10000)
+  // used to return only the first 1000 rows. We now paginate via .range(from,to)
+  // in 1000-row chunks whenever the requested limit exceeds that cap.
+  //
+  // ASUMPȚII:
+  //  - gladiator_battles has an index on (gladiator_id, timestamp DESC). If not,
+  //    sequential range reads are still O(N) but acceptable at current volumes.
+  //  - Mapping shape below must NOT diverge from DNAExtractor's BattleRecord
+  //    expectations (id/gladiatorId/symbol/decision/entryPrice/outcomePrice/
+  //    pnlPercent/isWin/timestamp/marketContext).
+  const PAGE_SIZE = 1000;
+  const collected: Array<Record<string, unknown>> = [];
+
   try {
-    const { data, error } = await supabase
-      .from('gladiator_battles')
-      .select('*')
-      .eq('gladiator_id', gladiatorId)
-      .order('timestamp', { ascending: false })
-      .limit(limit);
+    let from = 0;
+    while (collected.length < limit) {
+      const take = Math.min(PAGE_SIZE, limit - collected.length);
+      const to = from + take - 1;
 
-    if (error) {
-      // Table doesn't exist yet — fall back to memory
-      if (error.code === '42P01') {
-        return cache.gladiatorDna
-          .filter(r => r.gladiatorId === gladiatorId)
-          .slice(0, limit);
+      const { data, error } = await supabase
+        .from('gladiator_battles')
+        .select('*')
+        .eq('gladiator_id', gladiatorId)
+        .order('timestamp', { ascending: false })
+        .range(from, to);
+
+      if (error) {
+        // Table doesn't exist yet — fall back to memory (only if first page)
+        if (error.code === '42P01' && collected.length === 0) {
+          return cache.gladiatorDna
+            .filter(r => r.gladiatorId === gladiatorId)
+            .slice(0, limit);
+        }
+        log.warn(`Failed to fetch battles for ${gladiatorId} at range ${from}-${to}: ${error.message}`);
+        if (collected.length === 0) {
+          return cache.gladiatorDna
+            .filter(r => r.gladiatorId === gladiatorId)
+            .slice(0, limit);
+        }
+        break; // Partial result better than nothing once we already have rows
       }
-      log.warn(`Failed to fetch battles for ${gladiatorId}: ${error.message}`);
-      return cache.gladiatorDna
-        .filter(r => r.gladiatorId === gladiatorId)
-        .slice(0, limit);
-    }
 
-    if (!data || data.length === 0) {
-      // No data in Postgres yet — fall back to memory
-      return cache.gladiatorDna
-        .filter(r => r.gladiatorId === gladiatorId)
-        .slice(0, limit);
+      if (!data || data.length === 0) {
+        // No data in Postgres yet — fall back to memory (only if first page)
+        if (collected.length === 0) {
+          return cache.gladiatorDna
+            .filter(r => r.gladiatorId === gladiatorId)
+            .slice(0, limit);
+        }
+        break; // Reached end of rows
+      }
+
+      collected.push(...(data as Array<Record<string, unknown>>));
+      if (data.length < take) break; // Exhausted rows server-side
+      from += take;
     }
 
     // Map Postgres columns back to the BattleRecord shape expected by DNAExtractor
-    return data.map(row => ({
+    return collected.map(row => ({
       id: row.id,
       gladiatorId: row.gladiator_id,
       symbol: row.symbol,
