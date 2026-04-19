@@ -1,7 +1,28 @@
 import { createLogger } from '@/lib/core/logger';
 import { addGladiatorDna, addGladiatorDnaBatch, getGladiatorDna, getGladiatorBattles } from '@/lib/store/db';
+// FAZA A BATCH 5 — trade closure observability.
+// tradePnlSum left UNWIRED here pending redesign (Counter rejects negative
+// values; needs Histogram with negative buckets — see Batch 5b TODO).
+import { metrics, safeObserve } from '@/lib/observability/metrics';
 
 const log = createLogger('DNAExtractor');
+
+/** FAZA A BATCH 5 helper — derive trade-mode label from BattleRecord id prefix.
+ *  positionManager assigns `live_tp_*`, `live_trail_*`, `live_sl_*` for live closes.
+ *  Simulator/forge assign other prefixes (sim_*, mb_*, etc.) — bucket as `paper`. */
+function modeFromBattleId(id: string): 'live' | 'paper' {
+  return id.startsWith('live_') ? 'live' : 'paper';
+}
+
+/** FAZA A BATCH 5 helper — read holdTimeSec from marketContext, return null if invalid.
+ *  Hard cap 7d to drop ZOMBIE positions or clock-skew artifacts. */
+function readHoldSeconds(ctx: Record<string, unknown> | undefined): number | null {
+  if (!ctx) return null;
+  const v = ctx.holdTimeSec;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  if (v < 0 || v > 86400 * 7) return null;
+  return v;
+}
 
 export interface BattleRecord {
   id: string;
@@ -62,6 +83,10 @@ export class DNAExtractor {
     } catch (err) {
       log.error('Failed to log battle DNA', { error: (err as Error).message });
     }
+    // FAZA A BATCH 5 — trade duration observability (fail-soft, never blocks).
+    const mode = modeFromBattleId(record.id);
+    const hold = readHoldSeconds(record.marketContext as Record<string, unknown> | undefined);
+    if (hold !== null) safeObserve(metrics.tradeDuration, hold, { mode });
   }
 
   // C10 (2026-04-19) — Batch DNA write. Replaces N sequential logBattle calls
@@ -74,6 +99,12 @@ export class DNAExtractor {
       log.info(`[DNA Bank] Batch logged ${records.length} battles`);
     } catch (err) {
       log.error(`[DNA Bank] Batch log failed for ${records.length} records`, { error: (err as Error).message });
+    }
+    // FAZA A BATCH 5 — trade duration observability per record (fail-soft).
+    for (const record of records) {
+      const mode = modeFromBattleId(record.id);
+      const hold = readHoldSeconds(record.marketContext as Record<string, unknown> | undefined);
+      if (hold !== null) safeObserve(metrics.tradeDuration, hold, { mode });
     }
   }
 
