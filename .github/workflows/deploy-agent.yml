@@ -1,0 +1,44 @@
+name: Deploy Grafana Agent
+
+# Manual trigger only — infra change, don't auto-redeploy on every app commit.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why are you redeploying the agent? (config change, image upgrade, etc.)'
+        required: true
+        default: 'config update'
+
+jobs:
+  deploy-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: evident-trees-453923-f9
+
+      - name: Submit Cloud Build
+        run: |
+          echo "Reason: ${{ inputs.reason }}"
+          gcloud builds submit \
+            --config=cloudbuild-agent.yaml \
+            --project=evident-trees-453923-f9 \
+            --substitutions=SHORT_SHA=${GITHUB_SHA::8}
+
+      - name: Verify service
+        run: |
+          gcloud run services describe grafana-agent \
+            --region=europe-west1 \
+            --project=evident-trees-453923-f9 \
+            --format='value(status.url,status.latestReadyRevisionName)'

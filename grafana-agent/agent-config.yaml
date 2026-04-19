@@ -1,0 +1,68 @@
+# Grafana Agent static config — TRADE AI observability pipeline.
+# Scrapes both Cloud Run services' /api/metrics endpoints every 30s and
+# remote-writes to Grafana Cloud Prometheus.
+#
+# Env vars injected by Cloud Run --set-secrets:
+#   METRICS_TOKEN              — Bearer auth for /api/metrics (shared with app)
+#   GRAFANA_REMOTE_WRITE_URL   — e.g. https://prometheus-prod-XX.grafana.net/api/prom/push
+#   GRAFANA_PROM_USERNAME      — numeric instance ID (basic_auth user)
+#   GRAFANA_PROM_API_KEY       — API key with metrics:write scope (basic_auth password)
+
+server:
+  log_level: info
+
+metrics:
+  global:
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    external_labels:
+      cluster: gcp-europe-west1
+      origin: grafana-agent-cloudrun
+  wal_directory: /tmp/agent-wal
+  configs:
+    - name: trade-ai-prod
+      remote_write:
+        - url: ${GRAFANA_REMOTE_WRITE_URL}
+          basic_auth:
+            username: ${GRAFANA_PROM_USERNAME}
+            password: ${GRAFANA_PROM_API_KEY}
+          # Stale-series handling: mark series as stale if scrape misses.
+          send_exemplars: true
+          queue_config:
+            capacity: 10000
+            max_shards: 10
+            min_shards: 1
+            max_samples_per_send: 2000
+            batch_send_deadline: 5s
+      scrape_configs:
+        - job_name: trade-ai
+          scheme: https
+          metrics_path: /api/metrics
+          authorization:
+            type: Bearer
+            credentials: ${METRICS_TOKEN}
+          static_configs:
+            - targets: ['trade-ai-657910053930.europe-west1.run.app']
+              labels:
+                service: trade-ai
+                env: prod
+                role: primary
+        - job_name: antigravity-trade
+          scheme: https
+          metrics_path: /api/metrics
+          authorization:
+            type: Bearer
+            credentials: ${METRICS_TOKEN}
+          static_configs:
+            - targets: ['antigravity-trade-657910053930.europe-west1.run.app']
+              labels:
+                service: antigravity-trade
+                env: prod
+                role: secondary
+          # Secondary may 503 if METRICS_TOKEN not yet bound there.
+          # Agent will log the failure but won't crash the primary scrape job.
+
+# Integrations disabled — we only scrape the two apps.
+integrations:
+  agent:
+    enabled: false

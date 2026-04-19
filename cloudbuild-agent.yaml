@@ -1,0 +1,59 @@
+# Cloud Build pipeline for the Grafana Agent scraper (separate from trade-ai app).
+# Manual trigger only — do not auto-run on git push.
+#
+# Usage:
+#   gcloud builds submit --config=cloudbuild-agent.yaml --project=evident-trees-453923-f9
+
+steps:
+  # 1. Build the image from the grafana-agent/ directory.
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - -t
+      - gcr.io/$PROJECT_ID/grafana-agent:$SHORT_SHA
+      - -t
+      - gcr.io/$PROJECT_ID/grafana-agent:latest
+      - ./grafana-agent
+
+  # 2. Push both tags.
+  - name: gcr.io/cloud-builders/docker
+    id: push-sha
+    args: [push, gcr.io/$PROJECT_ID/grafana-agent:$SHORT_SHA]
+
+  - name: gcr.io/cloud-builders/docker
+    id: push-latest
+    args: [push, gcr.io/$PROJECT_ID/grafana-agent:latest]
+
+  # 3. Deploy to Cloud Run.
+  #    Service runs with CPU always allocated (--no-cpu-throttling) so the
+  #    scrape loop never gets suspended. min=max=1 to avoid duplicate scrapes.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - grafana-agent
+      - --image=gcr.io/$PROJECT_ID/grafana-agent:$SHORT_SHA
+      - --region=europe-west1
+      - --platform=managed
+      - --no-allow-unauthenticated
+      - --min-instances=1
+      - --max-instances=1
+      - --cpu=0.5
+      - --memory=256Mi
+      - --no-cpu-throttling
+      - --execution-environment=gen2
+      - --port=8080
+      - --set-secrets=METRICS_TOKEN=METRICS_TOKEN:latest,GRAFANA_REMOTE_WRITE_URL=GRAFANA_REMOTE_WRITE_URL:latest,GRAFANA_PROM_USERNAME=GRAFANA_PROM_USERNAME:latest,GRAFANA_PROM_API_KEY=GRAFANA_PROM_API_KEY:latest
+      - --project=$PROJECT_ID
+
+images:
+  - gcr.io/$PROJECT_ID/grafana-agent:$SHORT_SHA
+  - gcr.io/$PROJECT_ID/grafana-agent:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s
