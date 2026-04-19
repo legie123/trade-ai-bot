@@ -28,29 +28,56 @@ const locks = g.__priceFetchLocks;
 const DEFAULT_TTL = 30_000;       // 30s for normal access
 const EXTENDED_TTL = 120_000;     // 2min for fallback tolerance
 
-// FIX CRITICAL: Circuit breaker for MEXC — skip MEXC for 5min after 3 consecutive failures
-// Prevents 8-15s timeout cascade when MEXC is down
-const circuitBreaker = {
-  mexcFailCount: 0,
-  mexcOpenUntil: 0,
-  MAX_FAILS: 3,
-  OPEN_DURATION_MS: 5 * 60_000, // 5 minutes
-  isMexcOpen(): boolean {
-    if (Date.now() < this.mexcOpenUntil) return true;
-    return false;
-  },
-  recordMexcFail(): void {
-    this.mexcFailCount++;
-    if (this.mexcFailCount >= this.MAX_FAILS) {
-      this.mexcOpenUntil = Date.now() + this.OPEN_DURATION_MS;
-      log.warn(`[CircuitBreaker] MEXC circuit OPEN for 5min after ${this.mexcFailCount} consecutive failures`);
-    }
-  },
-  recordMexcSuccess(): void {
-    this.mexcFailCount = 0;
-    this.mexcOpenUntil = 0;
-  },
+// RUFLO FAZA 3 Batch 7 (H5) 2026-04-19: Price-feed circuit-breaker.
+// WHY: Today if MEXC + Binance + DexScreener + CoinGecko all fail,
+// fetchPriceChain returns 0. Callers SHOULD check 0 and skip, but several
+// code paths (sentiment, simulator, even managerVizionar gate) silently
+// substitute 0 into math → divide-by-zero, stale signals, phantom trades.
+// H5 closes that by tracking global feed health:
+//   - Every successful price fetch → reset fail counter + lastSuccessAt
+//   - Every full-chain failure → increment counter
+//   - areFeedsHealthy() = true IFF (lastSuccessAt < FEED_STALE_MS ago) AND
+//                               (consecutiveFailures < FEED_FAIL_THRESHOLD)
+// This is consumed by safetyGates (Batch 6+) as a pre-trade veto.
+// Kill-switch: env DISABLE_FEED_CIRCUIT_BREAKER=1 makes areFeedsHealthy()
+// always true (legacy behavior).
+const FEED_FAIL_THRESHOLD = parseInt(process.env.FEED_FAIL_THRESHOLD || '5', 10);
+const FEED_STALE_MS = parseInt(process.env.FEED_STALE_MS || '180000', 10); // 3min
+const g2 = globalThis as unknown as {
+  __feedState?: { consecutiveFailures: number; lastSuccessAt: number };
 };
+if (!g2.__feedState) g2.__feedState = { consecutiveFailures: 0, lastSuccessAt: Date.now() };
+const feedState = g2.__feedState;
+
+/**
+ * Circuit-breaker query. Returns false if price feeds look degraded:
+ * too many consecutive full-chain failures OR no success in a long time.
+ * Consumers (safetyGates, sentinelGuard) can use this to veto new positions
+ * until feeds recover.
+ * ASUMPȚIE: this is a GLOBAL signal, not per-symbol. A single symbol with
+ * delisted data won't trip it; only broad exchange/API outages will.
+ */
+export function areFeedsHealthy(): { healthy: boolean; reason?: string; state: typeof feedState } {
+  if (process.env.DISABLE_FEED_CIRCUIT_BREAKER === '1') {
+    return { healthy: true, state: feedState };
+  }
+  const sinceSuccess = Date.now() - feedState.lastSuccessAt;
+  if (feedState.consecutiveFailures >= FEED_FAIL_THRESHOLD) {
+    return {
+      healthy: false,
+      reason: `${feedState.consecutiveFailures} consecutive full-chain failures (threshold=${FEED_FAIL_THRESHOLD})`,
+      state: feedState,
+    };
+  }
+  if (sinceSuccess > FEED_STALE_MS) {
+    return {
+      healthy: false,
+      reason: `No successful price fetch in ${Math.round(sinceSuccess / 1000)}s (stale threshold=${Math.round(FEED_STALE_MS / 1000)}s)`,
+      state: feedState,
+    };
+  }
+  return { healthy: true, state: feedState };
+}
 
 export function getCachedPrice(symbol: string): number | null {
   const entry = cache.get(symbol);
@@ -100,24 +127,18 @@ async function fetchPriceChain(symbol: string): Promise<number> {
 
   const mexcSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
 
-  // 1. MEXC (primary live exchange) — with circuit breaker
-  if (!circuitBreaker.isMexcOpen()) {
-    try {
-      const { getMexcPrice } = await import('@/lib/exchange/mexcClient');
-      const price = await getMexcPrice(mexcSymbol);
-      if (price > 0) {
-        setCachedPrice(symbol, price, 'MEXC', DEFAULT_TTL);
-        circuitBreaker.recordMexcSuccess();
-        return price;
-      }
-      circuitBreaker.recordMexcFail();
-    } catch (err) {
-      circuitBreaker.recordMexcFail();
-      log.warn(`MEXC price fetch failed for ${mexcSymbol}`, { error: String(err) });
+  // 1. MEXC (primary live exchange)
+  try {
+    const { getMexcPrice } = await import('@/lib/exchange/mexcClient');
+    const price = await getMexcPrice(mexcSymbol);
+    if (price > 0) {
+      setCachedPrice(symbol, price, 'MEXC', DEFAULT_TTL);
+      // H5: feed recovery — reset circuit-breaker state
+      feedState.consecutiveFailures = 0;
+      feedState.lastSuccessAt = Date.now();
+      return price;
     }
-  } else {
-    log.debug(`[PriceCache] MEXC circuit open — skipping to Binance for ${symbol}`);
-  }
+  } catch (err) { log.warn(`MEXC price fetch failed for ${mexcSymbol}`, { error: String(err) }); }
 
   // 2. Binance (AUDIT FIX: Re-enabled — client now exists)
   try {
@@ -125,6 +146,8 @@ async function fetchPriceChain(symbol: string): Promise<number> {
     const price = await getBinancePrice(mexcSymbol);
     if (price > 0) {
       setCachedPrice(symbol, price, 'Binance', DEFAULT_TTL);
+      feedState.consecutiveFailures = 0;
+      feedState.lastSuccessAt = Date.now();
       return price;
     }
   } catch (err) { log.warn(`Binance price fetch failed for ${mexcSymbol}`, { error: String(err) }); }
@@ -153,6 +176,8 @@ async function fetchPriceChain(symbol: string): Promise<number> {
           const price = parseFloat(pairs[0].priceUsd || '0');
           if (price > 0) {
             setCachedPrice(symbol, price, 'DexScreener', EXTENDED_TTL);
+            feedState.consecutiveFailures = 0;
+            feedState.lastSuccessAt = Date.now();
             return price;
           }
         }
@@ -183,12 +208,16 @@ async function fetchPriceChain(symbol: string): Promise<number> {
       const price = data[cgId]?.usd;
       if (price && price > 0) {
         setCachedPrice(symbol, price, 'CoinGecko', EXTENDED_TTL);
+        feedState.consecutiveFailures = 0;
+        feedState.lastSuccessAt = Date.now();
         return price;
       }
     }
   } catch (err) { log.warn(`CoinGecko price fetch failed for ${symbol}`, { error: String(err) }); }
 
-  log.error(`[PriceCache] All 5 sources failed for ${symbol}`);
+  // H5: full-chain failure — increment circuit-breaker counter
+  feedState.consecutiveFailures += 1;
+  log.error(`[PriceCache] All 5 sources failed for ${symbol} | feedState.consecutiveFailures=${feedState.consecutiveFailures}`);
   return 0;
 }
 

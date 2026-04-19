@@ -30,6 +30,8 @@ import {
   isKillSwitchEngaged,
 } from '@/lib/core/killSwitch';
 import { getLivePositions, getEquityCurve, getBotConfig } from '@/lib/store/db';
+// RUFLO FAZA 3 Batch 7 (H5) 2026-04-19: Circuit-breaker on price feeds.
+import { areFeedsHealthy } from '@/lib/cache/priceCache';
 
 const log = createLogger('SafetyGates');
 
@@ -168,6 +170,20 @@ export async function runPreTradeGates(newNotional: number | null = null): Promi
   if (triggeredExp) {
     log.fatal(`[SafetyGate] Exposure gate TRIGGERED kill switch: ${projectedExposure}/${accountBalance}`);
     return { allowed: false, reason: `Exposure ${(projectedExposure / accountBalance * 100).toFixed(1)}% ≥ ${MAX_EXPOSURE_PCT}% limit` };
+  }
+
+  // (3b) RUFLO FAZA 3 Batch 7 (H5) 2026-04-19: Price-feed circuit-breaker.
+  // If all 5 sources have been failing consecutively, we cannot price risk
+  // correctly — entry price, SL/TP, exposure math are all uncertain. Refuse
+  // new positions until feeds recover. Existing positions are NOT auto-closed
+  // (positionManager tolerates stale prices by skipping evaluation).
+  // Kill-switch: env DISABLE_FEED_CIRCUIT_BREAKER=1 (in priceCache.ts).
+  const feedHealth = areFeedsHealthy();
+  if (!feedHealth.healthy) {
+    return {
+      allowed: false,
+      reason: `Price feeds degraded — ${feedHealth.reason}. Position entry blocked until recovery.`,
+    };
   }
 
   // (4) RUFLO FAZA 3 Batch 6 (C6) 2026-04-19: Open-position count cap.
