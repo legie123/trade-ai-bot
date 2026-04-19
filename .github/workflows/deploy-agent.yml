@@ -59,8 +59,8 @@ jobs:
             --no-allow-unauthenticated \
             --min-instances=1 \
             --max-instances=1 \
-            --cpu=0.5 \
-            --memory=256Mi \
+            --cpu=1 \
+            --memory=512Mi \
             --no-cpu-throttling \
             --execution-environment=gen2 \
             --port=8080 \
