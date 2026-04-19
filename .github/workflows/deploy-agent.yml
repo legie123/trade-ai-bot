@@ -9,10 +9,18 @@ on:
         required: true
         default: 'config update'
 
+env:
+  PROJECT_ID: evident-trees-453923-f9
+  REGION: europe-west1
+  SERVICE: grafana-agent
+
 jobs:
   deploy-agent:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -28,17 +36,40 @@ jobs:
         with:
           project_id: evident-trees-453923-f9
 
-      - name: Submit Cloud Build
+      - name: Configure Docker
+        run: gcloud auth configure-docker --quiet
+
+      - name: Build & Push image
         run: |
           echo "Reason: ${{ inputs.reason }}"
-          gcloud builds submit \
-            --config=cloudbuild-agent.yaml \
-            --project=evident-trees-453923-f9 \
-            --substitutions=SHORT_SHA=${GITHUB_SHA::8}
+          SHORT_SHA="${GITHUB_SHA::8}"
+          IMAGE_SHA="gcr.io/$PROJECT_ID/$SERVICE:$SHORT_SHA"
+          IMAGE_LATEST="gcr.io/$PROJECT_ID/$SERVICE:latest"
+          docker build -t "$IMAGE_SHA" -t "$IMAGE_LATEST" ./grafana-agent
+          docker push "$IMAGE_SHA"
+          docker push "$IMAGE_LATEST"
+          echo "IMAGE_SHA=$IMAGE_SHA" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SERVICE \
+            --image="$IMAGE_SHA" \
+            --region=$REGION \
+            --platform=managed \
+            --no-allow-unauthenticated \
+            --min-instances=1 \
+            --max-instances=1 \
+            --cpu=0.5 \
+            --memory=256Mi \
+            --no-cpu-throttling \
+            --execution-environment=gen2 \
+            --port=8080 \
+            --set-secrets="METRICS_TOKEN=METRICS_TOKEN:latest,GRAFANA_REMOTE_WRITE_URL=GRAFANA_REMOTE_WRITE_URL:latest,GRAFANA_PROM_USERNAME=GRAFANA_PROM_USERNAME:latest,GRAFANA_PROM_API_KEY=GRAFANA_PROM_API_KEY:latest" \
+            --project=$PROJECT_ID
 
       - name: Verify service
         run: |
-          gcloud run services describe grafana-agent \
-            --region=europe-west1 \
-            --project=evident-trees-453923-f9 \
+          gcloud run services describe $SERVICE \
+            --region=$REGION \
+            --project=$PROJECT_ID \
             --format='value(status.url,status.latestReadyRevisionName)'
