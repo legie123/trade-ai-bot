@@ -140,6 +140,54 @@ function isDNASane(dna: GladiatorDNA): { pass: boolean; reason?: string } {
   return { pass: true };
 }
 
+// ─── DNA Similarity (H2 Forge edge-check) ──────────────────────
+// Jaccard-style weighted similarity: 70% numeric (range-normalized diff) + 30% categorical (exact match)
+// Returns 0 (totally different) → 1 (identical).
+function dnaSimilarity(a: GladiatorDNA, b: GladiatorDNA): number {
+  // Numeric features: [valA, valB, rangeLo, rangeHi]
+  const numeric: Array<[number, number, number, number]> = [
+    [a.rsiOversold, b.rsiOversold, 20, 40],
+    [a.rsiOverbought, b.rsiOverbought, 60, 80],
+    [a.vwapDeviation, b.vwapDeviation, 0.1, 0.8],
+    [a.stopLossRisk, b.stopLossRisk, 0.005, 0.06],
+    [a.takeProfitTarget, b.takeProfitTarget, 0.01, 0.15],
+    [a.momentumWeight, b.momentumWeight, 0, 1],
+    [a.contraryBias, b.contraryBias, 0, 1],
+  ];
+  const numericDiffs = numeric.map(([va, vb, lo, hi]) => {
+    const range = Math.max(hi - lo, 1e-9);
+    return Math.min(1, Math.abs(va - vb) / range);
+  });
+  const numericSim = 1 - (numericDiffs.reduce((s, d) => s + d, 0) / numericDiffs.length);
+
+  // Categorical: exact match (0 or 1)
+  const catMatches = [
+    a.timeframeBias === b.timeframeBias ? 1 : 0,
+    a.sessionFilter === b.sessionFilter ? 1 : 0,
+    a.bollingerSqueeze === b.bollingerSqueeze ? 1 : 0,
+    a.sfpEnabled === b.sfpEnabled ? 1 : 0,
+  ];
+  const catSim = catMatches.reduce((s, m) => s + m, 0) / catMatches.length;
+
+  return 0.7 * numericSim + 0.3 * catSim;
+}
+
+// Check candidate DNA vs existing pool. Returns { duplicate: true, maxSim, nearestId } if similarity >= threshold.
+function isDNADuplicate(candidate: GladiatorDNA, threshold: number): { duplicate: boolean; maxSim: number; nearestId?: string } {
+  const existing = gladiatorStore.getGladiators();
+  let maxSim = 0;
+  let nearestId: string | undefined;
+  for (const g of existing) {
+    const dna = extractDNA(g);
+    const sim = dnaSimilarity(candidate, dna);
+    if (sim > maxSim) {
+      maxSim = sim;
+      nearestId = g.id;
+    }
+  }
+  return { duplicate: maxSim >= threshold, maxSim, nearestId };
+}
+
 // ─── Mini-Backtester: Quick simulation of DNA against recent price moves ─
 // Uses last N phantom trade results from existing gladiators as a proxy market.
 // If DNA's parameters would have produced > 60% losses in this sample, REJECT.
@@ -353,6 +401,19 @@ CRITICAL RULE: "takeProfitTarget" MUST BE AT LEAST 1.5x GREATER THAN "stopLossRi
         log.warn(`[The Forge] DNA REJECTED (backtest): Estimated WR ${backtest.estimatedWR}% on ${backtest.sampleSize} samples — below 35% threshold`);
         return null;
       }
+
+      // ── H2 edge-check: reject if DNA too similar to existing pool (kill-switch) ──
+      const dedupEnabled = process.env.FORGE_DEDUP_ENABLED !== '0';
+      if (dedupEnabled) {
+        const threshold = parseFloat(process.env.FORGE_DUPE_THRESHOLD || '0.85');
+        const dupe = isDNADuplicate(dna, threshold);
+        if (dupe.duplicate) {
+          log.warn(`[The Forge] DNA REJECTED (duplicate): sim=${dupe.maxSim.toFixed(3)} >= ${threshold} vs ${dupe.nearestId}`);
+          return null;
+        }
+        log.info(`[The Forge] DNA PASSED dedup: maxSim=${dupe.maxSim.toFixed(3)} (threshold ${threshold})`);
+      }
+
       log.info(`[The Forge] DNA PASSED pre-screening: Sanity OK, Backtest WR ~${backtest.estimatedWR}% (${backtest.sampleSize} samples)`);
 
       // ── Step 4: Build name from DNA traits ──
