@@ -263,25 +263,37 @@ export function getSyncQueueStats() {
 async function processSyncQueue() {
   if (isSyncing || syncTasks.length === 0) return;
   isSyncing = true;
-  
-  while (syncTasks.length > 0) {
-    const task = syncTasks.shift();
-    if (!task) continue;
-    
-    try {
-      const { error } = await supabase.from('json_store').upsert({ id: task.id, data: task.data });
-      if (error) log.error(`Supabase sync failed for ${task.id}`, { error: error.message });
-      else {
-          totalSyncsCompleted++;
-          lastSyncComplete = new Date().toISOString();
+
+  // C12 (2026-04-19): Batch upsert replaces sequential-with-100ms-delay.
+  // PRIOR: N tasks × (Supabase ~200ms + 100ms delay) = 3-4s flush on typical tick.
+  // NOW: single upsert([...]) = 1 round-trip ~200-300ms. Fallback: per-record on batch failure.
+  // The 100ms "rate limit" delay was overly conservative — Supabase free tier allows
+  // ~500 req/s. Batch eliminates the concern entirely.
+  const batch = syncTasks.splice(0, syncTasks.length);
+  if (batch.length === 0) { isSyncing = false; return; }
+
+  try {
+    const rows = batch.map(t => ({ id: t.id, data: t.data }));
+    const { error } = await supabase.from('json_store').upsert(rows);
+    if (error) {
+      log.warn(`[SyncQueue] Batch upsert failed (${batch.length} rows): ${error.message}. Falling back to per-record.`);
+      let ok = 0;
+      for (const row of rows) {
+        const { error: e2 } = await supabase.from('json_store').upsert(row);
+        if (!e2) ok++;
+        else log.error(`Supabase sync failed for ${row.id}`, { error: e2.message });
       }
-      // Artificial delay to prevent Supabase rate limits (100ms)
-      await new Promise(r => setTimeout(r, 100));
-    } catch (err) {
-      log.error(`Critical error in syncQueue for ${task.id}`, { error: String(err) });
+      totalSyncsCompleted += ok;
+    } else {
+      totalSyncsCompleted += batch.length;
     }
+    lastSyncComplete = new Date().toISOString();
+  } catch (err) {
+    log.error(`Critical error in syncQueue batch (${batch.length} rows)`, { error: String(err) });
+    // Re-queue failed tasks for next cycle
+    syncTasks.push(...batch);
   }
-  
+
   isSyncing = false;
 }
 
