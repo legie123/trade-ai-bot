@@ -283,7 +283,8 @@ export async function GET(request: NextRequest) {
             }
           } catch { /* missing price → decision stays pending */ }
         };
-        const CONCURRENCY = 8;
+        // C7 FIX #7: 8 → 20. ~12 symbols fit in 1 batch, saves ~500ms/tick.
+        const CONCURRENCY = 20;
         for (let i = 0; i < mexcSymbols.length; i += CONCURRENCY) {
           await Promise.allSettled(mexcSymbols.slice(i, i + CONCURRENCY).map(fetchOne));
         }

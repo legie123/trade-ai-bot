@@ -64,6 +64,8 @@ const pendingGladiatorSaves: Set<Promise<void>> = new Set();
 // DB_AWAIT_TRACKERS=0 is not (yet) wired — rollback by git revert instead.
 const pendingDecisionSaves: Set<Promise<void>> = new Set();
 const pendingPhantomSaves: Set<Promise<void>> = new Set();
+// C7 FIX #4: Live position writes were fire-and-forget — same race as gladiator/decision/phantom.
+const pendingLivePositionSaves: Set<Promise<unknown>> = new Set();
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 // Upgrade: Prefer Service Role Key for backend operations to bypass RLS restrictions
@@ -317,14 +319,16 @@ export async function flushPendingSyncs(timeoutMs = 5000): Promise<{ flushed: nu
   // saves. All three trackers share the save budget (single Promise.allSettled call)
   // to avoid triple-waiting. If all three trackers have pending, we still yield to
   // drain loop after the combined budget.
-  const combinedPending = pendingGladiatorSaves.size + pendingDecisionSaves.size + pendingPhantomSaves.size;
+  const combinedPending = pendingGladiatorSaves.size + pendingDecisionSaves.size + pendingPhantomSaves.size + pendingLivePositionSaves.size;
   if (combinedPending > 0) {
-    const saveBudget = Math.min(Math.floor(timeoutMs / 2), 2500);
+    // C7 FIX #12: Tighter save budget (1/3 instead of 1/2) leaves more time for drain loop.
+    const saveBudget = Math.min(Math.floor(timeoutMs / 3), 1500);
     await Promise.race([
       Promise.allSettled([
         ...pendingGladiatorSaves,
         ...pendingDecisionSaves,
         ...pendingPhantomSaves,
+        ...pendingLivePositionSaves,
       ]),
       new Promise<void>(r => setTimeout(r, saveBudget)),
     ]);
@@ -398,7 +402,9 @@ export function addDecision(snapshot: DecisionSnapshot): void {
     const release = await decisionMutex.acquire();
     try {
       const now = Date.now();
-      if (supabaseUrl && dbInitialized && now - _lastDecisionRemoteMerge > 60_000) {
+      // C7 FIX #6: Remote merge debounce 60s → 300s. Local cache is authoritative
+      // within instance; remote merge only needed for cross-instance consistency.
+      if (supabaseUrl && dbInitialized && now - _lastDecisionRemoteMerge > 300_000) {
         _lastDecisionRemoteMerge = now;
         try {
           const { data } = await supabase.from('json_store').select('data').eq('id', 'decisions').single();
@@ -612,7 +618,8 @@ export function saveGladiatorsToDb(gladiators: Gladiator[]): Promise<void> {
     const release = await gladiatorMutex.acquire();
     try {
       const now = Date.now();
-      if (supabaseUrl && dbInitialized && now - _lastGladiatorRemoteMerge > 60_000) {
+      // C7 FIX #6: Remote merge debounce 60s → 300s (same as decision merge).
+      if (supabaseUrl && dbInitialized && now - _lastGladiatorRemoteMerge > 300_000) {
         _lastGladiatorRemoteMerge = now;
         try {
           const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiators').single();
@@ -948,9 +955,13 @@ export async function isPositionOpenStrict(symbol: string): Promise<boolean> {
 export function addLivePosition(pos: LivePosition): void {
   cache.livePositions.unshift(pos);
   if (supabaseUrl && dbInitialized) {
-    supabase.from('live_positions').insert(pos).then(({ error }) => {
+    // C7 FIX #1+#4: Add .catch() + promise tracking for flushPendingSyncs.
+    // Was fire-and-forget → Cloud Run freeze before write lands = position lost.
+    const p = Promise.resolve(supabase.from('live_positions').insert(pos)).then(({ error }) => {
       if (error) log.warn('Failed to insert live position to Supabase', { error: error.message });
-    });
+    }).catch((err: unknown) => log.error('addLivePosition transport error', { error: String(err) }));
+    pendingLivePositionSaves.add(p);
+    p.finally(() => pendingLivePositionSaves.delete(p));
   }
 }
 
@@ -959,9 +970,12 @@ export function updateLivePosition(id: string, updates: Partial<LivePosition>): 
   if (idx > -1) {
     cache.livePositions[idx] = { ...cache.livePositions[idx], ...updates };
     if (supabaseUrl && dbInitialized) {
-      supabase.from('live_positions').update(updates).eq('id', id).then(({ error }) => {
+      // C7 FIX #1+#4: Add .catch() + promise tracking.
+      const p = Promise.resolve(supabase.from('live_positions').update(updates).eq('id', id)).then(({ error }) => {
          if (error) log.error('Failed to update live position', { id, error: error.message });
-      });
+      }).catch((err: unknown) => log.error('updateLivePosition transport error', { id, error: String(err) }));
+      pendingLivePositionSaves.add(p);
+      p.finally(() => pendingLivePositionSaves.delete(p));
     }
     // FIX 2026-04-19: Trim closed positions to prevent unbounded memory growth.
     // Keep max 200 closed + all OPEN. In LIVE mode with many trades, this prevents OOM.
@@ -1163,8 +1177,9 @@ export function appendToEquityCurve(dec: DecisionSnapshot, pnlPct: number): void
     mode: config.mode as 'PAPER' | 'LIVE', // AUDIT FIX CRITIC-8: Tag equity by mode
   };
 
+  // C7 FIX #9: Cap at append instead of reactive trim — avoids unnecessary array reallocation.
+  if (cache.equityHistory.length >= 1000) cache.equityHistory.shift();
   cache.equityHistory.push(newPoint);
-  if (cache.equityHistory.length > 1000) cache.equityHistory.shift(); 
   
   if (supabaseUrl && dbInitialized) {
     // Map in-memory EquityPoint to actual Supabase table schema
@@ -1178,9 +1193,9 @@ export function appendToEquityCurve(dec: DecisionSnapshot, pnlPct: number): void
       pnl_total: newPoint.pnl,         // cumulative PnL %
       mode: newPoint.mode || 'PAPER',
     };
-    supabase.from('equity_history').insert(dbRow).then(({ error }) => {
+    Promise.resolve(supabase.from('equity_history').insert(dbRow)).then(({ error }) => {
       if (error) log.error('Failed to insert equity history', { error: error.message });
-    });
+    }).catch((err: unknown) => log.error('equity_history transport error', { error: String(err) }));
   }
 }
 
