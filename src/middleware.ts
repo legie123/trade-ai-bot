@@ -15,7 +15,6 @@ const PUBLIC_PREFIXES = [
   '/api/auth',             // Login endpoint
   '/api/health',            // Top-level health proxy (Cloud Scheduler)
   '/api/v2/health',        // Health check (monitoring)
-  '/api/v2/diag/',         // FAZA 3 Batch 2: read-only diagnostic endpoints (regime, sentiment-flag, etc.) — no side effects
   '/api/diagnostics/',     // Health diagnostics (master, credits, signal-quality)
   '/api/a2a/',             // A2A routes have SWARM_TOKEN auth
   '/api/cron',             // Has CRON_SECRET auth
@@ -40,6 +39,7 @@ const PUBLIC_PREFIXES = [
   '/api/telegram',         // Telegram connectivity check (read-only)
   '/api/bot',              // Bot status (read-only)
   '/api/metrics',          // Prometheus scrape — Bearer METRICS_TOKEN checked internally
+  '/api/polymarket/ingest', // Goldsky webhook — x-trade-auth header checked internally
 ];
 
 function isPublicRoute(pathname: string): boolean {
