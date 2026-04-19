@@ -77,7 +77,8 @@ jobs:
               POLYMARKET_CLOB_URL=POLYMARKET_CLOB_URL:latest,\
               POLYMARKET_GAMMA_URL=POLYMARKET_GAMMA_URL:latest,\
               SWARM_TOKEN=SWARM_TOKEN:latest,\
-              MOLTBOOK_API_KEY=MOLTBOOK_API_KEY:latest"
+              MOLTBOOK_API_KEY=MOLTBOOK_API_KEY:latest,\
+              METRICS_TOKEN=METRICS_TOKEN:latest"
 
       - name: Deploy to Cloud Run (secondary - antigravity-trade)
         # FAZA B.2 — ships same image+config to the secondary service so both
