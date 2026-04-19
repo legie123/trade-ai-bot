@@ -43,6 +43,10 @@ import { GET as diagSignalQualityGET } from '../../diagnostics/signal-quality/ro
 // Cloud Run self-fetch HTTP fails intermittently. In-process = zero network, type-safe.
 import { POST as a2aOrchestratePOST } from '../../a2a/orchestrate/route';
 import { POST as botPOST } from '../../bot/route';
+// FIX 2026-04-19 (C8): Wire orphaned dailyRotation (Butcher+Forge) into command route.
+// runDailyRotation existed only as standalone script — never ran on Cloud Run.
+// Without this, losing gladiators (PF<1.0) accumulate indefinitely.
+import { runDailyRotation } from '@/scripts/cron_dailyRotation';
 
 export const dynamic = 'force-dynamic';
 const log = createLogger('CommandCenter');
@@ -151,6 +155,7 @@ const CRON_AUTHED_COMMANDS = new Set<string>([
   'collect:sentiment',
   'collect:news',
   'arena:promote',
+  'arena:rotation',
   'arena:status',
   'poly:scan',
   'poly:mtm',
@@ -318,6 +323,19 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       case 'arena:promote': {
         const res = await invokeInProcess(autoPromoteGET, new URL('/api/v2/cron/auto-promote', baseUrl), cron).catch(() => ({ error: 'failed' }));
         return ok(command, 'Auto-promote cycle triggered', res, start);
+      }
+      // FIX 2026-04-19 (C8): Darwinian cycle — Butcher kills PF<1.0, Forge replaces.
+      // Was orphaned as standalone script, never ran on Cloud Run.
+      case 'arena:rotation': {
+        try {
+          await runDailyRotation();
+          const leaderboard = gladiatorStore.getLeaderboard().map(g => ({
+            name: g.name, tt: g.stats.totalTrades, wr: g.stats.winRate, pf: g.stats.profitFactor, isLive: g.isLive,
+          }));
+          return ok(command, `Daily rotation complete. ${leaderboard.length} gladiators remain.`, { leaderboard }, start);
+        } catch (err) {
+          return ok(command, `Rotation failed: ${(err as Error).message}`, null, start);
+        }
       }
       case 'arena:status': {
         // FIX 2026-04-19: in-process invoke (was self-fetch HTTP)
