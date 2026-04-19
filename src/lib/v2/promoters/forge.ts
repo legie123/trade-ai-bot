@@ -174,20 +174,65 @@ function dnaSimilarity(a: GladiatorDNA, b: GladiatorDNA): number {
   return 0.7 * numericSim + 0.3 * catSim;
 }
 
-// Check candidate DNA vs existing pool. Returns { duplicate: true, maxSim, nearestId } if similarity >= threshold.
-function isDNADuplicate(candidate: GladiatorDNA, threshold: number): { duplicate: boolean; maxSim: number; nearestId?: string } {
+// Check candidate DNA vs existing pool. Returns { duplicate: true, maxSim, nearestId, nearestPF } if similarity >= threshold.
+function isDNADuplicate(candidate: GladiatorDNA, threshold: number): { duplicate: boolean; maxSim: number; nearestId?: string; nearestPF?: number } {
   const existing = gladiatorStore.getGladiators();
   let maxSim = 0;
   let nearestId: string | undefined;
+  let nearestPF: number | undefined;
   for (const g of existing) {
     const dna = extractDNA(g);
     const sim = dnaSimilarity(candidate, dna);
     if (sim > maxSim) {
       maxSim = sim;
       nearestId = g.id;
+      nearestPF = g.stats.profitFactor;
     }
   }
-  return { duplicate: maxSim >= threshold, maxSim, nearestId };
+  return { duplicate: maxSim >= threshold, maxSim, nearestId, nearestPF };
+}
+
+// RUFLO FAZA 3 Batch 9 (H2+) 2026-04-19: performance-aware edge check.
+// WHY: isDNADuplicate blocks EXACT copies. But a candidate at sim=0.60
+// (just below dedup threshold) whose NEAREST neighbor has PF<1.0 means we
+// are forging next-Butcher-target: a variant of a losing DNA. Butcher will
+// kill it in ~30 trades anyway — waste of a spawn slot + noise in the pool.
+// This function adds: reject if nearestSim in [NEAR_LO, threshold) AND
+// nearestPF < 1.0 AND nearest has meaningful sample (n>=20).
+// Kill-switch: env FORGE_PERF_EDGE_CHECK=0 disables this layer.
+function isNearLoser(
+  candidate: GladiatorDNA,
+  dupeThreshold: number,
+  nearLo: number,
+): { reject: boolean; reason?: string; maxSim: number; nearestId?: string; nearestPF?: number } {
+  const existing = gladiatorStore.getGladiators();
+  let maxSim = 0;
+  let nearestId: string | undefined;
+  let nearestPF: number | undefined;
+  let nearestTrades: number | undefined;
+  for (const g of existing) {
+    const dna = extractDNA(g);
+    const sim = dnaSimilarity(candidate, dna);
+    if (sim > maxSim) {
+      maxSim = sim;
+      nearestId = g.id;
+      nearestPF = g.stats.profitFactor;
+      nearestTrades = g.stats.totalTrades;
+    }
+  }
+  if (
+    maxSim >= nearLo &&
+    maxSim < dupeThreshold &&
+    typeof nearestPF === 'number' && nearestPF < 1.0 &&
+    typeof nearestTrades === 'number' && nearestTrades >= 20
+  ) {
+    return {
+      reject: true,
+      reason: `near-loser: sim=${maxSim.toFixed(3)} ∈ [${nearLo}, ${dupeThreshold}), nearestPF=${nearestPF.toFixed(2)}<1.0, n=${nearestTrades}`,
+      maxSim, nearestId, nearestPF,
+    };
+  }
+  return { reject: false, maxSim, nearestId, nearestPF };
 }
 
 // ─── Mini-Backtester: Quick simulation of DNA against recent price moves ─
@@ -408,15 +453,32 @@ CRITICAL RULE: "takeProfitTarget" MUST BE AT LEAST 1.5x GREATER THAN "stopLossRi
 
       // ── H2 edge-check: reject if DNA too similar to existing pool (kill-switch) ──
       const dedupEnabled = process.env.FORGE_DEDUP_ENABLED !== '0';
+      const dupeThreshold = parseFloat(process.env.FORGE_DUPE_THRESHOLD || '0.85');
       if (dedupEnabled) {
-        const threshold = parseFloat(process.env.FORGE_DUPE_THRESHOLD || '0.85');
-        const dupe = isDNADuplicate(dna, threshold);
+        const dupe = isDNADuplicate(dna, dupeThreshold);
         if (dupe.duplicate) {
-          log.warn(`[The Forge] DNA REJECTED (duplicate): sim=${dupe.maxSim.toFixed(3)} >= ${threshold} vs ${dupe.nearestId}`);
+          log.warn(`[The Forge] DNA REJECTED (duplicate): sim=${dupe.maxSim.toFixed(3)} >= ${dupeThreshold} vs ${dupe.nearestId}`);
           safeInc(metrics.gladiatorForges, { outcome: 'rejected_duplicate' });
           return null;
         }
-        log.info(`[The Forge] DNA PASSED dedup: maxSim=${dupe.maxSim.toFixed(3)} (threshold ${threshold})`);
+        log.info(`[The Forge] DNA PASSED dedup: maxSim=${dupe.maxSim.toFixed(3)} (threshold ${dupeThreshold})`);
+      }
+
+      // ── H2+ performance-aware edge check (RUFLO FAZA 3 Batch 9) ──
+      // Rejects candidates in similarity band [NEAR_LO, dupeThreshold) whose
+      // nearest neighbor has PF<1.0 and n>=20. Catches "near-loser" DNA that
+      // sneaks under the dedup threshold but is basically a variant of a
+      // strategy Butcher will kill within ~30 trades.
+      // Kill-switch: FORGE_PERF_EDGE_CHECK=0 disables.
+      const perfCheckEnabled = process.env.FORGE_PERF_EDGE_CHECK !== '0';
+      if (perfCheckEnabled) {
+        const nearLo = parseFloat(process.env.FORGE_NEAR_LO || '0.65');
+        const near = isNearLoser(dna, dupeThreshold, nearLo);
+        if (near.reject) {
+          log.warn(`[The Forge] DNA REJECTED (near-loser): ${near.reason} vs ${near.nearestId}`);
+          safeInc(metrics.gladiatorForges, { outcome: 'rejected_nearloser' });
+          return null;
+        }
       }
 
       log.info(`[The Forge] DNA PASSED pre-screening: Sanity OK, Backtest WR ~${backtest.estimatedWR}% (${backtest.sampleSize} samples)`);
