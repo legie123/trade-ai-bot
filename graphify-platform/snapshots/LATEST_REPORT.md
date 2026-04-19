@@ -1,12 +1,12 @@
 # Graph Report - /home/runner/work/trade-ai-bot/trade-ai-bot/src  (2026-04-19)
 
 ## Corpus Check
-- 266 files · ~219,037 words
+- 269 files · ~221,769 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1381 nodes · 2687 edges · 90 communities detected
-- Extraction: 69% EXTRACTED · 31% INFERRED · 0% AMBIGUOUS · INFERRED: 841 edges (avg confidence: 0.8)
+- 1394 nodes · 2709 edges · 89 communities detected
+- Extraction: 69% EXTRACTED · 31% INFERRED · 0% AMBIGUOUS · INFERRED: 846 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -99,10 +99,9 @@
 - [[_COMMUNITY_Community 86|Community 86]]
 - [[_COMMUNITY_Community 87|Community 87]]
 - [[_COMMUNITY_Community 88|Community 88]]
-- [[_COMMUNITY_Community 89|Community 89]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `GET()` - 255 edges
+1. `GET()` - 260 edges
 2. `POST()` - 115 edges
 3. `GladiatorStore` - 26 edges
 4. `DELETE()` - 24 edges
@@ -120,108 +119,108 @@
   /home/runner/work/trade-ai-bot/trade-ai-bot/src/app/api/dashboard/route.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/v2/alerts/eventHub.ts
 - `getCachedPrice()` --calls--> `getOrFetchPrice()`  [INFERRED]
   /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/v2/arena/simulator.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/cache/priceCache.ts
-- `GET()` --calls--> `updatePositionPrice()`  [INFERRED]
-  /home/runner/work/trade-ai-bot/trade-ai-bot/src/app/api/dashboard/route.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/polymarket/polyWallet.ts
 - `handle()` --calls--> `lastCouplingState()`  [INFERRED]
   /home/runner/work/trade-ai-bot/trade-ai-bot/src/app/api/v2/polymarket/sentinel-coupling/route.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/polymarket/sentinelCoupling.ts
+- `GET()` --calls--> `lastTuneResult()`  [INFERRED]
+  /home/runner/work/trade-ai-bot/trade-ai-bot/src/app/api/dashboard/route.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/polymarket/thresholdTuner.ts
 
 ## Communities
 
 ### Community 0 - "Community 0"
 Cohesion: 0.02
-Nodes (81): calculateAdaptiveSize(), errorResponse(), successResponse(), captureDivisionSnapshot(), captureSnapshot(), persistAsync(), persistDivAsync(), recentDivisionSnapshots() (+73 more)
+Nodes (89): calculateAdaptiveSize(), errorResponse(), successResponse(), captureDivisionSnapshot(), captureSnapshot(), persistAsync(), persistDivAsync(), recentDivisionSnapshots() (+81 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.04
-Nodes (62): CointelegraphRssAdapter, extractSymbols(), extractTag(), extractTopics(), parseRssItems(), acquireTradeLock(), addDecision(), addGladiatorDna() (+54 more)
+Nodes (37): computeDegradation(), computeStats(), getCpcvConfig(), getCpcvMode(), isFoldOverfit(), loadTrades(), parseTsMs(), runCpcvValidate() (+29 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.04
-Nodes (52): fetchWithRetry(), sleep(), calcBollingerBands(), sma(), stdDev(), analyzeBTC(), calcEMA(), emptyResult() (+44 more)
+Cohesion: 0.03
+Nodes (39): AlphaScout, getResilientPrice(), releaseTaskLease(), tryAcquireTaskLease(), GladiatorRegistry, MemoryCache, buildFeatureVector(), encodeRegime() (+31 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.06
-Nodes (51): MexcAdapter, binanceRequest(), getBinanceBalances(), getBinanceConfig(), getBinanceExchangeInfo(), getBinanceOpenPositions(), getBinancePrice(), placeBinanceLimitOrder() (+43 more)
+Cohesion: 0.04
+Nodes (54): alertBetPlaced(), alertBetResolved(), alertDailyDigest(), alertRiskHalt(), isRateLimited(), sendTelegramAlert(), TELEGRAM_BOT_TOKEN(), TELEGRAM_CHAT_ID() (+46 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.04
-Nodes (35): getResilientPrice(), releaseTaskLease(), tryAcquireTaskLease(), GladiatorRegistry, recordProviderHealth(), MemoryCache, computeNetStats(), dedupViews() (+27 more)
+Nodes (42): calcBollingerBands(), sma(), stdDev(), analyzeBTC(), calcEMA(), emptyResult(), fetchBTCCandles(), fetchFromCryptoCompare() (+34 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.06
-Nodes (23): runDailyRotation(), getGladiatorDna(), getGladiatorsFromDb(), getIndependentSampleSize(), refreshGladiatorsFromCloud(), saveGladiatorsToDb(), extractWinningBehaviors(), callLLMForDNA() (+15 more)
+Cohesion: 0.07
+Nodes (41): MexcAdapter, addInvalidSymbol(), isSymbolValid(), updateLivePosition(), updatePostTrade(), executeMexcTrade(), getExchangeInfoCached(), getPositionSize() (+33 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.06
-Nodes (41): getBotConfig(), getDecisions(), getEquityCurve(), getLivePositions(), getSyncQueueStats(), getFreshHealthSnapshot(), startHeartbeat(), takeSnapshot() (+33 more)
+Nodes (49): checkHealth(), fetchWithRetry(), providerFetch(), sleep(), birdeyeHealthCheck(), getMultiPrice(), getTokenOverview(), getTokenPrice() (+41 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.05
-Nodes (29): alertBetPlaced(), alertBetResolved(), alertDailyDigest(), alertRiskHalt(), isRateLimited(), sendTelegramAlert(), TELEGRAM_BOT_TOKEN(), TELEGRAM_CHAT_ID() (+21 more)
+Cohesion: 0.07
+Nodes (47): buildReasoning(), classifyRisk(), determineRecommendation(), evaluateOpportunity(), getEdgeFloor(), getPriceHistory(), scanDivision(), scoreLiquidity() (+39 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.06
-Nodes (24): computeDegradation(), computeStats(), getCpcvConfig(), getCpcvMode(), isFoldOverfit(), loadTrades(), parseTsMs(), runCpcvValidate() (+16 more)
+Nodes (48): addGladiatorDna(), addGladiatorDnaBatch(), AsyncMutex, buildWashKeyMap(), clearSystemHealthData(), flushPendingSyncs(), getCrossGladiatorWashScore(), getDecisionsToday() (+40 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.07
-Nodes (42): checkHealth(), providerFetch(), birdeyeHealthCheck(), getMultiPrice(), getTokenOverview(), getTokenPrice(), headers(), calculateDealScore() (+34 more)
+Nodes (20): callLLM(), costUsd(), isAbortError(), priceFor(), recordCall(), acquireTradeLock(), addDecision(), addLivePosition() (+12 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.08
-Nodes (39): buildBearPrompt(), buildBullPrompt(), callLLM(), DebateEngine, heuristicDebate(), parseArgument(), scoreDebate(), applySecurityHeaders() (+31 more)
+Cohesion: 0.06
+Nodes (18): CoindeskRssAdapter, extract(), extractSymbols(), parseRssItems(), CointelegraphRssAdapter, extractSymbols(), extractTag(), extractTopics() (+10 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.08
-Nodes (22): TheButcher, wilsonLower(), callLLM(), costUsd(), isAbortError(), priceFor(), recordCall(), DNAExtractor (+14 more)
+Nodes (27): getEquityCurve(), getLivePositions(), getSyncQueueStats(), getFreshHealthSnapshot(), startHeartbeat(), takeSnapshot(), checkDailyLossLimit(), checkExposureLimit() (+19 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.1
-Nodes (36): buildReasoning(), classifyRisk(), determineRecommendation(), evaluateOpportunity(), getEdgeFloor(), getPriceHistory(), scanDivision(), scoreLiquidity() (+28 more)
+Cohesion: 0.09
+Nodes (20): binanceRequest(), getBinanceBalances(), getBinanceConfig(), getBinanceExchangeInfo(), getBinanceOpenPositions(), getBinancePrice(), placeBinanceLimitOrder(), placeBinanceMarketOrder() (+12 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.07
-Nodes (8): CryptoPanicAdapter, getAggregateFeedHealth(), HeuristicSentimentAdapter, NewsCollector, getEnabledNewsAdapters(), getSentimentAdapter(), listAllAdapters(), SentimentAgent
+Cohesion: 0.12
+Nodes (23): appendToEquityCurve(), getBotConfig(), getDecisions(), saveBotConfig(), emitDemotion(), emitError(), emitEvent(), emitKillSwitch() (+15 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.09
-Nodes (20): addSyndicateAudit(), callDeepSeek(), callGemini(), callOpenAI(), checkMarketDataAnchoring(), consensusCacheKey(), DualMasterConsciousness, executeDualEngineFallback() (+12 more)
-
-### Community 15 - "Community 15"
 Cohesion: 0.13
 Nodes (30): engageWithFeed(), extractInsightsWithLLM(), generateSmartReplyLLM(), runMoltbookDailySweep(), solveMathChallenge(), tryPostingToMoltbook(), bucketUpvotes(), callChat() (+22 more)
 
-### Community 16 - "Community 16"
+### Community 15 - "Community 15"
 Cohesion: 0.1
 Nodes (13): BybitAdapter, ExchangeRouter, bybitRequest(), cancelBybitOrder(), getBaseUrl(), getBybitBalance(), getBybitConfig(), getBybitOpenOrders() (+5 more)
 
-### Community 17 - "Community 17"
+### Community 16 - "Community 16"
 Cohesion: 0.09
-Nodes (3): AlphaScout, PromotersAggregator, WsStreamManager
+Nodes (24): cacheKey(), calcADX(), classifyRegime(), computeRegime(), evictIfFull(), getRegimeCacheStats(), getRegimeMode(), regimeMultiplier() (+16 more)
+
+### Community 17 - "Community 17"
+Cohesion: 0.1
+Nodes (13): buildBearPrompt(), buildBullPrompt(), callLLM(), DebateEngine, heuristicDebate(), parseArgument(), scoreDebate(), flushBuffer() (+5 more)
 
 ### Community 18 - "Community 18"
+Cohesion: 0.09
+Nodes (13): CryptoPanicAdapter, getAggregateFeedHealth(), getMinLevel(), getRecentLogs(), log(), classifyRegime(), check(), runChecks() (+5 more)
+
+### Community 19 - "Community 19"
 Cohesion: 0.16
 Nodes (14): OkxAdapter, cancelOkxOrder(), getOkxBalance(), getOkxConfig(), getOkxOpenOrders(), getOkxOrderbook(), getOkxPrice(), getOkxServerTime() (+6 more)
 
-### Community 19 - "Community 19"
-Cohesion: 0.13
-Nodes (21): cacheKey(), calcADX(), classifyRegime(), computeRegime(), evictIfFull(), getRegimeCacheStats(), getRegimeMode(), regimeMultiplier() (+13 more)
-
 ### Community 20 - "Community 20"
-Cohesion: 0.15
-Nodes (9): buildFeatureVector(), encodeRegime(), heuristicPredict(), MicroML, calculateRiskLevel(), checkDrawdown(), checkRisk(), getHoursToExpiry() (+1 more)
+Cohesion: 0.13
+Nodes (9): TheButcher, wilsonLower(), db(), getGraveyardConfig(), getGraveyardEntries(), getGraveyardMode(), getPopulationStats(), recordInGraveyard() (+1 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.15
-Nodes (3): computeInsight(), ExperienceCache, ExperienceMemory
+Cohesion: 0.18
+Nodes (13): addSyndicateAudit(), callDeepSeek(), callGemini(), callOpenAI(), checkMarketDataAnchoring(), consensusCacheKey(), DualMasterConsciousness, executeDualEngineFallback() (+5 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.24
-Nodes (13): calculateKellyBetSize(), calculateTotalBalance(), calculateTotalInvested(), calculateUnrealizedPnL(), checkAndResetDailyLimits(), checkLossLimits(), closePosition(), emergencyLiquidate() (+5 more)
-
-### Community 23 - "Community 23"
 Cohesion: 0.15
 Nodes (4): card(), hBg(), hColor(), uptime()
+
+### Community 23 - "Community 23"
+Cohesion: 0.36
+Nodes (10): analyzeSentimentLLM(), applyConfidencePenalties(), checkForContrarian(), fallbackKeywordScore(), getTemporalWeight(), levenshteinDistance(), OPENAI_API_KEY(), removeNoise() (+2 more)
 
 ### Community 24 - "Community 24"
 Cohesion: 0.27
@@ -229,47 +228,47 @@ Nodes (2): AutoDebugEngine, getServiceUrl()
 
 ### Community 25 - "Community 25"
 Cohesion: 0.36
-Nodes (10): analyzeSentimentLLM(), applyConfidencePenalties(), checkForContrarian(), fallbackKeywordScore(), getTemporalWeight(), levenshteinDistance(), OPENAI_API_KEY(), removeNoise() (+2 more)
-
-### Community 26 - "Community 26"
-Cohesion: 0.36
 Nodes (6): aggregateStats(), bootstrapPValueOosPositive(), computeDegradation(), computeStats(), isFoldOverfit(), WalkForwardEngine
 
-### Community 27 - "Community 27"
-Cohesion: 0.28
-Nodes (4): CoindeskRssAdapter, extract(), extractSymbols(), parseRssItems()
+### Community 26 - "Community 26"
+Cohesion: 0.22
+Nodes (1): HeuristicSentimentAdapter
 
-### Community 28 - "Community 28"
+### Community 27 - "Community 27"
 Cohesion: 0.52
 Nodes (6): clamp01(), getMetaLabelConfig(), getMetaLabelMode(), normalizeSizing(), predict(), sigmoid()
 
-### Community 29 - "Community 29"
+### Community 28 - "Community 28"
 Cohesion: 0.33
 Nodes (2): logPolyEvent(), syncEventsToCloud()
 
-### Community 30 - "Community 30"
+### Community 29 - "Community 29"
 Cohesion: 0.52
 Nodes (6): calculateConviction(), scoreBB(), scoreFearGreed(), scoreMTF(), scoreRSI(), scoreVWAP()
 
-### Community 31 - "Community 31"
+### Community 30 - "Community 30"
 Cohesion: 0.33
 Nodes (0): 
 
-### Community 32 - "Community 32"
+### Community 31 - "Community 31"
 Cohesion: 0.6
 Nodes (3): getArenaConfig(), isEligibleForArena(), scoreGladiatorForArena()
 
-### Community 33 - "Community 33"
+### Community 32 - "Community 32"
 Cohesion: 0.5
 Nodes (0): 
 
-### Community 34 - "Community 34"
+### Community 33 - "Community 33"
 Cohesion: 0.67
 Nodes (2): draw(), getStateColor()
 
-### Community 35 - "Community 35"
+### Community 34 - "Community 34"
 Cohesion: 0.67
 Nodes (2): downsample(), Sparkline()
+
+### Community 35 - "Community 35"
+Cohesion: 0.67
+Nodes (0): 
 
 ### Community 36 - "Community 36"
 Cohesion: 0.67
@@ -292,27 +291,27 @@ Cohesion: 0.67
 Nodes (0): 
 
 ### Community 41 - "Community 41"
-Cohesion: 0.67
-Nodes (0): 
-
-### Community 42 - "Community 42"
 Cohesion: 1.0
 Nodes (2): execute(), handleItemKeyDown()
 
-### Community 43 - "Community 43"
+### Community 42 - "Community 42"
 Cohesion: 0.67
 Nodes (0): 
 
-### Community 44 - "Community 44"
+### Community 43 - "Community 43"
 Cohesion: 1.0
 Nodes (2): evaluateAlerts(), makeAlert()
+
+### Community 44 - "Community 44"
+Cohesion: 0.67
+Nodes (0): 
 
 ### Community 45 - "Community 45"
 Cohesion: 0.67
 Nodes (0): 
 
 ### Community 46 - "Community 46"
-Cohesion: 0.67
+Cohesion: 1.0
 Nodes (0): 
 
 ### Community 47 - "Community 47"
@@ -483,109 +482,105 @@ Nodes (0):
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 89 - "Community 89"
-Cohesion: 1.0
-Nodes (0): 
-
 ## Knowledge Gaps
-- **Thin community `Community 47`** (2 nodes): `BottomNav()`, `BottomNav.tsx`
+- **Thin community `Community 46`** (2 nodes): `BottomNav()`, `BottomNav.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 48`** (2 nodes): `Sidebar.tsx`, `Sidebar()`
+- **Thin community `Community 47`** (2 nodes): `Sidebar.tsx`, `Sidebar()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 49`** (2 nodes): `LoadingStates.tsx`, `Skeleton()`
+- **Thin community `Community 48`** (2 nodes): `LoadingStates.tsx`, `Skeleton()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 50`** (2 nodes): `SentinelCouplingPanel.tsx`, `decisionColor()`
+- **Thin community `Community 49`** (2 nodes): `SentinelCouplingPanel.tsx`, `decisionColor()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 51`** (2 nodes): `AppShell()`, `AppShell.tsx`
+- **Thin community `Community 50`** (2 nodes): `AppShell()`, `AppShell.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 52`** (2 nodes): `pnlCol()`, `DivisionTunerPanel.tsx`
+- **Thin community `Community 51`** (2 nodes): `pnlCol()`, `DivisionTunerPanel.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 53`** (2 nodes): `Toast.tsx`, `useToast()`
+- **Thin community `Community 52`** (2 nodes): `Toast.tsx`, `useToast()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 54`** (2 nodes): `DirectionBadge()`, `DecisionMatrix.tsx`
+- **Thin community `Community 53`** (2 nodes): `DirectionBadge()`, `DecisionMatrix.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 55`** (2 nodes): `PaperBacktestPanel.tsx`, `pnlColor()`
+- **Thin community `Community 54`** (2 nodes): `PaperBacktestPanel.tsx`, `pnlColor()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 56`** (2 nodes): `GoldDust()`, `GoldDust.tsx`
+- **Thin community `Community 55`** (2 nodes): `GoldDust()`, `GoldDust.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 57`** (2 nodes): `SwRegister.tsx`, `handleUpdate()`
+- **Thin community `Community 56`** (2 nodes): `SwRegister.tsx`, `handleUpdate()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 58`** (2 nodes): `volumeIntel.ts`, `classifyVolume()`
+- **Thin community `Community 57`** (2 nodes): `volumeIntel.ts`, `classifyVolume()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 59`** (2 nodes): `instrumentCron()`, `cronInstrument.ts`
+- **Thin community `Community 58`** (2 nodes): `instrumentCron()`, `cronInstrument.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 60`** (2 nodes): `page.tsx`, `Home()`
+- **Thin community `Community 59`** (2 nodes): `page.tsx`, `Home()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 61`** (2 nodes): `layout.tsx`, `RootLayout()`
+- **Thin community `Community 60`** (2 nodes): `layout.tsx`, `RootLayout()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 62`** (2 nodes): `DeepSeekStatus()`, `DeepSeekStatus.tsx`
+- **Thin community `Community 61`** (2 nodes): `DeepSeekStatus()`, `DeepSeekStatus.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (2 nodes): `page.tsx`, `deriveAgentState()`
+- **Thin community `Community 62`** (2 nodes): `page.tsx`, `deriveAgentState()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (2 nodes): `route.ts`, `classifyPost()`
+- **Thin community `Community 63`** (2 nodes): `route.ts`, `classifyPost()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (2 nodes): `route.ts`, `wilsonLower()`
+- **Thin community `Community 64`** (2 nodes): `useRealtimeData.ts`, `useRealtimeData()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (2 nodes): `useRealtimeData.ts`, `useRealtimeData()`
+- **Thin community `Community 65`** (2 nodes): `useBotStats.ts`, `useBotStats()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 67`** (2 nodes): `useBotStats.ts`, `useBotStats()`
+- **Thin community `Community 66`** (1 nodes): `KpiBar.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 68`** (1 nodes): `KpiBar.tsx`
+- **Thin community `Community 67`** (1 nodes): `TradingViewChart.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 69`** (1 nodes): `TradingViewChart.tsx`
+- **Thin community `Community 68`** (1 nodes): `MoltbookSwarmFeed.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `MoltbookSwarmFeed.tsx`
+- **Thin community `Community 69`** (1 nodes): `DragonLogo.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 71`** (1 nodes): `DragonLogo.tsx`
+- **Thin community `Community 70`** (1 nodes): `Sparkline.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 72`** (1 nodes): `Sparkline.tsx`
+- **Thin community `Community 71`** (1 nodes): `EquityCurve.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 73`** (1 nodes): `EquityCurve.tsx`
+- **Thin community `Community 72`** (1 nodes): `SectorInfo.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (1 nodes): `SectorInfo.tsx`
+- **Thin community `Community 73`** (1 nodes): `SyndicateFeed.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 75`** (1 nodes): `SyndicateFeed.tsx`
+- **Thin community `Community 74`** (1 nodes): `theme.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 76`** (1 nodes): `theme.ts`
+- **Thin community `Community 75`** (1 nodes): `index.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 76`** (1 nodes): `index.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 77`** (1 nodes): `index.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (1 nodes): `index.ts`
+- **Thin community `Community 78`** (1 nodes): `types.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 79`** (1 nodes): `index.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (1 nodes): `index.ts`
+- **Thin community `Community 80`** (1 nodes): `polyTypes.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (1 nodes): `polyTypes.ts`
+- **Thin community `Community 81`** (1 nodes): `index.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (1 nodes): `index.ts`
+- **Thin community `Community 82`** (1 nodes): `seedStrategies.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (1 nodes): `seedStrategies.ts`
+- **Thin community `Community 83`** (1 nodes): `gladiator.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (1 nodes): `gladiator.ts`
+- **Thin community `Community 84`** (1 nodes): `index.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 85`** (1 nodes): `index.ts`
+- **Thin community `Community 85`** (1 nodes): `strategy.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (1 nodes): `strategy.ts`
+- **Thin community `Community 86`** (1 nodes): `radar.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (1 nodes): `radar.ts`
+- **Thin community `Community 87`** (1 nodes): `scoringConfig.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 88`** (1 nodes): `scoringConfig.ts`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (1 nodes): `route.ts`
+- **Thin community `Community 88`** (1 nodes): `route.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `GET()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 22`, `Community 23`, `Community 24`, `Community 28`?**
-  _High betweenness centrality (0.484) - this node is a cross-community bridge._
-- **Why does `POST()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 10`, `Community 11`, `Community 12`, `Community 14`, `Community 16`, `Community 17`, `Community 18`, `Community 22`, `Community 24`?**
-  _High betweenness centrality (0.185) - this node is a cross-community bridge._
-- **Why does `analyzeBTC()` connect `Community 2` to `Community 0`, `Community 4`?**
-  _High betweenness centrality (0.038) - this node is a cross-community bridge._
-- **Are the 173 inferred relationships involving `GET()` (e.g. with `isAuthenticated()` and `runKarmaRead()`) actually correct?**
-  _`GET()` has 173 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `GET()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 24`, `Community 27`?**
+  _High betweenness centrality (0.509) - this node is a cross-community bridge._
+- **Why does `POST()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 15`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 24`?**
+  _High betweenness centrality (0.186) - this node is a cross-community bridge._
+- **Why does `getAggregatedTokens()` connect `Community 6` to `Community 0`, `Community 10`, `Community 2`?**
+  _High betweenness centrality (0.032) - this node is a cross-community bridge._
+- **Are the 176 inferred relationships involving `GET()` (e.g. with `isAuthenticated()` and `runKarmaRead()`) actually correct?**
+  _`GET()` has 176 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 80 inferred relationships involving `POST()` (e.g. with `.getCurrentSynthesis()` and `.getModifierForSymbol()`) actually correct?**
   _`POST()` has 80 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 23 inferred relationships involving `DELETE()` (e.g. with `seedPaper()` and `resetForPaperMode()`) actually correct?**
