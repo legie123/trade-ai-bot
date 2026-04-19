@@ -18,7 +18,7 @@ import { getFundingRate } from '@/lib/v2/scouts/ta/fundingRate';
 import { applySessionFilter } from '@/lib/v2/scouts/ta/sessionFilter';
 import { analyzeWicks, detectMarketStructure } from '@/lib/v2/scouts/ta/wickAnalysis';
 import { detectSFP } from '@/lib/v2/scouts/ta/sfpDetector';
-import { getOpenInterest } from '@/lib/v2/scouts/ta/openInterest';
+// C11: getOpenInterest import removed — stub (MEXC migration incomplete), zero signal value.
 
 const log = createLogger('BTCEngine');
 
@@ -60,18 +60,44 @@ function calcEMA(values: number[], period: number): number {
   return ema;
 }
 
-// ─── Fetch BTC OHLC with Promise.any() Race ──
-// Binance, OKX, CryptoCompare queried simultaneously — fastest provider wins!
+// ─── BTC OHLC Cache ──────────────────────────────
+// C11 (2026-04-19): btcEngine had ZERO candle caching — hit MEXC/CryptoCompare every
+// 60s tick for all 3 timeframes. SolanaEngine had 5min cache; btcEngine did not.
+// TTLs tuned to timeframe granularity: 15m=90s (covers 1 tick + margin),
+// 1h=5min, 4h=10min. On warm ticks, scanner drops from ~4s to <0.5s.
+// ASSUMPTION: candle data for a given timeframe is stable within its TTL.
+// If exchange pushes real-time corrections mid-candle, we accept the lag.
+const _btcCandleCache: Record<string, { data: Candle[]; ts: number }> = {};
+const BTC_CANDLE_TTL: Record<string, number> = {
+  '15m': 90_000,    // 90s — slightly above cron cadence (60s) for margin
+  '1h':  5 * 60_000, // 5min — 1h candles barely change in 5min
+  '4h':  10 * 60_000, // 10min — 4h candles are nearly static within 10min
+};
+
+// ─── Fetch BTC OHLC with Promise.any() Race + cache ──
 async function fetchBTCCandles(interval: '15m' | '1h' | '4h'): Promise<Candle[]> {
+  // C11: check cache first — skip network I/O on warm ticks
+  const cached = _btcCandleCache[interval];
+  const ttl = BTC_CANDLE_TTL[interval] || 90_000;
+  if (cached && cached.data.length >= 20 && (Date.now() - cached.ts) < ttl) {
+    return cached.data;
+  }
+
   try {
     const candles = await Promise.any([
       fetchFromMEXC(interval).then(c => c.length >= 20 ? c : Promise.reject('MEXC invalid')),
       fetchFromCryptoCompare(interval).then(c => c.length >= 20 ? c : Promise.reject('CryptoCompare invalid'))
     ]);
+    _btcCandleCache[interval] = { data: candles, ts: Date.now() };
     return candles;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error(`All reliable providers failed for ${interval}: ${msg}`);
+    // Return stale cache if available (better than empty)
+    if (cached && cached.data.length >= 20) {
+      log.warn(`Using stale ${interval} cache (age: ${((Date.now() - cached.ts) / 1000).toFixed(0)}s)`);
+      return cached.data;
+    }
     return [];
   }
 }
@@ -123,11 +149,14 @@ async function fetchFromCryptoCompare(interval: '15m' | '1h' | '4h'): Promise<Ca
 
 
 export async function analyzeBTC(): Promise<AnalysisResult> {
-  const [c15mRes, c1hRes, c4hRes, fallbackPriceResult] = await Promise.allSettled([
+  // C11: funding rate parallelized into initial block (was sequential after candles).
+  // OI removed — stub returning NEUTRAL always, wasted event loop yield.
+  const [c15mRes, c1hRes, c4hRes, fallbackPriceResult, fundingRes] = await Promise.allSettled([
     fetchBTCCandles('15m'),
     fetchBTCCandles('1h'),
     fetchBTCCandles('4h'),
     getResilientPrice('BTC'),
+    getFundingRate('BTCUSDT'),
   ]);
 
   const c15m = c15mRes.status === 'fulfilled' ? c15mRes.value : [];
@@ -285,17 +314,15 @@ export async function analyzeBTC(): Promise<AnalysisResult> {
     }
   }
 
-  // ── Funding Rate Contrarian Signal ──
-  const funding = await getFundingRate('BTCUSDT');
-  if (funding.signal !== 'NEUTRAL' && funding.strength >= 0.5) {
+  // ── Funding Rate Contrarian Signal (C11: pre-fetched in parallel block) ──
+  const funding = fundingRes.status === 'fulfilled' ? fundingRes.value : null;
+  if (funding && funding.signal !== 'NEUTRAL' && funding.strength >= 0.5) {
     signals.push({ signal: funding.signal, reason: funding.reason });
   }
 
-  // ── Open Interest Divergence (institutional positioning) ──
-  const oi = await getOpenInterest('BTCUSDT');
-  if (oi.signal !== 'NEUTRAL' && oi.strength >= 0.3) {
-    signals.push({ signal: oi.signal, reason: oi.reason });
-  }
+  // C11: getOpenInterest REMOVED — was a stub returning NEUTRAL always (MEXC migration
+  // never completed). Zero signal value, wasted await. Re-add when MEXC Contract OI API
+  // is implemented.
 
   // ── MTF Confluence (original) ──
   if (bullConfluence >= 3) {
