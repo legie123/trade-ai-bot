@@ -71,6 +71,8 @@ SHELL_RC="$HOME/.zshrc"
 EXPORT_LINE="export GRAPHIFY_PLATFORM=\"$PLATFORM_DIR\""
 ALIAS_NEW="alias graphify-new-project=\"bash $PLATFORM_DIR/bin/graphify-new-project.sh\""
 ALIAS_BRIDGE="alias graphify-bridge=\"python3 $PLATFORM_DIR/bin/graphify-obsidian-bridge.py\""
+ALIAS_DIGEST="alias graphify-digest=\"python3 $PLATFORM_DIR/bin/graphify-digest.py\""
+ALIAS_ACTIVATOR="alias graphify-activate=\"bash $PLATFORM_DIR/bin/graphify-mac-activator.sh\""
 if ! grep -q "GRAPHIFY_PLATFORM" "$SHELL_RC" 2>/dev/null; then
   {
     echo ""
@@ -78,11 +80,19 @@ if ! grep -q "GRAPHIFY_PLATFORM" "$SHELL_RC" 2>/dev/null; then
     echo "$EXPORT_LINE"
     echo "$ALIAS_NEW"
     echo "$ALIAS_BRIDGE"
+    echo "$ALIAS_DIGEST"
+    echo "$ALIAS_ACTIVATOR"
   } >> "$SHELL_RC"
-  log "wrote GRAPHIFY_PLATFORM + graphify-new-project + graphify-bridge aliases to $SHELL_RC"
-elif ! grep -q "graphify-bridge" "$SHELL_RC" 2>/dev/null; then
-  echo "$ALIAS_BRIDGE" >> "$SHELL_RC"
-  log "appended graphify-bridge alias to $SHELL_RC"
+  log "wrote GRAPHIFY_PLATFORM + 4 aliases (new-project/bridge/digest/activate) to $SHELL_RC"
+else
+  # Hot-fix: add missing aliases independently for users who installed earlier
+  for pair in "graphify-bridge:$ALIAS_BRIDGE" "graphify-digest:$ALIAS_DIGEST" "graphify-activate:$ALIAS_ACTIVATOR"; do
+    name="${pair%%:*}"; line="${pair#*:}"
+    if ! grep -q "alias $name=" "$SHELL_RC" 2>/dev/null; then
+      echo "$line" >> "$SHELL_RC"
+      log "appended $name alias to $SHELL_RC"
+    fi
+  done
 fi
 
 # ── 7. Verify ────────────────────────────────────────────────────
