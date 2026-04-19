@@ -73,11 +73,19 @@ export async function GET(request: Request) {
 
           // Place phantom bet if direction is clear (env POLY_CONF_MIN)
           if (evaluation.direction !== 'SKIP' && evaluation.confidence >= CONF_MIN) {
-            // Create phantom bet on gladiator
-            const resolvedOutcomeId = opportunity.market.outcomes.find(
+            // Create phantom bet on gladiator.
+            // Outcome resolution: prefer literal YES/NO match, fallback to
+            // positional [0]=YES/[1]=NO for markets with arbitrary labels
+            // (NBA teams, candidate names). Sync cu paper-seed pickOutcomeId.
+            const outcomes = opportunity.market.outcomes || [];
+            let resolvedOutcomeId = outcomes.find(
                 o => (evaluation.direction === 'BUY_YES' && o.name.toUpperCase() === 'YES') ||
                      (evaluation.direction === 'BUY_NO' && o.name.toUpperCase() === 'NO'),
               )?.id;
+            if (!resolvedOutcomeId) {
+              const idx = evaluation.direction === 'BUY_YES' ? 0 : 1;
+              resolvedOutcomeId = outcomes[idx]?.id;
+            }
             if (!resolvedOutcomeId) continue; // Skip if outcome not found — prevents phantom/live bets with invalid ID
 
             const bet = {

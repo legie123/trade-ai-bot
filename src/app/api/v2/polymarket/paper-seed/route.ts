@@ -70,15 +70,27 @@ const PRIORITY_DIVISIONS: PolyDivision[] = [
   PolyDivision.POLITICS,
 ];
 
+// Gamma returns `outcomes` with either literal YES/NO names or arbitrary
+// labels (e.g. team names "Magic"/"Pistons"). When literal YES/NO is
+// present we match it; otherwise we fall back to positional [0]=YES, [1]=NO —
+// Polymarket's binary convention where outcomes[0] is the "positive" side.
+// Asumptie: Gamma's outcomes array is always ordered (YES-equivalent first),
+// invalidarea = rare edge-case where teams are order-swapped upstream, which
+// would bias the phantom bet's side — training noise only, no capital risk.
 function pickOutcomeId(
   market: PolyMarket,
   direction: 'BUY_YES' | 'BUY_NO' | 'SKIP',
 ): string | undefined {
   if (direction === 'SKIP') return undefined;
-  return market.outcomes?.find(o =>
+  const outcomes = market.outcomes || [];
+  const literal = outcomes.find(o =>
     (direction === 'BUY_YES' && o.name?.toUpperCase() === 'YES') ||
     (direction === 'BUY_NO' && o.name?.toUpperCase() === 'NO'),
-  )?.id;
+  );
+  if (literal) return literal.id;
+  // Fallback: positional mapping for non-binary-named markets
+  const idx = direction === 'BUY_YES' ? 0 : 1;
+  return outcomes[idx]?.id;
 }
 
 function handle(request: Request) {
