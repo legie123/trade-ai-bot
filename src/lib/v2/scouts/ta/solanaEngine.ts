@@ -151,9 +151,47 @@ async function fetchOHLC(coinId: string): Promise<Candle[]> {
     log.warn(`MEXC OHLC failed for ${coinId}, falling back to synthetic`, { err: (err as Error).message });
   }
 
+  // RUFLO FAZA 3 / BATCH 7 / F7 fix (P1) — CoinGecko OHLC fallback.
+  //
+  // BUG (pre-fix): When MEXC OHLC failed (rate-limited, symbol delisted,
+  // network), we returned empty → analyzeCoin saw <10 closes → forced NEUTRAL
+  // for the ENTIRE Solana ecosystem. Meme/alt signals went dark during exactly
+  // the windows (volatility spikes) where they matter most.
+  //
+  // FIX: Fall through to CoinGecko /coins/{id}/ohlc?vs_currency=usd&days=7.
+  // CoinGecko returns [[ts, o, h, l, c]] at 4h bucketing when days>=7.
+  // ASUMPȚII invalidatoare:
+  //   1) coin.id matches CoinGecko coin IDs (verified at declaration site).
+  //   2) CoinGecko ≥20 candles = enough for EMA50 floor. Below that we fail
+  //      closed (empty array) — no synthetic.
+  //   3) Anonymous CoinGecko rate limit ~10-30 req/min. 28 Solana coins polled
+  //      only on MEXC failure; acceptable degradation. Monitor 429s.
+  //
+  // Env rollback: SOLANA_COINGECKO_FALLBACK_OFF=1 → legacy empty-array behavior.
+  if (process.env.SOLANA_COINGECKO_FALLBACK_OFF !== '1') {
+    try {
+      const cgRes = await fetchWithRetry(
+        `https://api.coingecko.com/api/v3/coins/${coinId}/ohlc?vs_currency=usd&days=7`,
+        { retries: 1, timeoutMs: 4000 }
+      );
+      const cgData = await cgRes.json();
+      if (Array.isArray(cgData) && cgData.length >= 20) {
+        const candles: Candle[] = cgData.map((k: [number, number, number, number, number]) => ({
+          t: k[0], o: k[1], h: k[2], l: k[3], c: k[4]
+        }));
+        cache.ohlc[coinId] = { data: candles, ts: now };
+        log.info(`[SolanaEngine] CoinGecko fallback OK for ${coinId} (${candles.length} candles)`);
+        return candles;
+      }
+      log.warn(`[SolanaEngine] CoinGecko fallback insufficient for ${coinId} (got ${Array.isArray(cgData) ? cgData.length : 0} candles, need 20)`);
+    } catch (err) {
+      log.warn(`[SolanaEngine] CoinGecko fallback failed for ${coinId}`, { err: (err as Error).message });
+    }
+  }
+
   // AUDIT FIX T1.4: Synthetic OHLC with Math.random() DISABLED — produces fake data
   // that leads to false EMA/signal calculations. Return empty to force NEUTRAL signals.
-  log.warn(`[SolanaEngine] MEXC OHLC unavailable for ${coinId} — no synthetic fallback. Returning empty (will produce NEUTRAL signals).`);
+  log.warn(`[SolanaEngine] OHLC unavailable for ${coinId} after all fallbacks — returning empty (NEUTRAL signals).`);
   return [];
 }
 

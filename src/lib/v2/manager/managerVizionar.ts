@@ -176,11 +176,29 @@ export class ManagerVizionar {
 
     // 3. Apply modifiers + cap
     const mod = intelligence.confidenceModifier;
-    const adjusted = consensus.weightedConfidence * mod * symbolPenalty;
+    // RUFLO FAZA 3 / BATCH 7 / F8 fix (P1) — weak-signal extra penalty.
+    //
+    // BUG (pre-fix): confidenceModifier `mod` already scales confidence
+    // proportionally, but a gladiator with mod=0.5 still gets a LINEAR
+    // reduction. Empirically, signals at the lower band of mod degrade
+    // FASTER than linear (noise-to-signal blows up). Without extra penalty,
+    // a "weak but positive" signal still crosses FLAT_THRESHOLD too often.
+    //
+    // FIX: When mod < 0.8, multiply by (mod/0.8). So mod=0.5 becomes
+    // 0.5 * (0.5/0.8) = 0.3125, pushing weak signals toward FLAT.
+    //
+    // ASUMPȚIE invalidatoare: breakpoint 0.8 empiric — if calibration shows
+    // mod distribution shifted (e.g., median drops below 0.8), this
+    // penalty becomes too aggressive and should be re-tuned.
+    //
+    // Env rollback: CONFIDENCE_WEAK_PENALTY_OFF=1 → legacy linear behavior.
+    const weakPenaltyOff = process.env.CONFIDENCE_WEAK_PENALTY_OFF === '1';
+    const weakPenalty = (!weakPenaltyOff && mod < 0.8) ? (mod / 0.8) : 1.0;
+    const adjusted = consensus.weightedConfidence * mod * symbolPenalty * weakPenalty;
     const capped = Math.min(adjusted, confidenceCap);
     const final = Math.min(Math.max(capped, 0), 1);
 
-    log.info(`[RL] ${intelligence.gladiatorId}: confidence ${(consensus.weightedConfidence * 100).toFixed(1)}% → ${(final * 100).toFixed(1)}% (mod: ${mod}, symPen: ${symbolPenalty}, cap: ${confidenceCap})`);
+    log.info(`[RL] ${intelligence.gladiatorId}: confidence ${(consensus.weightedConfidence * 100).toFixed(1)}% → ${(final * 100).toFixed(1)}% (mod: ${mod}, symPen: ${symbolPenalty}, weakPen: ${weakPenalty.toFixed(2)}, cap: ${confidenceCap})`);
 
     // PAPER MODE: Lower FLAT threshold to generate training data (0.25 vs 0.5 for LIVE)
     const isPaper = (process.env.TRADING_MODE || 'PAPER').toUpperCase() === 'PAPER';
