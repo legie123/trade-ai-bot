@@ -46,7 +46,16 @@ import { POST as botPOST } from '../../bot/route';
 // FIX 2026-04-19 (C8): Wire orphaned dailyRotation (Butcher+Forge) into command route.
 // runDailyRotation existed only as standalone script — never ran on Cloud Run.
 // Without this, losing gladiators (PF<1.0) accumulate indefinitely.
-import { runDailyRotation } from '@/scripts/cron_dailyRotation';
+// Dynamic import to avoid pulling Forge/LLM deps into command route's build chunk.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _runDailyRotation: (() => Promise<void>) | null = null;
+async function getRunDailyRotation() {
+  if (!_runDailyRotation) {
+    const mod = await import('@/scripts/cron_dailyRotation');
+    _runDailyRotation = mod.runDailyRotation;
+  }
+  return _runDailyRotation;
+}
 
 export const dynamic = 'force-dynamic';
 const log = createLogger('CommandCenter');
@@ -328,7 +337,8 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       // Was orphaned as standalone script, never ran on Cloud Run.
       case 'arena:rotation': {
         try {
-          await runDailyRotation();
+          const rotation = await getRunDailyRotation();
+          await rotation();
           const leaderboard = gladiatorStore.getLeaderboard().map(g => ({
             name: g.name, tt: g.stats.totalTrades, wr: g.stats.winRate, pf: g.stats.profitFactor, isLive: g.isLive,
           }));
