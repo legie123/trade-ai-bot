@@ -12,6 +12,8 @@ import { emitPromotion } from '@/lib/v2/alerts/eventHub';
 // AUDIT FIX C3 (2026-04-18): Walk-forward validation gate
 import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+// FAZA A BATCH 1: domain metrics hook
+import { metrics, safeInc } from '@/lib/observability/metrics';
 
 export const dynamic = 'force-dynamic';
 
@@ -147,6 +149,7 @@ export async function GET(request: Request) {
             reason: `Insufficient INDEPENDENT samples: ${indepCount} (raw ${g.stats.totalTrades}) < ${PROMO_CRITERIA.minPhantomTrades} — wash-contaminated`,
             stats: { winRate: g.stats.winRate, profitFactor: g.stats.profitFactor, totalTrades: g.stats.totalTrades },
           });
+          safeInc(metrics.gladiatorPromotions, { result: 'rejected_sample' });
           continue;
         }
         // Wilson floor — based on INDEPENDENT sample size (indepCount) not raw
@@ -162,6 +165,7 @@ export async function GET(request: Request) {
               reason: `Wilson WR lower bound ${(wrLower*100).toFixed(1)}% < ${(WILSON_WR_FLOOR*100).toFixed(0)}% — statistical confidence insufficient (raw WR ${g.stats.winRate}%, indep n=${indepCount})`,
               stats: { winRate: g.stats.winRate, profitFactor: g.stats.profitFactor, totalTrades: g.stats.totalTrades },
             });
+            safeInc(metrics.gladiatorPromotions, { result: 'rejected_wilson' });
             continue;
           }
         }
@@ -244,6 +248,7 @@ export async function GET(request: Request) {
         }
 
         if (mc.ruinProbability > PROMO_CRITERIA.maxRuinProbability) {
+          safeInc(metrics.gladiatorPromotions, { result: 'rejected_ruin' });
           results.push({
             gladiatorId: candidate.id,
             gladiatorName: candidate.name,
@@ -271,6 +276,7 @@ export async function GET(request: Request) {
         try {
           const wfResult = await WalkForwardEngine.getInstance().validate(candidate.id);
           if (wfResult.verdict === 'OVERFIT') {
+            safeInc(metrics.gladiatorPromotions, { result: 'rejected_overfit' });
             results.push({
               gladiatorId: candidate.id,
               gladiatorName: candidate.name,
@@ -305,6 +311,8 @@ export async function GET(request: Request) {
         candidate.isLive = true;
         candidate.lastUpdated = Date.now();
         promoted++;
+        // FAZA A BATCH 1: promotion metric
+        safeInc(metrics.gladiatorPromotions, { result: 'promoted' });
 
         results.push({
           gladiatorId: candidate.id,

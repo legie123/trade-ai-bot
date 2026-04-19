@@ -2,6 +2,8 @@ import { Gladiator, ArenaType } from '../../types/gladiator';
 import { createLogger } from '@/lib/core/logger';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { saveGladiatorsToDb } from '@/lib/store/db';
+// FAZA A BATCH 1: domain metrics hook
+import { metrics, safeInc } from '@/lib/observability/metrics';
 
 const log = createLogger('TheForge');
 
@@ -393,12 +395,14 @@ CRITICAL RULE: "takeProfitTarget" MUST BE AT LEAST 1.5x GREATER THAN "stopLossRi
       const sanity = isDNASane(dna);
       if (!sanity.pass) {
         log.warn(`[The Forge] DNA REJECTED (sanity): ${sanity.reason}`);
+        safeInc(metrics.gladiatorForges, { outcome: 'rejected_sanity' });
         return null;
       }
 
       const backtest = await miniBacktest(dna);
       if (!backtest.pass) {
         log.warn(`[The Forge] DNA REJECTED (backtest): Estimated WR ${backtest.estimatedWR}% on ${backtest.sampleSize} samples — below 35% threshold`);
+        safeInc(metrics.gladiatorForges, { outcome: 'rejected_minibacktest' });
         return null;
       }
 
@@ -409,6 +413,7 @@ CRITICAL RULE: "takeProfitTarget" MUST BE AT LEAST 1.5x GREATER THAN "stopLossRi
         const dupe = isDNADuplicate(dna, threshold);
         if (dupe.duplicate) {
           log.warn(`[The Forge] DNA REJECTED (duplicate): sim=${dupe.maxSim.toFixed(3)} >= ${threshold} vs ${dupe.nearestId}`);
+          safeInc(metrics.gladiatorForges, { outcome: 'rejected_duplicate' });
           return null;
         }
         log.info(`[The Forge] DNA PASSED dedup: maxSim=${dupe.maxSim.toFixed(3)} (threshold ${threshold})`);
@@ -442,10 +447,12 @@ CRITICAL RULE: "takeProfitTarget" MUST BE AT LEAST 1.5x GREATER THAN "stopLossRi
       };
 
       log.info(`[The Forge] Spawned: ${newGladiator.name} | Arena: ${arena} | DNA: RSI ${dna.rsiOversold}/${dna.rsiOverbought}, TF ${dna.timeframeBias}, SL ${(dna.stopLossRisk * 100).toFixed(2)}%, TP ${(dna.takeProfitTarget * 100).toFixed(2)}%`);
+      safeInc(metrics.gladiatorForges, { outcome: 'accepted' });
       return newGladiator;
 
     } catch (err) {
       log.error('[The Forge] Failed to spawn:', { error: (err as Error).message });
+      safeInc(metrics.gladiatorForges, { outcome: 'error' });
       return null;
     }
   }

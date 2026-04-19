@@ -391,6 +391,17 @@ export function addDecision(snapshot: DecisionSnapshot): void {
   cache.decisions.unshift(snapshot);
   if (cache.decisions.length > 1000) cache.decisions.length = 1000;
 
+  // FAZA A BATCH 1: emit metric per decision (verdict = direction downcase, NEUTRAL → flat)
+  try {
+    // Lazy require to avoid circular import pressure in this hot path
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { metrics: m, safeInc } = require('@/lib/observability/metrics');
+    const verdict = snapshot.signal === 'NEUTRAL'
+      ? 'flat'
+      : (snapshot.direction === 'LONG' ? 'buy' : 'sell');
+    safeInc(m.decisions, { verdict });
+  } catch { /* instrumentation must never crash decision path */ }
+
   // PERF FIX 2026-04-18: Remote merge debounced to max once per 60s.
   // Was: full Supabase SELECT + merge on EVERY insert → 50+ roundtrips/tick.
   // Now: local cache is authoritative within a tick, remote merge only when stale.

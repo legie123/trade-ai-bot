@@ -2,6 +2,8 @@ import { saveGladiatorsToDb, getGladiatorBattles } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { createLogger } from '@/lib/core/logger';
 import { Gladiator } from '../../types/gladiator';
+// FAZA A BATCH 1: domain metrics hook
+import { metrics, safeInc } from '@/lib/observability/metrics';
 // RUFLO FAZA 3 Batch 5/9 (2026-04-19): Survivorship fix.
 // recordInGraveyard is feature-flagged (BUTCHER_GRAVEYARD_ENABLED) and
 // fail-soft — if the migration hasn't been applied or Supabase is
@@ -172,6 +174,10 @@ export class TheButcher {
         if (memo.memorized) reasonParts.push('MEMORIZED');
         const reason = `${reasonParts.join('+')} | n=${g.stats.totalTrades} WR=${g.stats.winRate} PF=${g.stats.profitFactor}${memoTag}`;
         killedDetails.push({ g, reason });
+        // FAZA A BATCH 1: emit metric per kill (reason=dominant failure; mode=shadow|live via env)
+        const dominantReason = reasonParts[0] || 'UNKNOWN';
+        const butcherMode = process.env.BUTCHER_GRAVEYARD_ENABLED === 'on' ? 'live' : 'shadow';
+        safeInc(metrics.gladiatorKills, { reason: dominantReason, mode: butcherMode });
       } else {
         survivors.push(g);
       }

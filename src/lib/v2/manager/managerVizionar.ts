@@ -13,6 +13,8 @@ import { autoDebugEngine } from '@/lib/v2/safety/autoDebugEngine';
 import { runPreTradeGates, onTradeExecuted } from '@/lib/core/safetyGates';
 // AUDIT FIX C5 (2026-04-18): Capture per-position context for RL learning
 import { storePositionContext, computeSlippageBps } from '@/lib/v2/memory/positionContextStore';
+// FAZA A BATCH 1: domain metrics hook
+import { metrics, safeInc } from '@/lib/observability/metrics';
 
 const log = createLogger('ManagerVizionar');
 // Auto-initialize the debug engine
@@ -361,6 +363,12 @@ export class ManagerVizionar {
       const result = await executeMexcTrade(payload.symbol, side, undefined, false);
       if (result.executed) {
         log.info(`[EXECUTION SUCCESS] Trade placed on MEXC for ${payload.symbol} @ ${result.price}`);
+        // FAZA A BATCH 1: emit metric per LIVE execution
+        safeInc(metrics.tradeExecutions, {
+          mode: 'live',
+          side: consensus.finalDirection === 'LONG' ? 'LONG' : 'SHORT',
+          result: 'open',
+        });
         const latencyMs = Date.now() - executionStartMs;
 
         // Register LivePosition for Asymmetric Trailing TP/SL Engine
@@ -511,6 +519,13 @@ export class ManagerVizionar {
     };
     
     addDecision(snapshot);
+
+    // FAZA A BATCH 1: emit metric per PAPER/SHADOW execution
+    safeInc(metrics.tradeExecutions, {
+      mode: 'paper',
+      side: consensus.finalDirection === 'LONG' ? 'LONG' : 'SHORT',
+      result: 'open',
+    });
 
     // Telegram notification for paper trades (so we know the system is alive)
     try {
