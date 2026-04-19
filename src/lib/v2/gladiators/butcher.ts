@@ -2,6 +2,12 @@ import { saveGladiatorsToDb, getGladiatorBattles } from '@/lib/store/db';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { createLogger } from '@/lib/core/logger';
 import { Gladiator } from '../../types/gladiator';
+// RUFLO FAZA 3 Batch 5/9 (2026-04-19): Survivorship fix.
+// recordInGraveyard is feature-flagged (BUTCHER_GRAVEYARD_ENABLED) and
+// fail-soft — if the migration hasn't been applied or Supabase is
+// unreachable, it returns false and the existing kill path continues
+// unchanged. See graveyard.ts for the full rationale.
+import { recordInGraveyard, getGraveyardMode } from './graveyard';
 
 const log = createLogger('TheButcher');
 
@@ -103,6 +109,9 @@ export class TheButcher {
     const gladiators = gladiatorStore.getGladiators();
     const survivors: Gladiator[] = [];
     const executions: string[] = [];
+    // RUFLO FAZA 3 Batch 5/9: capture (gladiator, reason) for graveyard.
+    // Parallel array — does not change existing executions:string[] return.
+    const killedDetails: { g: Gladiator; reason: string }[] = [];
 
     for (const g of gladiators) {
       // Omega Gladiator is immune to The Butcher
@@ -153,12 +162,41 @@ export class TheButcher {
         const memoTag = memo.memorized ? ` | MEMORIZED: ${memo.reason}` : '';
         log.warn(`[The Butcher] Executing Gladiator: ${g.name} (ID: ${g.id}) | Trades: ${g.stats.totalTrades} | WR: ${g.stats.winRate}% | PF: ${g.stats.profitFactor}${memoTag}`);
         executions.push(g.id);
+        // RUFLO FAZA 3 Batch 5/9: build a structured kill reason for graveyard.
+        // Composition lets downstream forensics aggregate by kill_reason
+        // prefix without parsing free text.
+        const reasonParts: string[] = [];
+        if (failsWinRate) reasonParts.push('WR_FAIL');
+        if (failsProfitFactor) reasonParts.push('PF_FAIL');
+        if (failsPnL) reasonParts.push('PNL_FAIL');
+        if (memo.memorized) reasonParts.push('MEMORIZED');
+        const reason = `${reasonParts.join('+')} | n=${g.stats.totalTrades} WR=${g.stats.winRate} PF=${g.stats.profitFactor}${memoTag}`;
+        killedDetails.push({ g, reason });
       } else {
         survivors.push(g);
       }
     }
 
     if (executions.length > 0) {
+      // RUFLO FAZA 3 Batch 5/9: graveyard write BEFORE purge.
+      // Sequenced before saveGladiatorsToDb so a graveyard write failure
+      // does NOT block the kill flow (recordInGraveyard is fail-soft and
+      // returns false rather than throwing). If mode='off' the loop is
+      // a no-op (cheap early-return inside recordInGraveyard).
+      const gMode = getGraveyardMode();
+      if (gMode !== 'off' && killedDetails.length > 0) {
+        let recorded = 0;
+        for (const { g, reason } of killedDetails) {
+          try {
+            const ok = await recordInGraveyard(g, reason);
+            if (ok) recorded += 1;
+          } catch (err) {
+            log.warn(`[Butcher] graveyard record threw for ${g.id} — ignored`, { err: String(err) });
+          }
+        }
+        log.info(`[The Butcher] Graveyard recorded ${recorded}/${killedDetails.length} (mode=${gMode}).`);
+      }
+
       // Clean DB completely
       saveGladiatorsToDb(survivors);
       // Re-hydrate the store
