@@ -348,11 +348,32 @@ export async function GET(request: Request) {
       }
     }
 
+    // 6. C5 Batch 3 — Hourly stats reconciliation from gladiator_battles ground truth.
+    // WHY HERE: auto-promote runs hourly via Cloud Scheduler — natural hook for periodic
+    // stats recovery. Multi-instance Cloud Run race (debounce mitigates but doesn't eliminate)
+    // causes cumulative drift. reconcileStatsFromBattles replays from append-only battles ledger.
+    // COST: ~1-2s for 15 gladiators × 10k battles each. Acceptable on hourly cadence.
+    // KILL-SWITCH: env RECONCILE_ON_PROMOTE=0 disables.
+    // ASSUMPTION: if reconciliation fails, promotion decisions above used pre-reconcile stats
+    // (slightly stale but not dangerously wrong — promotions happen BEFORE reconciliation).
+    let reconcileResult: { reconciled: number; skipped: number } | null = null;
+    if (process.env.RECONCILE_ON_PROMOTE !== '0') {
+      try {
+        const _recStart = Date.now();
+        reconcileResult = await gladiatorStore.reconcileStatsFromBattles();
+        const _recMs = Date.now() - _recStart;
+        console.log(`[AUTO-PROMOTE] reconcileStatsFromBattles: ${reconcileResult.reconciled} reconciled, ${reconcileResult.skipped} skipped in ${_recMs}ms`);
+      } catch (recErr) {
+        console.error(`[AUTO-PROMOTE] reconcileStatsFromBattles failed: ${String(recErr)}`);
+      }
+    }
+
     return NextResponse.json({
       status: promoted > 0 ? 'PROMOTIONS_MADE' : 'NO_PROMOTIONS',
       promoted,
       slotsAvailable,
       results,
+      reconciliation: reconcileResult ? { reconciled: reconcileResult.reconciled, skipped: reconcileResult.skipped } : 'disabled',
       durationMs: Date.now() - startTime,
       timestamp: new Date().toISOString(),
     });
