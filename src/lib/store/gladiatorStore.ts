@@ -73,6 +73,14 @@ class GladiatorStore {
    */
   private indepSampleCache = new Map<string, number>();
 
+  // C5 Batch 1 — Write debounce: accumulate stat ticks, flush once every DEBOUNCE_MS.
+  // Replaces per-tick saveGladiatorsToDb (line 325 old) which caused 93% stat loss
+  // on multi-instance Cloud Run (last-write-wins race). reconcileStatsFromBattles()
+  // remains the authoritative hourly fix; this reduces write pressure ~60×.
+  private _dirty = false;
+  private _flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly DEBOUNCE_MS = 5_000;
+
   private constructor() {}
 
   public static getInstance(): GladiatorStore {
@@ -322,7 +330,46 @@ class GladiatorStore {
        this.lastRecalibrateTime = now;
     }
     
-    saveGladiatorsToDb(this.gladiators);
+    // C5 Batch 1: mark dirty + schedule debounced flush instead of per-tick save.
+    // Old: saveGladiatorsToDb(this.gladiators) — fired every tick → race on multi-instance.
+    this._markDirtyAndScheduleFlush();
+  }
+
+  /**
+   * C5 Batch 1 — Debounced write scheduler.
+   * Marks store dirty and ensures a single flush fires after DEBOUNCE_MS of quiet.
+   * If another tick arrives before flush, timer resets (trailing-edge debounce).
+   * ASSUMPTION: Node.js setTimeout is single-threaded — no concurrent flush possible
+   * within same instance. Cross-instance race mitigated by reconcileStatsFromBattles().
+   */
+  private _markDirtyAndScheduleFlush(): void {
+    this._dirty = true;
+    if (this._flushTimer) clearTimeout(this._flushTimer);
+    this._flushTimer = setTimeout(() => {
+      this._flushTimer = null;
+      if (this._dirty) {
+        this._dirty = false;
+        saveGladiatorsToDb(this.gladiators);
+        storeLog.info('[debounce] flushed gladiator stats to Supabase');
+      }
+    }, GladiatorStore.DEBOUNCE_MS);
+  }
+
+  /**
+   * C5 Batch 1 — Force-flush for graceful shutdown / explicit sync.
+   * Called by flushPendingSyncs (db.ts drain) and anywhere that needs
+   * guaranteed persistence before process exit.
+   */
+  public flushIfDirty(): void {
+    if (this._flushTimer) {
+      clearTimeout(this._flushTimer);
+      this._flushTimer = null;
+    }
+    if (this._dirty) {
+      this._dirty = false;
+      saveGladiatorsToDb(this.gladiators);
+      storeLog.info('[debounce] force-flushed gladiator stats (shutdown/sync)');
+    }
   }
 
   /**
@@ -395,9 +442,18 @@ class GladiatorStore {
       let curEq = 100;
       let maxDd = 0;
 
+      // C6 FIX: Clamp raw pnl_percent to TP/SL bandwidth before accumulating.
+      // Old battles (pre-clamp era) store raw price-change pnl (e.g. +31%) that
+      // was never clamped. Without this, totalWinPnl is inflated 50×+ and PF
+      // saturates at cap (10.0) regardless of actual edge.
+      // Values match simulator.ts convention: TP=+1.0%, SL=-0.5%.
+      const RECONCILE_TP_CLAMP = 1.0;
+      const RECONCILE_SL_CLAMP = -0.5;
+
       for (const r of rows as Record<string, unknown>[]) {
         const isWin = r.isWin === true;
-        const pnl = Number(r.pnlPercent ?? 0);
+        const rawPnl = Number(r.pnlPercent ?? 0);
+        const pnl = Math.max(RECONCILE_SL_CLAMP, Math.min(RECONCILE_TP_CLAMP, rawPnl));
         if (isWin) {
           wins += 1;
           totalWinPnl += Math.abs(pnl);
