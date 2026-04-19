@@ -192,6 +192,12 @@ export async function testPolymarketConnection(): Promise<{ clob: boolean; gamma
 }
 
 // ─── Map Gamma API response to PolyMarket ──────────────────
+// NOTE: Gamma API returns outcomes/outcomePrices/clobTokenIds as JSON-encoded
+// STRINGS, not parsed arrays. E.g. outcomes: "[\"Yes\",\"No\"]".
+// Typed as unknown to force parseJsonArrayField() through a safe parser.
+// Asumptie: daca Gamma isi schimba schema la array nativ, parseJsonArrayField
+// detecteaza si gestioneaza ambele cazuri — invalidarea parser-ului = markete
+// cu outcomes=[] si scanner returneaza 0, acelasi simptom ca bug-ul curent.
 interface GammaRawMarket {
   id?: string;
   conditionId?: string;
@@ -200,9 +206,9 @@ interface GammaRawMarket {
   description?: string;
   groupSlug?: string;
   category?: string;
-  outcomes?: string[];
-  outcomePrices?: string;
-  clobTokenIds?: string[];
+  outcomes?: string[] | string;
+  outcomePrices?: string[] | string;
+  clobTokenIds?: string[] | string;
   active?: boolean;
   closed?: boolean;
   endDate?: string;
@@ -214,19 +220,33 @@ interface GammaRawMarket {
   startDate?: string;
 }
 
+// Parses either native array or JSON-stringified array. Returns [] on any
+// malformed input (never throws) so mapGammaMarket stays defensive.
+function parseJsonArrayField(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter(v => typeof v === 'string') as string[];
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter(v => typeof v === 'string' || typeof v === 'number').map(String) : [];
+    } catch { return []; }
+  }
+  return [];
+}
+
 function mapGammaMarket(raw: GammaRawMarket): PolyMarket {
   const outcomes: PolyOutcome[] = [];
 
-  if (raw.outcomes && Array.isArray(raw.outcomes)) {
-    const prices = raw.outcomePrices ? JSON.parse(raw.outcomePrices) : [];
-    raw.outcomes.forEach((name: string, i: number) => {
-      outcomes.push({
-        id: raw.clobTokenIds?.[i] || `outcome-${i}`,
-        name,
-        price: parseFloat(prices[i] || '0.5'),
-      });
+  const outcomeNames = parseJsonArrayField(raw.outcomes);
+  const outcomePrices = parseJsonArrayField(raw.outcomePrices);
+  const clobTokenIds = parseJsonArrayField(raw.clobTokenIds);
+
+  outcomeNames.forEach((name, i) => {
+    outcomes.push({
+      id: clobTokenIds[i] || `outcome-${i}`,
+      name,
+      price: parseFloat(outcomePrices[i] || '0.5'),
     });
-  }
+  });
 
   return {
     id: raw.id || raw.conditionId || '',
