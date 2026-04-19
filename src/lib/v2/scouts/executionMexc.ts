@@ -1,9 +1,59 @@
-import { getMexcPrice, placeMexcLimitOrder, getMexcBalances, getMexcExchangeInfo, placeMexcStopLossOrder } from '@/lib/exchange/mexcClient';
+import { getMexcPrice, placeMexcLimitOrder, getMexcBalances, getMexcExchangeInfo, placeMexcStopLossOrder, getMexcOpenOrders, cancelMexcOrder } from '@/lib/exchange/mexcClient';
 import { sendMessage } from '@/lib/alerts/telegram';
 import { createLogger } from '@/lib/core/logger';
 import { assertLiveTradingAllowed } from '@/lib/core/tradingMode';
 
 const log = createLogger('ExecutionMexc');
+
+// RUFLO FAZA 3 / BATCH 6 / F7 fix (P1) — limit-fill poll TTL + cancel-on-stale
+//
+// BUG (pre-fix): placeMexcLimitOrder submits a LIMIT at ±0.15% slippage band and
+// returns immediately. Code then places STOP_LOSS and marks `executed: true`.
+// If the limit never fills (fast market move away from band), we end up with:
+//   - A live SL order sitting against a phantom position
+//   - LivePosition registered in in-memory store, trailing-TP engine armed
+//   - experienceMemory context captured for a trade that didn't happen
+// Result: wrong PnL attribution, possible SL trigger on empty position, and
+// compounding state corruption for gladiator stats.
+//
+// FIX: After placeMexcLimitOrder returns orderId, poll getMexcOpenOrders at
+// ~400ms intervals until orderId disappears (= filled) OR TTL elapses. On TTL
+// expiry, cancel the order and return NOT executed — NO SL, NO LivePosition.
+//
+// ASUMPȚII invalidatoare:
+//   1) MEXC LIMIT order response includes `orderId` — if absent, we fall back
+//      to legacy behavior (assume fill) with a WARN log.
+//   2) Poll interval << TTL; if getMexcOpenOrders throws, we treat as transient
+//      and continue polling (up to EXEC_POLL_RETRY consecutive errors).
+//   3) TTL is short (default 15s). Extending trades the fill-rate/phantom-rate
+//      off — tune via EXEC_FILL_TTL_MS.
+//
+// Env rollback: EXEC_STALE_GUARD_OFF=1 → legacy fire-and-forget behavior.
+const EXEC_FILL_TTL_MS = parseInt(process.env.EXEC_FILL_TTL_MS || '15000', 10);
+const EXEC_POLL_INTERVAL_MS = parseInt(process.env.EXEC_POLL_INTERVAL_MS || '400', 10);
+const EXEC_POLL_RETRY = parseInt(process.env.EXEC_POLL_RETRY || '3', 10);
+
+interface FillPollResult { filled: boolean; reason?: string }
+
+async function pollLimitFill(symbol: string, orderId: string, ttlMs: number): Promise<FillPollResult> {
+  const deadline = Date.now() + ttlMs;
+  let consecutiveErrors = 0;
+  while (Date.now() < deadline) {
+    try {
+      const open = await getMexcOpenOrders(symbol);
+      const stillOpen = open.some((o) => String((o as Record<string, unknown>).orderId) === orderId);
+      if (!stillOpen) return { filled: true };
+      consecutiveErrors = 0;
+    } catch (err) {
+      consecutiveErrors++;
+      if (consecutiveErrors >= EXEC_POLL_RETRY) {
+        return { filled: false, reason: `poll failed ${consecutiveErrors}× in a row: ${(err as Error).message}` };
+      }
+    }
+    await new Promise((r) => setTimeout(r, EXEC_POLL_INTERVAL_MS));
+  }
+  return { filled: false, reason: `TTL ${ttlMs}ms elapsed — order still open` };
+}
 
 export interface MexcTradeResult {
   symbol: string;
@@ -164,8 +214,38 @@ export async function executeMexcTrade(
       limitPrice = roundToStep(limitPrice, filters.tickSize);
 
       try {
-        await placeMexcLimitOrder(mexcSymbol, side, quantity, limitPrice);
+        const orderResp = await placeMexcLimitOrder(mexcSymbol, side, quantity, limitPrice);
         log.info(`[SLIPPAGE PROTECT] Sent LIMIT ${side} for ${mexcSymbol} @ max price $${limitPrice} (AI price: $${price})`);
+
+        // RUFLO FAZA 3 / BATCH 6 — fill-poll TTL + cancel-on-stale (see top of file)
+        // Kill-switch: EXEC_STALE_GUARD_OFF=1 → legacy fire-and-forget (assume fill).
+        const staleGuardOff = process.env.EXEC_STALE_GUARD_OFF === '1';
+        const orderId = orderResp ? String((orderResp as Record<string, unknown>).orderId ?? '') : '';
+        if (!staleGuardOff) {
+          if (!orderId) {
+            log.warn(`[EXEC TTL] No orderId in MEXC response for ${mexcSymbol} — falling back to legacy fire-and-forget behavior`);
+          } else {
+            const poll = await pollLimitFill(mexcSymbol, orderId, EXEC_FILL_TTL_MS);
+            if (!poll.filled) {
+              log.warn(`[EXEC TTL] Limit not filled for ${mexcSymbol} orderId=${orderId} — ${poll.reason}. Cancelling.`);
+              try {
+                await cancelMexcOrder(mexcSymbol, orderId);
+              } catch (cancelErr) {
+                log.error(`[EXEC TTL] Cancel failed for ${mexcSymbol} orderId=${orderId}`, { error: (cancelErr as Error).message });
+                // Best-effort secondary: cancel all open for this symbol.
+                try {
+                  const { cancelAllMexcOrders } = await import('@/lib/exchange/mexcClient');
+                  await cancelAllMexcOrders(mexcSymbol);
+                } catch (e2) {
+                  sendMessage(`🚨 *ORPHAN ORDER RISK*\n${mexcSymbol} limit #${orderId} — cancel FAILED.\nCheck MEXC manually NOW.`).catch(() => {});
+                  log.error('[EXEC TTL] cancelAll also failed', { error: (e2 as Error).message });
+                }
+              }
+              return { symbol: mexcSymbol, side, price, quantity, usdAmount: tradeAmount, executed: false, error: `Limit order not filled: ${poll.reason}` };
+            }
+            log.info(`[EXEC TTL] Limit filled for ${mexcSymbol} orderId=${orderId}`);
+          }
+        }
 
         // --- NATIVE STOP LOSS (AWAITED + RETRY) ---
         // Must verify SL exists before continuing — no fire-and-forget
