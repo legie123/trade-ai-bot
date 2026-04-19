@@ -81,6 +81,46 @@ interface KarmaState {
   repliedPostIds: Set<string>;
 }
 
+// FAZA 3 Batch 8/9 — gate telemetry (shadow observability for MIN_UPVOTES tuning).
+// Records every passesQualityGate() decision so operators can decide if a
+// threshold change (e.g., MIN_UPVOTES 3→2) is supported by data BEFORE
+// editing QUALITY_GATE constants. Asumpție critică: pure observability;
+// reading these counters never affects decision logic.
+interface GateTelemetry {
+  totalEvaluated: number;
+  passed: number;
+  rejectedByReason: Record<string, number>;     // 'low_upvotes' | 'downvote_ratio' | 'stale' | 'blacklisted' | 'self_post'
+  upvoteHistogram: Record<string, number>;      // bucket → count (0,1,2,3-5,6-10,11-25,26+)
+  // Counterfactual: how many posts would clear quality if MIN_UPVOTES were N.
+  // Only relaxes the upvote threshold; other gates (ratio, age, blacklist) still apply.
+  // Operator interpretation: wouldPassIfUpvotesGte['2'] - wouldPassIfUpvotesGte['3'] = posts
+  // a 3→2 change would unlock per day. <5/day = not worth tuning; >30/day = worth A/B test.
+  wouldPassIfUpvotesGte: Record<string, number>; // '1' | '2' | '3'
+  resetAt: string;                                // ISO timestamp of last reset
+}
+
+function newGateTelemetry(): GateTelemetry {
+  return {
+    totalEvaluated: 0,
+    passed: 0,
+    rejectedByReason: {},
+    upvoteHistogram: {},
+    wouldPassIfUpvotesGte: { '1': 0, '2': 0, '3': 0 },
+    resetAt: new Date().toISOString(),
+  };
+}
+
+function bucketUpvotes(u: number): string {
+  if (u <= 0) return '0';
+  if (u === 1) return '1';
+  if (u === 2) return '2';
+  if (u <= 5) return '3-5';
+  if (u <= 10) return '6-10';
+  if (u <= 25) return '11-25';
+  return '26+';
+}
+
+let _gateTelemetry: GateTelemetry = newGateTelemetry();
 let _state: KarmaState = newState();
 
 function todayKey(): string {
@@ -103,33 +143,65 @@ function ensureDailyRollover() {
   if (_state.dateKey !== today) {
     log.info(`[Karma] Daily rollover ${_state.dateKey} -> ${today}; resetting counters.`);
     _state = newState();
+    // Batch 8/9: gate telemetry follows the same daily window as action counters
+    // so operators read "today's filter behavior", not accumulated-since-deploy.
+    _gateTelemetry = newGateTelemetry();
   }
 }
 
 // --- QUALITY GATES -----------------------------------------------------------
 
 function passesQualityGate(post: MoltbookSearchResult): { ok: boolean; reason?: string } {
-  if (post.upvotes < QUALITY_GATE.MIN_UPVOTES) {
-    return { ok: false, reason: `low_upvotes (${post.upvotes})` };
-  }
-  if (post.upvotes > 0 && (post.downvotes / post.upvotes) > QUALITY_GATE.MAX_DOWNVOTES_RATIO) {
-    return { ok: false, reason: `downvote_ratio (${post.downvotes}/${post.upvotes})` };
-  }
+  // Batch 8/9: record decision BEFORE gating so counters stay authoritative
+  // even if logic below throws. Counters are per-day (see ensureDailyRollover).
+  _gateTelemetry.totalEvaluated += 1;
+  const bucket = bucketUpvotes(post.upvotes);
+  _gateTelemetry.upvoteHistogram[bucket] = (_gateTelemetry.upvoteHistogram[bucket] || 0) + 1;
+
+  // Counterfactual: apply non-upvote gates first, then tally how many posts would
+  // pass at relaxed upvote thresholds. This isolates "upvote-blocked only" — the
+  // pool that a MIN_UPVOTES change would actually unlock.
   const ageHours = (Date.now() - new Date(post.created_at).getTime()) / 3_600_000;
-  if (ageHours > QUALITY_GATE.MAX_AGE_HOURS) {
-    return { ok: false, reason: `stale (${ageHours.toFixed(1)}h)` };
-  }
   const haystack = `${post.title || ''} ${post.content || ''}`.toLowerCase();
-  for (const bad of CONTENT_BLACKLIST) {
-    if (haystack.includes(bad)) {
-      return { ok: false, reason: `blacklisted:${bad}` };
-    }
+  const blacklistHit = CONTENT_BLACKLIST.some((bad) => haystack.includes(bad));
+  const ratioBad = post.upvotes > 0 && post.downvotes / post.upvotes > QUALITY_GATE.MAX_DOWNVOTES_RATIO;
+  const selfPost = !!(post.author?.name && /antigravity/i.test(post.author.name));
+  const otherGatesOk = !ratioBad && ageHours <= QUALITY_GATE.MAX_AGE_HOURS && !blacklistHit && !selfPost;
+  if (otherGatesOk) {
+    if (post.upvotes >= 1) _gateTelemetry.wouldPassIfUpvotesGte['1'] += 1;
+    if (post.upvotes >= 2) _gateTelemetry.wouldPassIfUpvotesGte['2'] += 1;
+    if (post.upvotes >= 3) _gateTelemetry.wouldPassIfUpvotesGte['3'] += 1;
   }
-  // Don't reply to our own posts
-  if (post.author?.name && /antigravity/i.test(post.author.name)) {
-    return { ok: false, reason: 'self_post' };
+
+  // Original gating logic — unchanged. Telemetry is purely observational.
+  let result: { ok: boolean; reason?: string };
+  if (post.upvotes < QUALITY_GATE.MIN_UPVOTES) {
+    result = { ok: false, reason: `low_upvotes (${post.upvotes})` };
+  } else if (ratioBad) {
+    result = { ok: false, reason: `downvote_ratio (${post.downvotes}/${post.upvotes})` };
+  } else if (ageHours > QUALITY_GATE.MAX_AGE_HOURS) {
+    result = { ok: false, reason: `stale (${ageHours.toFixed(1)}h)` };
+  } else if (blacklistHit) {
+    const bad = CONTENT_BLACKLIST.find((b) => haystack.includes(b))!;
+    result = { ok: false, reason: `blacklisted:${bad}` };
+  } else if (selfPost) {
+    result = { ok: false, reason: 'self_post' };
+  } else {
+    result = { ok: true };
   }
-  return { ok: true };
+
+  // Categorize reason (strip per-post detail so we don't explode the dict).
+  if (result.ok) {
+    _gateTelemetry.passed += 1;
+  } else {
+    const raw = result.reason!;
+    const reasonKey = raw.startsWith('blacklisted:')
+      ? 'blacklisted'
+      : raw.split(' ')[0]; // "low_upvotes (2)" → "low_upvotes"
+    _gateTelemetry.rejectedByReason[reasonKey] =
+      (_gateTelemetry.rejectedByReason[reasonKey] || 0) + 1;
+  }
+  return result;
 }
 
 // --- CONTENT GENERATION (OpenAI, fallback DeepSeek) --------------------------
@@ -461,6 +533,12 @@ async function tryOriginalPost(
 
 export function getKarmaTelemetry() {
   ensureDailyRollover();
+  // Batch 8/9: derive the "threshold change would unlock" figure operators
+  // actually need. Positive = 3→2 would expand the qualified pool. If <5/day,
+  // not worth tuning; if >30/day, worth an A/B test.
+  const unlockIf3to2 =
+    _gateTelemetry.wouldPassIfUpvotesGte['2'] -
+    _gateTelemetry.wouldPassIfUpvotesGte['3'];
   return {
     mode: process.env.MOLTBOOK_ACTIVE_MODE || 'read',
     dateKey: _state.dateKey,
@@ -470,5 +548,10 @@ export function getKarmaTelemetry() {
     lastReplyAt: _state.lastReplyAt ? new Date(_state.lastReplyAt).toISOString() : null,
     lastOriginalAt: _state.lastOriginalAt ? new Date(_state.lastOriginalAt).toISOString() : null,
     repliedPostIdsCount: _state.repliedPostIds.size,
+    gate: {
+      ..._gateTelemetry,
+      qualityGateConfig: QUALITY_GATE,
+      unlockIf3to2,
+    },
   };
 }
