@@ -4,7 +4,8 @@
 // Routes with their own auth (a2a, cron, tradingview) are excluded.
 // ============================================================
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
+// FIX 2026-04-19 (C8): Edge Runtime does not support Node.js `crypto` module.
+// Replaced with Web Crypto API (crypto.subtle) which IS available in Edge.
 
 // AUDIT FIX T3.6: No fallback default — if AUTH_SECRET is not set, all auth fails (fail-closed)
 const AUTH_SECRET = process.env.AUTH_SECRET || '';
@@ -14,7 +15,6 @@ const PUBLIC_PREFIXES = [
   '/api/auth',             // Login endpoint
   '/api/health',            // Top-level health proxy (Cloud Scheduler)
   '/api/v2/health',        // Health check (monitoring)
-  '/api/v2/diag/',         // FAZA 3 Batch 2: read-only diagnostic endpoints (regime, etc.) — no side effects
   '/api/diagnostics/',     // Health diagnostics (master, credits, signal-quality)
   '/api/a2a/',             // A2A routes have SWARM_TOKEN auth
   '/api/cron',             // Has CRON_SECRET auth
@@ -44,18 +44,33 @@ function isPublicRoute(pathname: string): boolean {
   return PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix));
 }
 
-function verifyJWT(token: string): boolean {
+// Edge-safe base64url encode/decode (no Buffer in Edge Runtime)
+function base64urlDecode(s: string): Uint8Array {
+  const padded = s.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(padded);
+  return Uint8Array.from(binary, c => c.charCodeAt(0));
+}
+function uint8ToBase64url(buf: Uint8Array): string {
+  let binary = '';
+  for (const b of buf) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function verifyJWT(token: string): Promise<boolean> {
   if (!AUTH_SECRET) return false; // No secret configured → reject all
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return false;
     const [header, body, sig] = parts;
-    const expected = crypto
-      .createHmac('sha256', AUTH_SECRET)
-      .update(`${header}.${body}`)
-      .digest('base64url');
+    // HMAC-SHA256 via Web Crypto API (Edge Runtime compatible)
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw', encoder.encode(AUTH_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(`${header}.${body}`));
+    const expected = uint8ToBase64url(new Uint8Array(signature));
     if (sig !== expected) return false;
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
+    const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(body)));
     if (payload.exp && payload.exp < Date.now()) return false;
     return true;
   } catch {
@@ -63,15 +78,15 @@ function verifyJWT(token: string): boolean {
   }
 }
 
-function isAuthenticated(request: NextRequest): boolean {
+async function isAuthenticated(request: NextRequest): Promise<boolean> {
   // Cookie auth
   const authCookie = request.cookies.get('auth_token')?.value;
-  if (authCookie && verifyJWT(authCookie)) return true;
+  if (authCookie && await verifyJWT(authCookie)) return true;
 
   // Bearer token auth
   const authHeader = request.headers.get('authorization');
   if (authHeader?.startsWith('Bearer ')) {
-    if (verifyJWT(authHeader.slice(7))) return true;
+    if (await verifyJWT(authHeader.slice(7))) return true;
   }
 
   return false;
@@ -95,7 +110,7 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Non-API routes: just add security headers
@@ -109,7 +124,7 @@ export function middleware(request: NextRequest) {
   }
 
   // Require auth for everything else
-  if (!isAuthenticated(request)) {
+  if (!(await isAuthenticated(request))) {
     return applySecurityHeaders(
       NextResponse.json(
         { error: 'Unauthorized', message: 'Valid auth token required' },
