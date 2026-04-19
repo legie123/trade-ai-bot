@@ -1,5 +1,5 @@
 import { createLogger } from '@/lib/core/logger';
-import { addGladiatorDna, getGladiatorDna, getGladiatorBattles } from '@/lib/store/db';
+import { addGladiatorDna, addGladiatorDnaBatch, getGladiatorDna, getGladiatorBattles } from '@/lib/store/db';
 
 const log = createLogger('DNAExtractor');
 
@@ -61,6 +61,19 @@ export class DNAExtractor {
       log.info(`[DNA Bank] Logged battle for ${record.gladiatorId} on ${record.symbol} (Win: ${record.isWin}, PnL: ${record.pnlPercent.toFixed(2)}%)`);
     } catch (err) {
       log.error('Failed to log battle DNA', { error: (err as Error).message });
+    }
+  }
+
+  // C10 (2026-04-19) — Batch DNA write. Replaces N sequential logBattle calls
+  // with a single bulk Supabase insert. In-memory cache updated synchronously
+  // per record (for mid-tick reads by stats/promotion gates).
+  public async logBattleBatch(records: BattleRecord[]): Promise<void> {
+    if (records.length === 0) return;
+    try {
+      await addGladiatorDnaBatch(records as unknown as Record<string, unknown>[]);
+      log.info(`[DNA Bank] Batch logged ${records.length} battles`);
+    } catch (err) {
+      log.error(`[DNA Bank] Batch log failed for ${records.length} records`, { error: (err as Error).message });
     }
   }
 

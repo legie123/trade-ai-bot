@@ -1,12 +1,16 @@
 // GET /api/v2/arena — Full gladiator details + Omega progress + real stats
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
-import { getGladiatorDna } from '@/lib/store/db';
+import { getGladiatorDna, initDB } from '@/lib/store/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    // COLD-START FIX (2026-04-18): Hydrate gladiatorStore from Supabase before reading.
+    // Without this, cold-booted instances return seed tt=0 leaderboard.
+    await initDB();
+
     const gladiators = gladiatorStore.getLeaderboard();
     const omega = gladiatorStore.getGladiators().find(g => g.isOmega);
     
@@ -31,15 +35,20 @@ export async function GET() {
       let rankReason = '';
       let status: 'LIVE' | 'SHADOW' | 'STANDBY' = 'STANDBY';
       
-      if (rank <= 3) {
+      // C9 FIX: status must reflect QW-8 gate (isLive), not just rank position.
+      // Prior code: rank<=3 → 'LIVE' regardless of thresholds → misleading operator.
+      if (g.isLive) {
         status = 'LIVE';
-        rankReason = `Top ${rank} — Active in production. Highest win rate in ${g.arena} arena.`;
+        rankReason = `Top ${rank} — LIVE (QW-8 passed: tt≥50, WR≥58%, PF≥1.3).`;
+      } else if (rank <= 3) {
+        status = 'SHADOW';
+        rankReason = `Top ${rank} — Shadow (rank qualifies but QW-8 gate not passed: WR=${g.stats.winRate.toFixed(1)}%, PF=${g.stats.profitFactor.toFixed(2)}).`;
       } else if (rank <= 6) {
         status = 'SHADOW';
         rankReason = `Shadow rank ${rank} — Paper trading, awaiting promotion if top 3 falters.`;
       } else {
         status = 'STANDBY';
-        rankReason = `Standby rank ${rank} — Monitoring only. Needs ${Math.round(70 - g.stats.winRate)}% more WR to enter shadow.`;
+        rankReason = `Standby rank ${rank} — Monitoring only.`;
       }
 
       return {

@@ -92,11 +92,30 @@ export class ArenaSimulator {
 
     let accepted = 0;
     let rejected = 0;
+    let dedupSkipped = 0;
+
+    // C5 Batch 2: Build open-phantom index for O(1) dedup lookup.
+    // Key = "gladiatorId|symbol|signal" → skip if gladiator already tracking same direction.
+    // WHY: 1 signal × N gladiators is correct, but the SAME gladiator receiving the SAME
+    // symbol+direction while a phantom is still open wastes eval cycles and inflates sample
+    // count (same thesis, overlapping hold windows → correlated outcomes ≠ independent samples).
+    const activePhantoms = getPhantomTrades();
+    const openPhantomKeys = new Set<string>();
+    for (const pt of activePhantoms) {
+      openPhantomKeys.add(`${pt.gladiatorId}|${pt.symbol}|${pt.signal}`);
+    }
 
     allGladiators.forEach(g => {
       // DNA FILTER: each gladiator decides independently whether to accept this signal
       if (!this.shouldAcceptSignal(g, routedSignal)) {
         rejected++;
+        return;
+      }
+
+      // C5 Batch 2: Dedup — skip if gladiator already has open phantom for same symbol+direction
+      const dedupKey = `${g.id}|${routedSignal.symbol}|${routedSignal.normalized}`;
+      if (openPhantomKeys.has(dedupKey)) {
+        dedupSkipped++;
         return;
       }
 
@@ -110,10 +129,11 @@ export class ArenaSimulator {
       };
 
       addPhantomTrade(trade);
+      openPhantomKeys.add(dedupKey); // prevent intra-batch duplicates
       accepted++;
     });
 
-    log.info(`[Combat Engine] Phantom Trades: ${accepted} accepted, ${rejected} filtered by DNA for ${routedSignal.symbol} @ $${currentPrice}`);
+    log.info(`[Combat Engine] Phantom Trades: ${accepted} accepted, ${rejected} DNA-filtered, ${dedupSkipped} dedup-skipped for ${routedSignal.symbol} @ $${currentPrice}`);
   }
 
   /**
@@ -170,6 +190,15 @@ export class ArenaSimulator {
     const regimeIsLive = omega.hasLiveRegime();
 
     let totalClosed = 0;
+    // C10 (2026-04-19) — Collect battle records for batch DNA insert.
+    // PRIOR: each closed trade did `await this.dnaBank.logBattle()` (individual Supabase insert
+    // per trade, ~130ms each). With ~100 closes per tick → 13s spent on sequential I/O.
+    // NOW: collect records in-memory, batch-insert after loop = 1 round-trip ≈ 200ms.
+    // In-memory cache (gladiatorDna) + stats updates remain per-trade (sync, needed by mid-tick readers).
+    // ASSUMPTION: batch size < 1000 rows per tick. PostgREST default max-rows is typically higher
+    // for inserts, but if it fails, addGladiatorDnaBatch has per-record fallback.
+    const useNet = process.env.FEE_NET_V2 !== '0';
+    const pendingBattleRecords: import('../superai/dnaExtractor').BattleRecord[] = [];
 
     for (const trade of activePhantoms) {
       // FIX 2026-04-19: sync map lookup (was: await getCachedPrice per trade)
@@ -177,66 +206,47 @@ export class ArenaSimulator {
       if (currentPrice <= 0) continue; // Can't evaluate without a real price
 
       const elapsedSec = (now - new Date(trade.timestamp).getTime()) / 1000;
-      
+
       // Calculate real PnL based on signal direction
       const isLongSignal = trade.signal === 'BUY' || trade.signal === 'LONG';
       const rawPnl = trade.entryPrice > 0 ? ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100 : 0;
       const pnlPercent = isLongSignal ? rawPnl : -rawPnl;
-      
+
       // Eligibility rules: HIT Take-Profit, HIT Stop-Loss, or EXPIRED (stale)
       const hitTP = pnlPercent >= WIN_THRESHOLD_TP;
       const hitSL = pnlPercent <= LOSS_THRESHOLD_SL;
       const isExpired = elapsedSec >= MAX_HOLD_SEC;
-      
+
       if (!hitTP && !hitSL && !isExpired) {
         continue; // Keep phantom trade open
       }
 
       // FIX 2026-04-18 (QW-11): Clamp overshoot to TP/SL prices.
-      // BUG ROOT CAUSE: Cron-tick latency allows price to travel far past TP/SL between ticks.
-      // Example: RNDR phantom with entry=$1.86 — price pumps to $7.03 before next evaluator
-      // tick → hitTP true, but we record closing at $7.03 (+278%) instead of TP ($1.87, +0.5%).
-      // 430 of 5845 trades (7.3%) polluted, cumulative PnL inflated ~1000× (+120,000% vs
-      // realistic +440%). Strategy stats became mathematical artifact — PF=192, Sharpe=0.28.
-      // FIX: When hitTP/hitSL detected post-hoc, clamp exitPrice and pnlPercent to threshold
-      // values. Simulates continuous monitoring (strategy's implicit assumption).
-      // ASSUMPTION THAT INVALIDATES FIX:
-      //  (a) LIVE execution has real slippage that may be >/< the overshoot we clamp.
-      //      → For PAPER mode: fine. For LIVE: slippage must be modeled separately (FAZA D).
-      //  (b) True intra-bar high/low data not available; we assume price crossed threshold
-      //      at some moment in the cron interval. Acceptable because TP/SL is 0.5% and crypto
-      //      paths almost always cross monotonically within a 15min window.
       let exitPrice: number;
       let finalPnl: number;
       let exitSource: 'HIT_TAKE_PROFIT' | 'HIT_STOP_LOSS' | 'TIME_EXPIRATION';
 
       if (hitTP) {
-        const tpMove = WIN_THRESHOLD_TP / 100; // 0.005
+        const tpMove = WIN_THRESHOLD_TP / 100;
         exitPrice = isLongSignal
           ? trade.entryPrice * (1 + tpMove)
           : trade.entryPrice * (1 - tpMove);
-        finalPnl = WIN_THRESHOLD_TP; // exactly +0.5%
+        finalPnl = WIN_THRESHOLD_TP;
         exitSource = 'HIT_TAKE_PROFIT';
       } else if (hitSL) {
-        const slMove = Math.abs(LOSS_THRESHOLD_SL) / 100; // 0.005
+        const slMove = Math.abs(LOSS_THRESHOLD_SL) / 100;
         exitPrice = isLongSignal
           ? trade.entryPrice * (1 - slMove)
           : trade.entryPrice * (1 + slMove);
-        finalPnl = LOSS_THRESHOLD_SL; // exactly -0.5%
+        finalPnl = LOSS_THRESHOLD_SL;
         exitSource = 'HIT_STOP_LOSS';
       } else {
-        // TIME_EXPIRATION: use actual market price — legitimate mark-to-market at window close.
-        // Drift here can legitimately exceed TP/SL for slow-moving pairs, that's OK.
         exitPrice = currentPrice;
         finalPnl = pnlPercent;
         exitSource = 'TIME_EXPIRATION';
       }
 
-      // FIX 2026-04-18 (QW-10): Three-way classification — WIN / LOSS / NEUTRAL.
-      // Expired phantom with |pnl| < NEUTRAL_ZONE is noise, not signal — skip stats.
-      // ASSUMPTION: NEUTRAL_ZONE = SL/2 = 0.25%. If crypto micro-volatility consistently
-      // stays below 0.25% in 15min windows, most trades become NEUTRAL → slow stat
-      // accumulation. Acceptable: slow-but-accurate beats fast-but-garbage.
+      // Three-way classification — WIN / LOSS / NEUTRAL
       const NEUTRAL_ZONE = Math.abs(LOSS_THRESHOLD_SL) / 2; // 0.25%
       const isWin = hitTP || (isExpired && finalPnl >= WIN_THRESHOLD_TP / 2);
       const isNeutral = isExpired && !hitTP && !hitSL && Math.abs(finalPnl) < NEUTRAL_ZONE;
@@ -250,57 +260,40 @@ export class ArenaSimulator {
         continue;
       }
 
-      // FAZA B.2 — Fees Net Model (2026-04-18, additive)
-      // Compute pnlPercentNet = gross − round-trip fee. isWin stays gross (TP-based)
-      // so upstream readers aren't affected. Butcher (B.4) + promotion gates will
-      // query marketContext.pnlPercentNet directly.
-      // ASSUMPȚIE CRITICĂ: fees aplicate uniform la TOATE trades, inclusiv
-      // TIME_EXPIRATION (care poate fi breakeven gross → net negativ). Asta reflectă
-      // realitatea: deschiderea+închiderea costă indiferent de rezultat.
+      // FAZA B.2 — Fees Net Model
       const { feeRoundTrip, marketType, pnlPercentNet, isWinNet } = netPnlFromGross(finalPnl);
 
-      // 2. DNA Extraction (The Forge) — log WIN/LOSS with CLAMPED values for learning
-      await this.dnaBank.logBattle({
+      // 2. Collect battle record for batch DNA write (C10: deferred to after loop)
+      pendingBattleRecords.push({
         id: trade.id,
         gladiatorId: trade.gladiatorId,
         symbol: trade.symbol,
         decision: isLongSignal ? 'LONG' : 'SHORT',
         entryPrice: trade.entryPrice,
-        outcomePrice: exitPrice,                           // CLAMPED (was: currentPrice)
-        pnlPercent: parseFloat(finalPnl.toFixed(4)),      // CLAMPED (was: pnlPercent) — GROSS
+        outcomePrice: exitPrice,
+        pnlPercent: parseFloat(finalPnl.toFixed(4)),
         isWin,
         timestamp: Date.now(),
         marketContext: {
           source: exitSource,
           holdTimeSec: elapsedSec,
           entryPrice: trade.entryPrice,
-          exitPrice,                                       // CLAMPED (was: currentPrice)
-          marketPriceAtClose: currentPrice,                // Reference: actual market price
-          overshoot: parseFloat((pnlPercent - finalPnl).toFixed(4)), // Gap clamped away — telemetry
-          // FIX 2026-04-18 (FAZA B.1) — log regime for regime-aware stats downstream.
-          // regimeIsFallback=true means OmegaEngine had no analysis yet (emptyRegime defaults).
+          exitPrice,
+          marketPriceAtClose: currentPrice,
+          overshoot: parseFloat((pnlPercent - finalPnl).toFixed(4)),
           regime: regimeSnapshot.regime,
           regimeConfidence: parseFloat(regimeSnapshot.confidence.toFixed(4)),
           regimeVolatilityScore: regimeSnapshot.volatilityScore,
           regimeIsFallback: !regimeIsLive,
-          // FAZA B.2 (2026-04-18) — NET PnL accounting
-          feeRoundTrip,                                    // e.g. 0.08 for futures
-          marketType,                                      // 'FUTURES' | 'SPOT'
-          pnlPercentGross: parseFloat(finalPnl.toFixed(4)),// explicit mirror of top-level pnlPercent
-          pnlPercentNet,                                   // gross − feeRoundTrip
-          isWinNet,                                        // telemetry only (NOT used by RL/stats yet)
+          feeRoundTrip,
+          marketType,
+          pnlPercentGross: parseFloat(finalPnl.toFixed(4)),
+          pnlPercentNet,
+          isWinNet,
         }
       });
 
-      // 3. Update Gladiator's lifetime record with CLAMPED values.
-      // FAZA 3/BATCH 1 (2026-04-19) — F1 FIX: stats use NET pnl (fee+slippage).
-      // PRIOR BUG: pnlPercentNet computed at line 260 but updateGladiatorStats
-      // received GROSS pnl + TP-based isWin → promotion gates (WR≥58, PF≥1.3)
-      // measured on inflated net → weak gladiators promoted.
-      // NOW: default NET (fair accounting). Rollback: FEE_NET_V2=0 → legacy gross.
-      // ASSUMPTION: feeModel.ts RT cost reflects real MEXC execution. If env
-      // MARKET_TYPE ≠ exchange reality, net is over/underestimated uniformly.
-      const useNet = process.env.FEE_NET_V2 !== '0';
+      // 3. Update Gladiator's lifetime record (sync, in-memory — stays per-trade)
       const statsPnl = useNet ? pnlPercentNet : parseFloat(finalPnl.toFixed(4));
       const statsWin = useNet ? isWinNet : isWin;
       gladiatorStore.updateGladiatorStats(trade.gladiatorId, {
@@ -311,8 +304,15 @@ export class ArenaSimulator {
       totalClosed++;
     }
 
+    // C10: Batch DNA write — single Supabase insert replaces N sequential awaits.
+    // In-memory cache is updated inside addGladiatorDnaBatch synchronously, so
+    // any downstream reader in the same tick sees fresh data.
+    if (pendingBattleRecords.length > 0) {
+      await this.dnaBank.logBattleBatch(pendingBattleRecords);
+    }
+
     if (totalClosed > 0) {
-      log.info(`[Combat Engine] Evaluated ${totalClosed} phantom trades using LIVE MEXC prices. ${activePhantoms.length - totalClosed} skipped (open or no price).`);
+      log.info(`[Combat Engine] Evaluated ${totalClosed} phantom trades (${pendingBattleRecords.length} DNA-logged) using LIVE MEXC prices. ${activePhantoms.length - totalClosed} skipped (open or no price).`);
     }
   }
 }

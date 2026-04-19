@@ -669,18 +669,7 @@ export async function addGladiatorDna(record: Record<string, unknown>): Promise<
   if (!supabaseUrl || !dbInitialized) return;
 
   try {
-    const dbRecord = {
-      id: record.id || `battle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      gladiator_id: record.gladiatorId,
-      symbol: record.symbol,
-      decision: record.decision,
-      entry_price: record.entryPrice,
-      outcome_price: record.outcomePrice,
-      pnl_percent: record.pnlPercent,
-      is_win: record.isWin,
-      timestamp: record.timestamp,
-      market_context: record.marketContext || {},
-    };
+    const dbRecord = _toDnaDbRecord(record);
     const { error } = await supabase.from('gladiator_battles').insert(dbRecord);
     if (error) {
       // If table doesn't exist yet, fall back to json_store silently
@@ -693,6 +682,62 @@ export async function addGladiatorDna(record: Record<string, unknown>): Promise<
   } catch (err) {
     // Network failure — data is already in memory cache
     log.warn('Failed to insert gladiator battle record, falling back to json_store', { error: String(err) });
+    syncToCloud('gladiator_dna', cache.gladiatorDna);
+  }
+}
+
+// C10 (2026-04-19) — Shared record mapper for single + batch inserts.
+function _toDnaDbRecord(record: Record<string, unknown>) {
+  return {
+    id: record.id || `battle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    gladiator_id: record.gladiatorId,
+    symbol: record.symbol,
+    decision: record.decision,
+    entry_price: record.entryPrice,
+    outcome_price: record.outcomePrice,
+    pnl_percent: record.pnlPercent,
+    is_win: record.isWin,
+    timestamp: record.timestamp,
+    market_context: record.marketContext || {},
+  };
+}
+
+// C10 (2026-04-19) — Batch DNA write. Replaces N sequential Supabase inserts
+// with a single bulk insert. evaluatePhantomTrades was spending ~13s on ~100
+// individual await-ed inserts (130ms each). Batch insert = 1 round-trip ≈ 200ms.
+// In-memory cache is updated synchronously per record (for mid-tick reads).
+// ASSUMPTION: Supabase PostgREST .insert(array) is atomic per-batch.
+// If batch fails, records remain in memory cache (eventual re-sync via json_store fallback).
+export async function addGladiatorDnaBatch(records: Record<string, unknown>[]): Promise<void> {
+  if (records.length === 0) return;
+
+  // 1. Update in-memory cache synchronously (same as single-record path)
+  for (const record of records) {
+    cache.gladiatorDna.unshift(record);
+  }
+  if (cache.gladiatorDna.length > 5000) cache.gladiatorDna.length = 5000;
+
+  if (!supabaseUrl || !dbInitialized) return;
+
+  try {
+    const dbRecords = records.map(_toDnaDbRecord);
+    const { error } = await supabase.from('gladiator_battles').insert(dbRecords);
+    if (error) {
+      if (error.code === '42P01') {
+        syncToCloud('gladiator_dna', cache.gladiatorDna);
+      } else {
+        log.warn(`[DNA Batch] Failed to batch-insert ${records.length} battle records: ${error.message}`);
+        // Fallback: try individual inserts for partial success
+        let ok = 0;
+        for (const r of dbRecords) {
+          const { error: e2 } = await supabase.from('gladiator_battles').insert(r);
+          if (!e2) ok++;
+        }
+        log.info(`[DNA Batch] Fallback: ${ok}/${dbRecords.length} inserted individually`);
+      }
+    }
+  } catch (err) {
+    log.warn(`[DNA Batch] Network failure on ${records.length} records, using json_store fallback`, { error: String(err) });
     syncToCloud('gladiator_dna', cache.gladiatorDna);
   }
 }
