@@ -8,7 +8,7 @@
 // ============================================================
 import { NextRequest, NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
-import { initDB } from '@/lib/store/db';
+import { initDB, saveGladiatorsToDb, refreshGladiatorsFromCloud } from '@/lib/store/db';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState, resetDailyTriggers } from '@/lib/core/killSwitch';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { watchdogPing, getWatchdogState } from '@/lib/core/watchdog';
@@ -43,19 +43,12 @@ import { GET as diagSignalQualityGET } from '../../diagnostics/signal-quality/ro
 // Cloud Run self-fetch HTTP fails intermittently. In-process = zero network, type-safe.
 import { POST as a2aOrchestratePOST } from '../../a2a/orchestrate/route';
 import { POST as botPOST } from '../../bot/route';
-// FIX 2026-04-19 (C8): Wire orphaned dailyRotation (Butcher+Forge) into command route.
-// runDailyRotation existed only as standalone script — never ran on Cloud Run.
-// Without this, losing gladiators (PF<1.0) accumulate indefinitely.
-// Dynamic import to avoid pulling Forge/LLM deps into command route's build chunk.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _runDailyRotation: (() => Promise<void>) | null = null;
-async function getRunDailyRotation() {
-  if (!_runDailyRotation) {
-    const mod = await import('@/scripts/cron_dailyRotation');
-    _runDailyRotation = mod.runDailyRotation;
-  }
-  return _runDailyRotation;
-}
+// FIX 2026-04-19 (C8): Wire orphaned Butcher+Forge into command route.
+// Was standalone script only — never ran on Cloud Run.
+// Inline imports instead of @/scripts/ path (Turbopack can't resolve scripts alias).
+import { TheButcher } from '@/lib/v2/gladiators/butcher';
+import { TheForge } from '@/lib/v2/promoters/forge';
+import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 
 export const dynamic = 'force-dynamic';
 const log = createLogger('CommandCenter');
@@ -335,15 +328,40 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       }
       // FIX 2026-04-19 (C8): Darwinian cycle — Butcher kills PF<1.0, Forge replaces.
       // Was orphaned as standalone script, never ran on Cloud Run.
+      // Inlined from cron_dailyRotation.ts to avoid @/scripts/ path resolution issue.
       case 'arena:rotation': {
         try {
-          const rotation = await getRunDailyRotation();
-          await rotation();
-          const leaderboard = gladiatorStore.getLeaderboard().map(g => ({
+          // 1. Refresh from Supabase + evaluate lingering phantom trades
+          await refreshGladiatorsFromCloud();
+          gladiatorStore.reloadFromDb();
+          await ArenaSimulator.getInstance().evaluatePhantomTrades();
+
+          // 2. Butcher — eliminate PF<1.0 gladiators
+          const executedIds = await TheButcher.getInstance().executeWeaklings();
+          log.info(`[arena:rotation] Butcher executed ${executedIds.length} gladiators.`);
+
+          // 3. Forge — replace killed slots
+          if (executedIds.length > 0) {
+            await TheForge.getInstance().evaluateAndRecruit(executedIds);
+          }
+
+          // 4. Update leaderboard ranks + isLive
+          const gladiators = gladiatorStore.getLeaderboard();
+          gladiators.forEach((g, idx) => {
+            g.rank = idx + 1;
+            const meets = g.stats.totalTrades >= 50
+              && g.stats.winRate >= 58
+              && g.stats.profitFactor >= 1.3;
+            g.isLive = g.rank <= 3 && meets;
+          });
+          saveGladiatorsToDb(gladiatorStore.getGladiators());
+
+          const leaderboard = gladiators.map(g => ({
             name: g.name, tt: g.stats.totalTrades, wr: g.stats.winRate, pf: g.stats.profitFactor, isLive: g.isLive,
           }));
-          return ok(command, `Daily rotation complete. ${leaderboard.length} gladiators remain.`, { leaderboard }, start);
+          return ok(command, `Rotation: ${executedIds.length} killed, ${leaderboard.length} remain.`, { executed: executedIds.length, leaderboard }, start);
         } catch (err) {
+          log.error(`[arena:rotation] failed`, { error: (err as Error).message });
           return ok(command, `Rotation failed: ${(err as Error).message}`, null, start);
         }
       }
