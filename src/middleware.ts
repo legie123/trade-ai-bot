@@ -21,6 +21,7 @@ const PUBLIC_PREFIXES = [
   '/api/moltbook-cron',    // Has CRON_SECRET auth
   '/api/v2/cron/',         // Has CRON_SECRET auth
   '/api/v2/arena',         // Arena status (read-only leaderboard)
+  '/api/v2/diag/',         // FAZA 3 diagnostic endpoints (regime/sentiment/sizing/graveyard/cpcv — read-only telemetry)
   '/api/v2/omega-status',  // Omega status (read-only)
   '/api/v2/cockpit-health',// Cockpit health (read-only)
   '/api/v2/intelligence/', // Intelligence feeds (read-only)
