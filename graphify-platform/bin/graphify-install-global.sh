@@ -56,15 +56,20 @@ fi
 SHELL_RC="$HOME/.zshrc"
 [[ -f "$HOME/.bashrc" && ! -f "$SHELL_RC" ]] && SHELL_RC="$HOME/.bashrc"
 EXPORT_LINE="export GRAPHIFY_PLATFORM=\"$PLATFORM_DIR\""
-ALIAS_LINE="alias graphify-new-project=\"bash $PLATFORM_DIR/bin/graphify-new-project.sh\""
+ALIAS_NEW="alias graphify-new-project=\"bash $PLATFORM_DIR/bin/graphify-new-project.sh\""
+ALIAS_BRIDGE="alias graphify-bridge=\"python3 $PLATFORM_DIR/bin/graphify-obsidian-bridge.py\""
 if ! grep -q "GRAPHIFY_PLATFORM" "$SHELL_RC" 2>/dev/null; then
   {
     echo ""
     echo "# ═══ Graphify platform ═══"
     echo "$EXPORT_LINE"
-    echo "$ALIAS_LINE"
+    echo "$ALIAS_NEW"
+    echo "$ALIAS_BRIDGE"
   } >> "$SHELL_RC"
-  log "wrote GRAPHIFY_PLATFORM + graphify-new-project alias to $SHELL_RC"
+  log "wrote GRAPHIFY_PLATFORM + graphify-new-project + graphify-bridge aliases to $SHELL_RC"
+elif ! grep -q "graphify-bridge" "$SHELL_RC" 2>/dev/null; then
+  echo "$ALIAS_BRIDGE" >> "$SHELL_RC"
+  log "appended graphify-bridge alias to $SHELL_RC"
 fi
 
 # ── 7. Verify ────────────────────────────────────────────────────

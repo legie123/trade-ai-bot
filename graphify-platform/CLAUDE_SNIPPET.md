@@ -24,5 +24,7 @@
 
 **Proiect nou:**
 `bash /path/to/graphify-platform/bin/graphify-new-project.sh`
-(bootstrap .graphifyignore + CLAUDE.md hook + .gitignore + symlink wrapper)
+(bootstrap .graphifyignore + CLAUDE.md hook + .gitignore + symlink wrapper + symlink bridge)
+
+**Obsidian:** dupa fiecare rebuild → `./scripts/graphify-bridge ./src/graphify-out` rezolva wiki-links `[[_COMMUNITY_Community N]]` din GRAPH_REPORT.md.
 <!-- GRAPHIFY_PROTOCOL_END -->

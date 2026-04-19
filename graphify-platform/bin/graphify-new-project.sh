@@ -59,6 +59,14 @@ else
   log "symlinked scripts/graphify-safe -> $PLATFORM_DIR/bin/graphify-safe"
 fi
 
+# ── 4b. scripts/graphify-bridge symlink (Obsidian wiki-links) ────
+if [[ -e scripts/graphify-bridge && ! -L scripts/graphify-bridge ]]; then
+  warn "scripts/graphify-bridge exists and is not a symlink — skipping"
+else
+  ln -sf "$PLATFORM_DIR/bin/graphify-obsidian-bridge.py" scripts/graphify-bridge
+  log "symlinked scripts/graphify-bridge -> $PLATFORM_DIR/bin/graphify-obsidian-bridge.py"
+fi
+
 # ── 5. Verify graphify CLI available ─────────────────────────────
 if ! command -v graphify >/dev/null 2>&1; then
   warn "graphify CLI not found globally. Install: pipx install graphifyy==0.4.23 && graphify install"
@@ -69,4 +77,6 @@ if command -v graphify >/dev/null 2>&1; then
   graphify claude install 2>/dev/null || warn "graphify claude install failed (non-fatal)"
 fi
 
-log "DONE. Next: ./scripts/graphify-safe ./src  (or a real subpath in this repo)"
+log "DONE. Next:"
+log "  1. ./scripts/graphify-safe ./src      (build graph)"
+log "  2. ./scripts/graphify-bridge ./src/graphify-out   (resolve Obsidian wiki-links)"

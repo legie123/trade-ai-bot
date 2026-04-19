@@ -158,7 +158,36 @@ Activarea e in 4 layere — primele 2 deja live dupa install, ultimele 2 per-pro
 - `graphify claude install` PreToolUse hook — adauga latenta pe fiecare Edit, conflict potential cu gitnexus hook. Opt-in doar daca utilizatorul cere explicit.
 - Auto-rebuild la fiecare commit — costa timp; rebuild manual / saptamanal e suficient pentru exploratory layer.
 
-## 13. KILL-SWITCH
+## 13. OBSIDIAN BRIDGE (graphify ↔ Obsidian wiki-links)
+
+`GRAPH_REPORT.md` foloseste wiki-links `[[_COMMUNITY_Community N]]` care, fara stub-uri concrete, sunt dead-links in Obsidian. Bridge-ul `graphify-obsidian-bridge.py` (in `bin/`) parseaza `graph.json` si emite:
+
+- `_COMMUNITY_Community <N>.md` — un stub navigabil per community (rank de god-nodes, file paths cu line numbers, cross-community bridges, back-link la GRAPH_REPORT).
+- `_GRAPHIFY_INDEX.md` — TOC complet sortat dupa size.
+
+**Reguli:**
+- Foloseste vault-ul Obsidian = repo root sau folderul care contine `graphify-out/`.
+- Bridge ruleaza dupa fiecare `graphify-safe` (sau dupa fiecare `graphify ... --update`). Idempotent: re-runs sterg stub-urile vechi inainte de a scrie.
+- `--min-nodes 1` (default recomandat) garanteaza zero dead-links — toate ID-urile de community din GRAPH_REPORT au stub.
+- Stub-urile sunt sub `graphify-out/` care e deja gitignored — niciodata commit.
+- Nu inlocuieste `graphify-out/graph.html` (vizualizare interactiva separata). Bridge-ul = layer text/markdown pentru Obsidian.
+
+**Comenzi:**
+```bash
+# In radacina proiectului, dupa orice rebuild
+./scripts/graphify-bridge ./src/graphify-out
+
+# Echivalent direct (daca nu ai symlink)
+python3 ~/graphify-platform/bin/graphify-obsidian-bridge.py ./src/graphify-out
+
+# Optiuni
+--min-nodes N    # ascunde communities sub N noduri (default 2; foloseste 1 pentru zero dead-links)
+--top-nodes M    # max noduri listate per pagina (default 30)
+```
+
+**Iesire pe TRADE AI (verificat):** 80 communities, 80 stub-uri, 0 dead-links, ~120KB total in `src/graphify-out/`.
+
+## 14. KILL-SWITCH
 If any secret leaks via graphify-out/:
 ```bash
 # 1. Nuke artifacts
