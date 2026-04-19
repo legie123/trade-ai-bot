@@ -12,8 +12,11 @@
 //   so call sites can still use the old stats path.
 //
 // ASUMPȚII CRITICE care invalidează modelul:
-//   1) Fallback `pnlGross - 0.08` presupune istorice sunt FUTURES taker.
-//      Dacă vreodată pivotezi pe SPOT istoric → fee real 0.2%, underestimate.
+//   1) Fallback `pnlGross - 0.14` presupune istorice sunt FUTURES taker cu
+//      slippage activ (FEE_INCLUDE_SLIPPAGE=1), sync cu feeModel.ts total
+//      (fee 0.08 + slippage 0.06). Prior 0.08 subestima cost pe pre-FAZA-B.2 rows
+//      cu 0.06% → PF/WR net inflated. RUFLO NEXT FEE fix 2026-04-20.
+//      Dacă vreodată pivotezi pe SPOT istoric → fee+slip 0.28%, underestimate.
 //      Marker corect: folosește ONLY rows with hasNetData=true in LIVE decisions.
 //   2) Nu face dedup cross-gladiator. Fiecare gladiator își deține battles,
 //      deci stats per-gladiator sunt corecte direct. Pentru aggregate edge
@@ -49,7 +52,10 @@ export interface NetStatsSummary {
   sampleWindow: { firstTs: number; lastTs: number } | null;
 }
 
-const FUTURES_FALLBACK_FEE = 0.08; // must stay in sync with feeModel.ts default FUTURES round-trip
+// RUFLO NEXT FEE (2026-04-20) — audit fix: bumped 0.08 → 0.14 to match
+// feeModel.ts FUTURES total (fee 0.08 + slippage 0.06). Prior value subestima
+// fallback cost cu 0.06% pe pre-FAZA-B.2 battles → PF/WR net inflated în stats.
+const FUTURES_FALLBACK_FEE = 0.14; // fee(0.08) + slippage(0.06) — matches feeModel.ts getFeeRoundTrip().total
 
 /**
  * Convert one raw battle row (shape returned by getGladiatorBattles) to NetBattleView.

@@ -3,7 +3,9 @@
 // Evaluates gladiators for PHANTOM → LIVE promotion using pre-live gate
 // ============================================================
 import { NextResponse } from 'next/server';
-import { getGladiatorsFromDb, saveGladiatorsToDb, initDB, getIndependentSampleSize } from '@/lib/store/db';
+import { getGladiatorsFromDb, saveGladiatorsToDb, initDB, getIndependentSampleSize, getCrossGladiatorWashScore } from '@/lib/store/db';
+import type { WashConfig, WashMode } from '@/lib/v2/wash/types';
+import { washRingPush } from '@/lib/v2/wash/washState';
 import { getKillSwitchState } from '@/lib/core/killSwitch';
 import { MonteCarloEngine } from '@/lib/v2/superai/monteCarloEngine';
 import { sendMessage } from '@/lib/alerts/telegram';
@@ -39,6 +41,33 @@ function wilsonLower(successes: number, n: number): number {
   const center = p + z2 / (2 * n);
   const margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n);
   return (center - margin) / denom;
+}
+
+// FAZA 3/5 BATCH 3/4 (2026-04-20) — Cross-Gladiator Wash Guard config.
+// Mode controlled by WASH_CROSS_GLADIATOR_ENABLED:
+//   '0' / 'off'    → disabled (kill-switch full revert)
+//   'shadow'       → log + counter only, no rejection (default for first 48-72h)
+//   'on'           → enforce hard rejection (after calibration via /api/v2/diag/wash)
+// Thresholds default to overlap>0.70 AND |corr|>0.85 (audit suggests start permissive,
+// tighten after percentiles surface). bucketMs=1_800_000 (30min) per ACF in audit.
+function getWashConfig(): WashConfig {
+  const raw = (process.env.WASH_CROSS_GLADIATOR_ENABLED || 'shadow').toLowerCase();
+  let mode: WashMode = 'shadow';
+  if (raw === '0' || raw === 'off' || raw === 'false') mode = 'off';
+  else if (raw === '1' || raw === 'on' || raw === 'true') mode = 'on';
+  const num = (k: string, d: number) => {
+    const v = parseFloat(process.env[k] || '');
+    return Number.isFinite(v) ? v : d;
+  };
+  return {
+    mode,
+    maxOverlap: num('WASH_MAX_OVERLAP', 0.70),
+    pnlCorrThreshold: num('WASH_CORR_THRESHOLD', 0.85),
+    bucketMs: num('WASH_BUCKET_MS', 1_800_000),
+    lookbackTrades: num('WASH_LOOKBACK_TRADES', 200),
+    maxPeers: num('WASH_MAX_PEERS', 15),
+    minSharedTrades: num('WASH_MIN_SHARED_TRADES', 30),
+  };
 }
 
 // FAZA 3/5 BATCH 2/4 (2026-04-19) — auto-promote criteria aligned with QW-8 gate.
@@ -139,6 +168,15 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
     const useWilsonPromo = process.env.PROMOTE_USE_WILSON !== '0';
     const WILSON_WR_FLOOR = 0.50;
 
+    // FAZA 3/5 BATCH 3/4 — Wash config evaluated ONCE outside the loop (not per-candidate).
+    const washCfg = getWashConfig();
+    // Peer set = all OTHER gladiators (live + phantom), ordered live-first then phantom,
+    // capped at maxPeers. Same set reused for every candidate (cheaper than per-iter recompute).
+    const allPeerIds: string[] = [
+      ...gladiators.filter((g) => g.isLive).map((g) => g.id),
+      ...gladiators.filter((g) => !g.isLive).map((g) => g.id),
+    ];
+
     const candidates: typeof preliminary = [];
     for (const g of preliminary) {
       try {
@@ -171,6 +209,86 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
             continue;
           }
         }
+
+        // FAZA 3/5 BATCH 3/4 — Cross-Gladiator Wash Guard.
+        // Goal: block promoting a gladiator whose trades are mostly wash-correlated
+        // with an existing peer (live OR phantom). Uses 30-min bucket|symbol keys
+        // + Pearson on signed pnl (SHORT inverted) → |corr| catches same-dir wash
+        // AND mirror-hedge. Fail-closed on I/O error (sentinel '__fetch_error__').
+        if (washCfg.mode !== 'off') {
+          const peerSet = allPeerIds.filter((pid) => pid !== g.id).slice(0, washCfg.maxPeers);
+          try {
+            const wash = await getCrossGladiatorWashScore(g.id, peerSet, {
+              bucketMs: washCfg.bucketMs,
+              lookbackTrades: washCfg.lookbackTrades,
+              minSharedTrades: washCfg.minSharedTrades,
+            });
+            const absCorr = Math.abs(wash.washPeerPnlCorr);
+            const failedClosed = wash.washPeerId === '__fetch_error__';
+            const wouldBlock = failedClosed
+              || (wash.maxOverlapRatio > washCfg.maxOverlap && absCorr > washCfg.pnlCorrThreshold);
+            const reasonText = failedClosed
+              ? 'WASH_FAIL_CLOSED: cross-gladiator score fetch failed'
+              : `wash overlap=${wash.maxOverlapRatio.toFixed(3)} |corr|=${absCorr.toFixed(3)} peer=${wash.washPeerId ?? 'none'} (thr ovr>${washCfg.maxOverlap}, |corr|>${washCfg.pnlCorrThreshold})`;
+
+            // Always emit telemetry (shadow ring + structured log) regardless of mode.
+            washRingPush({
+              ts: Date.now(),
+              gladiatorId: g.id,
+              gladiatorName: g.name,
+              washPeerId: wash.washPeerId,
+              overlap: wash.maxOverlapRatio,
+              corr: wash.washPeerPnlCorr,
+              blocked: wouldBlock,
+              reason: reasonText,
+            });
+            console.log(JSON.stringify({
+              tag: '[WASH-SHADOW]',
+              mode: washCfg.mode,
+              candidate: g.id,
+              candidateName: g.name,
+              overlap: wash.maxOverlapRatio,
+              corr: wash.washPeerPnlCorr,
+              absCorr,
+              peer: wash.washPeerId,
+              totalCandidateKeys: wash.totalCandidateKeys,
+              wouldBlock,
+              reason: reasonText,
+              thresholds: { maxOverlap: washCfg.maxOverlap, corr: washCfg.pnlCorrThreshold },
+            }));
+
+            if (wouldBlock && washCfg.mode === 'on') {
+              results.push({
+                gladiatorId: g.id,
+                gladiatorName: g.name,
+                action: 'SKIPPED',
+                reason: reasonText,
+                stats: { winRate: g.stats.winRate, profitFactor: g.stats.profitFactor, totalTrades: g.stats.totalTrades },
+              });
+              safeInc(metrics.gladiatorPromotions, { result: 'rejected_wash_cross' });
+              continue;
+            }
+            if (wouldBlock && washCfg.mode === 'shadow') {
+              safeInc(metrics.gladiatorPromotions, { result: 'would_reject_wash_cross' });
+              // Shadow = do NOT continue; candidate still pushed below.
+            }
+          } catch (washErr) {
+            // Parity with wfErr: shadow → swallow + warn; on → FAILED + continue (fail-closed).
+            if (washCfg.mode === 'on') {
+              results.push({
+                gladiatorId: g.id,
+                gladiatorName: g.name,
+                action: 'FAILED',
+                reason: `wash guard threw: ${(washErr as Error).message}`,
+                stats: { winRate: g.stats.winRate, profitFactor: g.stats.profitFactor, totalTrades: g.stats.totalTrades },
+              });
+              safeInc(metrics.gladiatorPromotions, { result: 'rejected_wash_cross' });
+              continue;
+            }
+            console.warn(`[WASH-SHADOW] ${g.name} wash guard threw (shadow swallow): ${(washErr as Error).message}`);
+          }
+        }
+
         candidates.push(g);
       } catch {
         results.push({

@@ -89,7 +89,9 @@ function build() {
   const gladiatorPromotions = new client.Counter({
     name: 'tradeai_gladiator_promotions_total',
     help: 'Auto-promote transitions shadow→live',
-    labelNames: ['result'] as const, // result=promoted|rejected_wilson|rejected_pf|rejected_sample
+    // result=promoted|rejected_wilson|rejected_pf|rejected_sample|rejected_ruin|rejected_overfit
+    //       |rejected_wash_cross|would_reject_wash_cross (FAZA 3/5 Batch 3/4 — wash guard)
+    labelNames: ['result'] as const,
     registers: [registry],
   });
 

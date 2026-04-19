@@ -12,6 +12,7 @@ import {
 } from '@/lib/types/radar';
 import { createLogger } from '@/lib/core/logger';
 import type { Gladiator } from '@/lib/types/gladiator';
+import type { CrossGladiatorWashScore } from '@/lib/v2/wash/types';
 
 const log = createLogger('Database-Supabase');
 
@@ -932,6 +933,246 @@ export async function getIndependentSampleSize(gladiatorId: string): Promise<num
   } catch {
     return 0;
   }
+}
+
+// ============================================================
+// FAZA 3/5 BATCH 3/4 (2026-04-20) — Cross-Gladiator Wash Guard
+// Detects BOTH same-direction wash AND opposite-direction mirror-hedge
+// by computing Pearson on SIGNED pnl (SHORT inverted) over shared
+// (bucket|symbol) keys with a candidate's peer set. Caller uses |corr|.
+//
+// ASUMPȚII care invalidează scorul:
+//   A1) bucketMs=30min — wall-clock ACF din audit 2026-04-19 arată ≈30min
+//       este bucketul în care signalele replicate cad 95% din timp. Sub
+//       30min = false positives (aceleași market prints, gladiatori diferiți
+//       cu entry strategy naturală coincidentă). Peste 30min = miss pe
+//       wash cu mic lag.
+//   A2) Drop `decision` din cheie — prior versiune lega cheia de
+//       LONG/SHORT, ceea ce permitea bypass prin flip (gladiator mirror
+//       pe aceleași bucket-uri trecea neutru). Folosim signed pnl
+//       (SHORT inverted) + Pearson → |corr|≈1 indică wash direct,
+//       |corr|≈-1 indică mirror-hedge. Gate-ul folosește |corr|.
+//   A3) FUTURES_FALLBACK_FEE=0.14 (aliniat feeModel.ts) pentru battles
+//       pre-FAZA-B.2. Schimbarea asumpției (ex. pivot SPOT) invalidează
+//       scorurile istorice.
+//   A4) Early-exit la overlap≥0.95 + |corr|≈1 — dincolo de prag e wash
+//       evident; continuăm scanul doar dacă vrem debug exhaustiv.
+//   A5) min `minSharedTrades` (default 30) — sub acest prag Pearson
+//       are varianță infirmă; returnăm corr=0 pentru a nu bloca greșit.
+//
+// FAIL-CLOSED CONTRACT:
+//   Orice eșec de I/O (Supabase error, table missing, timeout) →
+//   returnăm washPeerId='__fetch_error__' + maxOverlapRatio=1.0 +
+//   washPeerPnlCorr=1.0. Caller MUST hard-reject pe acest sentinel
+//   (nu se bazează doar pe prag — altfel corr=0 din cache fail trece).
+// ============================================================
+
+const WASH_FAIL_CLOSED: CrossGladiatorWashScore = {
+  maxOverlapRatio: 1.0,
+  washPeerPnlCorr: 1.0,
+  washPeerId: '__fetch_error__',
+  totalCandidateKeys: 0,
+};
+
+interface WashRow {
+  timestamp: number;
+  symbol: string;
+  decision: string;
+  pnl_percent: number;
+}
+
+function normalizeDecision(d: unknown): 'LONG' | 'SHORT' | 'FLAT' | 'UNK' {
+  if (typeof d !== 'string') return 'UNK';
+  const s = d.trim().toUpperCase();
+  if (s === 'LONG' || s === 'BUY') return 'LONG';
+  if (s === 'SHORT' || s === 'SELL') return 'SHORT';
+  if (s === 'FLAT' || s === 'NEUTRAL' || s === 'HOLD') return 'FLAT';
+  return 'UNK';
+}
+
+/**
+ * Build key→signed-pnl map for one gladiator's rows.
+ * Key = `${bucket}|${symbol}` (decision dropped; direction captured in sign).
+ * Signed pnl: LONG → +pnl, SHORT → -pnl (so both-right same-dir trades correlate +1,
+ * mirror-hedge correlates -1, parallel wash with any direction mix collapses to |corr|≈1).
+ */
+function buildWashKeyMap(rows: WashRow[], bucketMs: number): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    const t = typeof r.timestamp === 'number' ? r.timestamp : Number(r.timestamp);
+    if (!Number.isFinite(t) || t <= 0) continue;
+    const dir = normalizeDecision(r.decision);
+    if (dir === 'UNK') continue;
+    const sym = typeof r.symbol === 'string' ? r.symbol : String(r.symbol || '');
+    if (!sym) continue;
+    const bucket = Math.floor(t / bucketMs);
+    const key = `${bucket}|${sym}`;
+    const pnlRaw = typeof r.pnl_percent === 'number' ? r.pnl_percent : Number(r.pnl_percent);
+    if (!Number.isFinite(pnlRaw)) continue;
+    const signed = dir === 'SHORT' ? -pnlRaw : (dir === 'FLAT' ? 0 : pnlRaw);
+    // If the same key repeats within one gladiator (rare), keep the latest entry.
+    map.set(key, signed);
+  }
+  return map;
+}
+
+/**
+ * Streaming Pearson (Welford-style single-pass) on aligned value pairs.
+ * Returns 0 for n<5 (insufficient samples) or non-finite result.
+ */
+function streamingPearson(xs: number[], ys: number[]): number {
+  const n = Math.min(xs.length, ys.length);
+  if (n < 5) return 0;
+  let meanX = 0, meanY = 0, c = 0, varX = 0, varY = 0;
+  for (let i = 0; i < n; i++) {
+    const x = xs[i], y = ys[i];
+    const dx = x - meanX;
+    meanX += dx / (i + 1);
+    const dy = y - meanY;
+    meanY += dy / (i + 1);
+    c += dx * (y - meanY);
+    varX += dx * (x - meanX);
+    varY += dy * (y - meanY);
+  }
+  const denom = Math.sqrt(varX * varY);
+  if (!Number.isFinite(denom) || denom <= 0) return 0;
+  const corr = c / denom;
+  if (!Number.isFinite(corr)) return 0;
+  return Math.max(-1, Math.min(1, corr));
+}
+
+/**
+ * Cross-gladiator wash score for a candidate against a peer set.
+ *
+ * @param candidateId  gladiator under evaluation (promotion candidate)
+ * @param peerIds      peers to compare against (live first, then phantom; caller caps to maxPeers)
+ * @param opts         bucketMs (default 30min), lookbackTrades (default 200), minShared (default 30)
+ * @returns            CrossGladiatorWashScore; on I/O failure returns WASH_FAIL_CLOSED sentinel.
+ */
+export async function getCrossGladiatorWashScore(
+  candidateId: string,
+  peerIds: string[],
+  opts: { bucketMs?: number; lookbackTrades?: number; minSharedTrades?: number } = {}
+): Promise<CrossGladiatorWashScore> {
+  const bucketMs = opts.bucketMs ?? 1_800_000;
+  const lookback = opts.lookbackTrades ?? 200;
+  const minShared = opts.minSharedTrades ?? 30;
+  const peers = (peerIds || []).filter((p) => p && p !== candidateId);
+  const ids = [candidateId, ...peers];
+
+  if (!supabaseUrl || !dbInitialized) {
+    // Memory fallback — acceptable for tests/dev; LIVE path has DB.
+    try {
+      const perGladRows: Record<string, WashRow[]> = {};
+      for (const id of ids) {
+        const own = (cache.gladiatorDna as Record<string, unknown>[])
+          .filter((r) => r.gladiatorId === id)
+          .slice(0, lookback);
+        perGladRows[id] = own.map((r) => ({
+          timestamp: typeof r.timestamp === 'number' ? r.timestamp : Number(r.timestamp),
+          symbol: typeof r.symbol === 'string' ? r.symbol : String(r.symbol || ''),
+          decision: typeof r.decision === 'string' ? r.decision : String(r.decision || ''),
+          pnl_percent: typeof r.pnlPercent === 'number' ? r.pnlPercent : Number(r.pnlPercent),
+        }));
+      }
+      return scoreFromPerGladiator(candidateId, peers, perGladRows, bucketMs, minShared);
+    } catch {
+      return WASH_FAIL_CLOSED;
+    }
+  }
+
+  try {
+    // Batched single round-trip: pull newest `lookback * ids.length` rows for all gladiators.
+    // Filter client-side per gladiator (simpler than N queries; rows capped by lookback later).
+    const totalLimit = Math.max(1000, lookback * ids.length * 2);
+    const { data, error } = await supabase
+      .from('gladiator_battles')
+      .select('gladiator_id, timestamp, symbol, decision, pnl_percent')
+      .in('gladiator_id', ids)
+      .order('timestamp', { ascending: false })
+      .limit(totalLimit);
+    if (error || !data) return WASH_FAIL_CLOSED;
+
+    const perGladRows: Record<string, WashRow[]> = {};
+    for (const id of ids) perGladRows[id] = [];
+    for (const row of data as Record<string, unknown>[]) {
+      const gid = typeof row.gladiator_id === 'string' ? row.gladiator_id : '';
+      if (!gid || !perGladRows[gid]) continue;
+      if (perGladRows[gid].length >= lookback) continue;
+      const ts = typeof row.timestamp === 'number' ? row.timestamp : Number(row.timestamp);
+      const pnl = typeof row.pnl_percent === 'number' ? row.pnl_percent : Number(row.pnl_percent);
+      if (!Number.isFinite(ts) || !Number.isFinite(pnl)) continue;
+      perGladRows[gid].push({
+        timestamp: ts,
+        symbol: typeof row.symbol === 'string' ? row.symbol : String(row.symbol || ''),
+        decision: typeof row.decision === 'string' ? row.decision : String(row.decision || ''),
+        pnl_percent: pnl,
+      });
+    }
+    return scoreFromPerGladiator(candidateId, peers, perGladRows, bucketMs, minShared);
+  } catch {
+    return WASH_FAIL_CLOSED;
+  }
+}
+
+function scoreFromPerGladiator(
+  candidateId: string,
+  peers: string[],
+  perGladRows: Record<string, WashRow[]>,
+  bucketMs: number,
+  minShared: number
+): CrossGladiatorWashScore {
+  const candMap = buildWashKeyMap(perGladRows[candidateId] || [], bucketMs);
+  const totalCand = candMap.size;
+  if (totalCand === 0) {
+    return { maxOverlapRatio: 0, washPeerPnlCorr: 0, washPeerId: null, totalCandidateKeys: 0 };
+  }
+
+  let bestOverlap = 0;
+  let bestAbsCorr = 0;
+  let bestPeer: string | null = null;
+  let bestSignedCorr = 0;
+
+  for (const pid of peers) {
+    const peerMap = buildWashKeyMap(perGladRows[pid] || [], bucketMs);
+    if (peerMap.size === 0) continue;
+
+    // Shared keys
+    const xs: number[] = [];
+    const ys: number[] = [];
+    let shared = 0;
+    for (const [k, vCand] of candMap) {
+      const vPeer = peerMap.get(k);
+      if (vPeer === undefined) continue;
+      xs.push(vCand);
+      ys.push(vPeer);
+      shared++;
+    }
+    if (shared === 0) continue;
+
+    const denom = Math.min(totalCand, peerMap.size);
+    const overlap = denom > 0 ? shared / denom : 0;
+    const corr = shared >= minShared ? streamingPearson(xs, ys) : 0;
+    const absCorr = Math.abs(corr);
+
+    // Track maxima independently; same peer often dominates both.
+    if (overlap > bestOverlap) bestOverlap = overlap;
+    if (absCorr > bestAbsCorr) {
+      bestAbsCorr = absCorr;
+      bestSignedCorr = corr;
+      bestPeer = pid;
+    }
+
+    // Early exit — unmistakable wash.
+    if (bestOverlap >= 0.95 && bestAbsCorr >= 0.95) break;
+  }
+
+  return {
+    maxOverlapRatio: parseFloat(bestOverlap.toFixed(4)),
+    washPeerPnlCorr: parseFloat(bestSignedCorr.toFixed(4)),
+    washPeerId: bestPeer,
+    totalCandidateKeys: totalCand,
+  };
 }
 
 // ─── Phantom Trades (Arena Combat Engine) ───────
