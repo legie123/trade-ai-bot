@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { registry } from '@/lib/observability/metrics';
+import { refreshPoolGauges } from '@/lib/observability/poolGauges';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,9 @@ export async function GET(req: NextRequest) {
   if (provided !== token) {
     return new NextResponse('Unauthorized', { status: 401 });
   }
+
+  // Refresh pool-state gauges before scrape (60s TTL inside, fail-soft).
+  await refreshPoolGauges();
 
   const body = await registry.metrics();
   return new NextResponse(body, {
