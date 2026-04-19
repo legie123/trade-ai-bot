@@ -487,6 +487,30 @@ export async function GET(request: NextRequest) {
       log.warn('flushPendingSyncs timed out — some data may not have persisted');
     }
 
+    // AUDIT-R3.1 AUTO-RECONCILE — rebuild per-gladiator stats from battles ledger.
+    // Runs POST-flush so just-persisted writes are visible. Gates (all must hold):
+    //   - process.env.AUTO_RECONCILE_ENABLED !== '0'   → full kill-switch
+    //   - horizonSlotsFilled > 0                       → only when new data arrived
+    //   - tryAcquireTaskLease('reconcile-stats', 300_000) (5min) → max 1 reconcile/5min
+    //     across all Cloud Run instances; prevents thrashing on multi-instance scale-up.
+    // Wrapped in try/catch → MUST NOT block cron response. TTL cleans lease on crash.
+    // ASSUMPTION: reconcileStatsFromBattles is idempotent + bounded (<3s typical on 14 gladiators).
+    // Kill-switch: AUTO_RECONCILE_ENABLED=0 disables entire block.
+    if (process.env.AUTO_RECONCILE_ENABLED !== '0' && horizonSlotsFilled > 0) {
+      try {
+        const reconcileLease = await tryAcquireTaskLease('reconcile-stats', 300_000);
+        if (reconcileLease.acquired && !reconcileLease.degraded) {
+          const { gladiatorStore } = await import('@/lib/store/gladiatorStore');
+          const _recStart = Date.now();
+          const reconcileResult = await gladiatorStore.reconcileStatsFromBattles();
+          log.info(`[CRON] auto-reconcile: ${reconcileResult.reconciled} reconciled, ${reconcileResult.skipped} skipped in ${Date.now() - _recStart}ms`);
+          await releaseTaskLease('reconcile-stats').catch(() => { /* TTL fallback */ });
+        }
+      } catch (recErr) {
+        log.warn(`[CRON] auto-reconcile failed (non-fatal): ${(recErr as Error).message}`);
+      }
+    }
+
     // R5-lite: release lease proactively so the NEXT scheduler tick isn't
     // blocked waiting for TTL expiry. On crash/timeout, TTL handles cleanup.
     releaseTaskLease('cron:main-tick').catch(() => { /* TTL will clean up */ });

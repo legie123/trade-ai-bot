@@ -554,6 +554,24 @@ export class DualMasterConsciousness {
       log.info(`[DualMaster] Confidence penalized: ${(originalConfidence * 100).toFixed(1)}% → ${(finalConfidence * 100).toFixed(1)}% (hallucination penalty: -${(hallucinationReport.confidencePenalty * 100).toFixed(0)}%)`);
     }
 
+    // AUDIT-R2 DIRECTION GATE — LONG hemorrhage mitigation (empirical).
+    // Ledger evidence (N=17772): LONG WR=24.4% vs SHORT WR=42.97%; break-even WR=43.3%
+    //   with TP=1.0%/SL=-0.5% + 0.15% round-trip cost. LONG is ~19pp below break-even.
+    // Kill-switches (both default permissive — gate is opt-in):
+    //   DIRECTION_GATE_ENABLED=0          → bypass the entire block below
+    //   DIRECTION_LONG_DISABLED=1         → force LONG → FLAT (SHORT/FLAT untouched)
+    // ASSUMPTIONS (critical — invalidate strategy if broken):
+    //   (1) SHORT EV remains ≥ LONG EV in forward regime (structural, not sampling artifact)
+    //   (2) Empirical sample is representative of live regime (regime shift breaks this)
+    //   (3) Downstream (managerVizionar) treats FLAT as no-op, not as a SHORT signal
+    if (process.env.DIRECTION_GATE_ENABLED !== '0') {
+      if (process.env.DIRECTION_LONG_DISABLED === '1' && finalDirection === 'LONG') {
+        log.warn(`[DualMaster] AUDIT-R2 gate active: LONG → FLAT (DIRECTION_LONG_DISABLED=1, was confidence=${(finalConfidence * 100).toFixed(1)}%)`);
+        finalDirection = 'FLAT';
+        finalConfidence = 0;
+      }
+    }
+
     return {
       finalDirection,
       weightedConfidence: Math.min(finalConfidence, 1),
