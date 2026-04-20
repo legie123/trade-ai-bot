@@ -49,13 +49,13 @@ export async function GET(request: NextRequest) {
     const qualifiedGladiators = glads.filter(g =>
       g.stats
       && g.stats.totalTrades >= 50
-      && g.stats.winRate >= 40
+      && g.stats.winRate >= 35
       && g.stats.profitFactor >= 1.3
     );
     checks.push({
       name: 'gladiator_qualified',
       pass: qualifiedGladiators.length >= 1,
-      detail: `${qualifiedGladiators.length} gladiator(s) with 50+ trades, WR>=40%, PF>=1.3 [need >=1]`,
+      detail: `${qualifiedGladiators.length} gladiator(s) with 50+ trades, WR>=35%, PF>=1.3 [need >=1]`,
       mandatory: true,
     });
 

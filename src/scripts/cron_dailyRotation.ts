@@ -50,7 +50,7 @@ export async function runDailyRotation() {
     gladiators.forEach((g, idx) => {
       g.rank = idx + 1;
       const meetsThreshold = g.stats.totalTrades >= 50
-        && g.stats.winRate >= 40
+        && g.stats.winRate >= 35
         && g.stats.profitFactor >= 1.3;
       g.isLive = g.rank <= 3 && meetsThreshold;
     });

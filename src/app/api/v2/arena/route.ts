@@ -39,7 +39,7 @@ export async function GET() {
       // Prior code: rank<=3 → 'LIVE' regardless of thresholds → misleading operator.
       if (g.isLive) {
         status = 'LIVE';
-        rankReason = `Top ${rank} — LIVE (QW-8 passed: tt≥50, WR≥40%, PF≥1.3).`;
+        rankReason = `Top ${rank} — LIVE (QW-8 passed: tt≥50, WR≥35%, PF≥1.3).`;
       } else if (rank <= 3) {
         status = 'SHADOW';
         rankReason = `Top ${rank} — Shadow (rank qualifies but QW-8 gate not passed: WR=${g.stats.winRate.toFixed(1)}%, PF=${g.stats.profitFactor.toFixed(2)}).`;

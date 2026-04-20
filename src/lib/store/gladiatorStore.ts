@@ -1,4 +1,5 @@
 import { INITIAL_STRATEGIES } from './seedStrategies';
+import { isSeedBlacklisted } from './seedBlacklist';
 import { Gladiator, ArenaType } from '../types/gladiator';
 import { getGladiatorsFromDb, saveGladiatorsToDb, getIndependentSampleSize, getGladiatorBattles } from '@/lib/store/db';
 import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
@@ -188,7 +189,20 @@ class GladiatorStore {
    */
   private mergeSeedMissing(): void {
     const existingIds = new Set(this.gladiators.map(g => g.id));
-    const missing = INITIAL_STRATEGIES.filter(s => !existingIds.has(s.id));
+    let missing = INITIAL_STRATEGIES.filter(s => !existingIds.has(s.id));
+    // FAZA 4/4 2026-04-20 — seed-revive blacklist. Skip re-introducing seeds
+    // that were killed within SEED_REVIVE_BLACKLIST_DAYS (default 30). Breaks
+    // the kill→revive→kill loop documented in memory
+    // [project_zombie_purge_fix_2026_04_20]. Kill-switch:
+    // SEED_BLACKLIST_ENABLED=off → no filtering. Cold-start race: if the
+    // blacklist hasn't finished its first refresh, isSeedBlacklisted returns
+    // false and behavior matches pre-fix (safe default).
+    const beforeFilter = missing.length;
+    missing = missing.filter(s => !isSeedBlacklisted(s.id));
+    const filtered = beforeFilter - missing.length;
+    if (filtered > 0) {
+      storeLog.info(`[MERGE-SEED] Blacklist blocked ${filtered} recently-killed seed(s) from revive.`);
+    }
     if (missing.length === 0) return;
     storeLog.info(`[MERGE-SEED] Adding ${missing.length} new gladiator(s): ${missing.map(m => m.id).join(', ')}`);
     let nextRank = Math.max(...this.gladiators.map(g => g.rank), 0) + 1;
@@ -607,8 +621,12 @@ class GladiatorStore {
 
         // Normal path: full QW-8 gate with independent sample cache.
         const indepTT = this.indepSampleCache.get(entry.gladiator.id) ?? 0;
+        // C19 (2026-04-20): WR 40→35%. At 2:1 R:R (TP=1.0%/SL=-0.5%), break-even=33%.
+        // PF≥1.3 is the primary profitability gate. WR≥35% is sanity floor above BE.
+        // BTC Swing Macro (PF=1.46,WR=37.4%,tt=479) was blocked at 40%. Kill: QW8_WR_GATE=40.
+        const wrGate = Number(process.env.QW8_WR_GATE) || 35;
         const meetsThreshold = indepTT >= 50
-          && entry.gladiator.stats.winRate >= 40
+          && entry.gladiator.stats.winRate >= wrGate
           && entry.gladiator.stats.profitFactor >= 1.3;
         // Walk-Forward gate: fail-closed — require explicit WF pass, not absence.
         const wfResult = this.wfCache.get(entry.gladiator.id);

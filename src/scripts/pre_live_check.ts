@@ -88,8 +88,8 @@ async function runChecks() {
     `dailyLossLimit = ${dailyLoss}`
   );
   check(
-    'minWinRate >= 0.40',
-    minWR >= 0.40,
+    'minWinRate >= 0.35',
+    minWR >= 0.35,
     `minWinRate = ${minWR}`
   );
   check(

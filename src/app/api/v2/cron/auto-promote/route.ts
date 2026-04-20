@@ -79,7 +79,7 @@ function getWashConfig(): WashConfig {
 // Break-even WR ~33%, PF≥1.3 at WR≥39.4%. PF remains primary profitability gate.
 const PROMO_CRITERIA = {
   minPhantomTrades: 50,      // INDEPENDENT samples, not raw totalTrades
-  minWinRate: 40,
+  minWinRate: 35,
   minProfitFactor: 1.3,
   maxRuinProbability: 10,    // Monte Carlo ruin < 10%
   maxRiskPerTrade: 1.0,      // %

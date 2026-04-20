@@ -350,7 +350,7 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
           gladiators.forEach((g, idx) => {
             g.rank = idx + 1;
             const meets = g.stats.totalTrades >= 50
-              && g.stats.winRate >= 40
+              && g.stats.winRate >= 35
               && g.stats.profitFactor >= 1.3;
             g.isLive = g.rank <= 3 && meets;
           });

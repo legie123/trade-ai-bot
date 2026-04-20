@@ -339,7 +339,7 @@ export default function LiveAnalyticsStrip() {
           { label: 'ALIVE (cum)', v: fmt(alive, 0), c: C.green },
           { label: 'KILLED (cum)', v: fmt(killed, 0), c: C.red },
           { label: 'POP PF', v: fmt(popPf, 2), c: popPf == null ? C.mutedLight : popPf >= 1.3 ? C.green : popPf >= 1 ? C.blue : C.red },
-          { label: 'POP WR', v: popWr == null ? '—' : `${(popWr * 100).toFixed(1)}%`, c: popWr == null ? C.mutedLight : popWr >= 0.40 ? C.green : popWr >= 0.5 ? C.blue : C.red },
+          { label: 'POP WR', v: popWr == null ? '—' : `${(popWr * 100).toFixed(1)}%`, c: popWr == null ? C.mutedLight : popWr >= 0.35 ? C.green : popWr >= 0.5 ? C.blue : C.red },
           { label: 'DECISIONS 24h', v: fmt(inst.decisions24h?.value ?? null, 0), c: C.blue },
         ].map((x) => (
           <div key={x.label} style={{ textAlign: 'center' }}>

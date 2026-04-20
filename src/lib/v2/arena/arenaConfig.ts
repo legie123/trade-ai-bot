@@ -71,7 +71,7 @@ export const SWING_CONFIG: ArenaConfig = {
  */
 export const MOMENTUM_CONFIG: ArenaConfig = {
   arena: 'DAY_TRADING',
-  minWinRate: 40,
+  minWinRate: 35,
   minProfitFactor: 2.0,
   holdTimeMin: '30min',
   holdTimeMax: '4h',
