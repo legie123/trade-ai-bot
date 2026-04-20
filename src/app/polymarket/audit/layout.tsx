@@ -11,6 +11,7 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { verifyToken } from '@/lib/auth';
+import { FeedHeartbeatStrip } from '@/components/polymarket/FeedHeartbeatStrip';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +49,8 @@ export default async function AuditLayout({ children }: { children: React.ReactN
         <Link href="/polymarket/audit/goldsky" style={{ color: C.text, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>Goldsky</Link>
         <Link href="/polymarket/audit/learning" style={{ color: C.text, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>Learning</Link>
         <div style={{ flex: 1 }} />
-        <Link href="/polymarket" style={{ color: C.muted, fontSize: 11, textDecoration: 'none' }}>← back to command</Link>
+        <FeedHeartbeatStrip />
+        <Link href="/polymarket" style={{ color: C.muted, fontSize: 11, textDecoration: 'none', marginLeft: 16 }}>← back to command</Link>
       </nav>
       <main style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>{children}</main>
     </div>
