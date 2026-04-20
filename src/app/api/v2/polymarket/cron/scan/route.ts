@@ -33,6 +33,29 @@ export const dynamic = 'force-dynamic';
 const EDGE_MIN = Number.parseInt(process.env.POLY_EDGE_MIN ?? '50', 10);
 const CONF_MIN = Number.parseInt(process.env.POLY_CONF_MIN ?? '50', 10);
 
+// ── FAZA 4.3 — scan rotation knobs ────────────────────────────────────
+// Original code hardcoded 3 priority divisions (TRENDING, CRYPTO, POLITICS)
+// and the "rotating through others" comment was never implemented. Production
+// gauge data (FAZA 4.2) showed 13/16 divisions stale 10-13h+ because the cron
+// only ever refreshed the priority 3. This rotation layer picks ROT_COUNT
+// non-priority divisions per tick, cycling deterministically by wall-clock
+// bucket so every Cloud Run instance agrees on which extras to scan.
+//
+// Kill-switch: POLY_SCAN_ROTATION_COUNT=0 reverts to priority-only (old behavior).
+// Tuning: POLY_SCAN_ROTATION_COUNT=3 + 15-min cadence → full 16-division
+// coverage in ≤5 ticks (~75 min worst case). Cost scales linearly with
+// rotation count (doubles API calls at default 3).
+//
+// ASUMPȚII (rup → rotation wrong, NOT financial):
+//   - Cloud Scheduler cadence ≈ POLY_SCAN_ROTATION_PERIOD_MIN (default 15).
+//     If cadence drifts ±1 min, adjacent buckets may overlap by 1 division —
+//     negligible cost, no correctness impact.
+//   - All instances share wall-clock to ≤ tick precision (Cloud Run guarantees).
+//   - Priority divisions array length stays at 3 (assertion below).
+const ROT_COUNT = Math.max(0, Number.parseInt(process.env.POLY_SCAN_ROTATION_COUNT ?? '3', 10) || 0);
+const ROT_PERIOD_MS =
+  Math.max(1, Number.parseInt(process.env.POLY_SCAN_ROTATION_PERIOD_MIN ?? '15', 10) || 15) * 60_000;
+
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
@@ -45,8 +68,25 @@ export async function GET(request: Request) {
     const gladiators = getGladiators();
     const lastScans = getLastScans();
 
-    // Pick 3 priority divisions, rotating through others
+    // Priority divisions — always scanned every tick (highest liquidity / volume).
     const priorityDivisions = [PolyDivision.TRENDING, PolyDivision.CRYPTO, PolyDivision.POLITICS];
+
+    // FAZA 4.3 — deterministic time-bucket rotation across remaining divisions.
+    // Each tick picks ROT_COUNT extras so the full 16-division set rolls over
+    // in ~ceil(13/ROT_COUNT) ticks. Bucket = wall-clock cadence index; same
+    // across instances → consistent coverage with zero coordination.
+    const allDivisions = Object.values(PolyDivision);
+    const nonPriority = allDivisions.filter(d => !priorityDivisions.includes(d));
+    let rotated: PolyDivision[] = [];
+    if (ROT_COUNT > 0 && nonPriority.length > 0) {
+      const bucket = Math.floor(Date.now() / ROT_PERIOD_MS);
+      const start = ((bucket * ROT_COUNT) % nonPriority.length + nonPriority.length) % nonPriority.length;
+      const take = Math.min(ROT_COUNT, nonPriority.length);
+      for (let i = 0; i < take; i++) {
+        rotated.push(nonPriority[(start + i) % nonPriority.length]);
+      }
+    }
+    const divisionsToScan: PolyDivision[] = [...priorityDivisions, ...rotated];
 
     let betsPlaced = 0;
     let opportunitiesFound = 0;
@@ -64,8 +104,8 @@ export async function GET(request: Request) {
     };
     const { runId, startedAt } = await startScanRun(envSnapshot);
 
-    // Scan the 3 priority divisions
-    for (const division of priorityDivisions) {
+    // Scan priority + rotated divisions (FAZA 4.3).
+    for (const division of divisionsToScan) {
       try {
         log.info('Scanning division', { division });
         const result = await scanDivision(division, 15);
