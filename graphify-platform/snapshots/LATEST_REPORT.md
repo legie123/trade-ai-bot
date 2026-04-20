@@ -1,7 +1,7 @@
 # Graph Report - /home/runner/work/trade-ai-bot/trade-ai-bot/src  (2026-04-20)
 
 ## Corpus Check
-- 291 files · ~236,762 words
+- 291 files · ~236,838 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -596,11 +596,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `GET()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 27`?**
-  _High betweenness centrality (0.505) - this node is a cross-community bridge._
+  _High betweenness centrality (0.524) - this node is a cross-community bridge._
 - **Why does `POST()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 18`, `Community 19`, `Community 20`?**
-  _High betweenness centrality (0.147) - this node is a cross-community bridge._
-- **Why does `getAggregatedTokens()` connect `Community 8` to `Community 0`, `Community 2`, `Community 12`?**
-  _High betweenness centrality (0.047) - this node is a cross-community bridge._
+  _High betweenness centrality (0.154) - this node is a cross-community bridge._
+- **Why does `fetchWithRetry()` connect `Community 3` to `Community 8`, `Community 0`, `Community 6`?**
+  _High betweenness centrality (0.048) - this node is a cross-community bridge._
 - **Are the 195 inferred relationships involving `GET()` (e.g. with `isAuthenticated()` and `runKarmaRead()`) actually correct?**
   _`GET()` has 195 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 81 inferred relationships involving `POST()` (e.g. with `.getCurrentSynthesis()` and `.getModifierForSymbol()`) actually correct?**
