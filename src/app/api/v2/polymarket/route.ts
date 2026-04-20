@@ -5,7 +5,7 @@ import { isAuthenticated } from '@/lib/auth';
 import { PolyDivision } from '@/lib/polymarket/polyTypes';
 import { testPolymarketConnection, getMarketsByCategory, getMarket } from '@/lib/polymarket/polyClient';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
-import { getWalletSummary, openPosition, closePosition } from '@/lib/polymarket/polyWallet';
+import { getWalletSummary, openPosition, closePosition, INITIAL_BALANCE } from '@/lib/polymarket/polyWallet';
 import { getPolyLeaderboard } from '@/lib/polymarket/polyGladiators';
 import { analyzeMarket } from '@/lib/polymarket/polySyndicate';
 import {
@@ -358,17 +358,28 @@ export async function POST(request: Request) {
       }
 
       case 'reset_wallet': {
-        // Reset wallet to initial state ($1000 per division)
+        // FAZA 4.1 (2026-04-20) — Reset wallet to initial state using
+        // INITIAL_BALANCE constant (env: POLY_INITIAL_BALANCE_PER_DIVISION,
+        // default 100/division → 16 × 100 = 1,600 total). Required after
+        // changing INITIAL_BALANCE because hydrated wallet state ignores
+        // the new constant otherwise.
+        // ASUMPȚII (rup → wallet inconsistent):
+        //   - All 16 divisions are present in wallet.divisionBalances Map
+        //     (createPolyWallet seeds them on first init).
+        //   - persistWallet() writes via Supabase upsert; failure throws.
+        //   - Open positions are dropped — operator must close LIVE positions
+        //     manually before reset to avoid stale entries.
         for (const [, divBalance] of wallet.divisionBalances.entries()) {
-          divBalance.balance = 1000;
+          divBalance.balance = INITIAL_BALANCE;
           divBalance.investedCapital = 0;
           divBalance.realizedPnL = 0;
           divBalance.unrealizedPnL = 0;
           divBalance.positions = [];
-          divBalance.peakBalance = 1000;
+          divBalance.peakBalance = INITIAL_BALANCE;
+          divBalance.maxDrawdown = 0;
         }
 
-        wallet.totalBalance = 1000 * Object.keys(PolyDivision).length;
+        wallet.totalBalance = INITIAL_BALANCE * Object.keys(PolyDivision).length;
         wallet.totalInvested = 0;
         wallet.totalRealizedPnL = 0;
         wallet.allPositions = [];
@@ -378,7 +389,7 @@ export async function POST(request: Request) {
         return successResponse({
           status: 'ok',
           wallet: getWalletSummary(wallet),
-          message: 'Wallet reset to initial state',
+          message: `Wallet reset: ${INITIAL_BALANCE} USDT × ${Object.keys(PolyDivision).length} divisions = ${INITIAL_BALANCE * Object.keys(PolyDivision).length} total`,
           timestamp: Date.now(),
         });
       }

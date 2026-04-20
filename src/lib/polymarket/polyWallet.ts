@@ -8,7 +8,13 @@ import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PolyWallet');
 
-const INITIAL_BALANCE = 1000; // Per division
+// FAZA 4.1 (2026-04-20) — Capital reduction per operator directive.
+// Was 1000/division → 16 × 1000 = 16,000 total (user observed in UI).
+// Now 100/division → 16 × 100 = 1,600 total. Env override lets operator
+// retune without redeploy. Note: a change here is a NO-OP on wallets
+// already hydrated from Supabase — a POST /api/v2/polymarket action=reset_wallet
+// call is required to rebuild state with the new INITIAL_BALANCE.
+export const INITIAL_BALANCE = Number.parseInt(process.env.POLY_INITIAL_BALANCE_PER_DIVISION ?? '100', 10);
 const POLYMARKET_FEE = 0.02; // 2% on winning bets
 const MAX_POSITIONS_PER_DIVISION = 5;
 const MAX_BET_PCT_OF_DIVISION_BALANCE = 0.1; // 10%
