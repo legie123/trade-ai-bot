@@ -1,6 +1,6 @@
 # Graphify Digest (session-start TL;DR)
 
-_age=0d · 1571 nodes · 3024 edges · 99 communities_
+_age=0d · 1571 nodes · 3025 edges · 101 communities_
 
 **Top god-nodes (by degree):**
 - `GladiatorStore` (26)
@@ -10,10 +10,10 @@ _age=0d · 1571 nodes · 3024 edges · 99 communities_
 - `PolyWsClient` (17)
 
 **Top communities (by size):**
-- C0: 184 nodes → [[_COMMUNITY_Community 0]]
-- C1: 111 nodes → [[_COMMUNITY_Community 1]]
+- C0: 188 nodes → [[_COMMUNITY_Community 0]]
+- C1: 96 nodes → [[_COMMUNITY_Community 1]]
 - C2: 94 nodes → [[_COMMUNITY_Community 2]]
-- C3: 78 nodes → [[_COMMUNITY_Community 3]]
+- C3: 83 nodes → [[_COMMUNITY_Community 3]]
 - C4: 75 nodes → [[_COMMUNITY_Community 4]]
 
 **Full map:** [[GRAPH_REPORT|GRAPH_REPORT.md]] (~5.5k tokens)
