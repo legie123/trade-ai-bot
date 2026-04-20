@@ -1,15 +1,17 @@
 /**
  * /polymarket/audit — scan history index + brain scorecard (server component).
  *
- * FAZA 3.5 (scan table) + FAZA 3.11 (L5 brain scorecard).
+ * FAZA 3.5 (scan table) + FAZA 3.11 (L5 brain scorecard) + FAZA 3.13 (edge watchdog).
  * Tabular view of recent cron scan runs. Clickable rows drill into
  * /polymarket/audit/scans/[runId]. BrainScorecard above the table
- * surfaces realized WR / PF / PnL from settlementHook writes.
+ * surfaces realized WR / PF / PnL from settlementHook writes. WatchdogBadge
+ * on top classifies realized-edge health (UNKNOWN/HEALTHY/DEGRADED/UNHEALTHY).
  */
 import Link from 'next/link';
 import { listRecentScans } from '@/lib/polymarket/scanHistory';
 import { ExplainCard } from '@/components/explain/ExplainCard';
 import { BrainScorecard } from '@/components/polymarket/BrainScorecard';
+import { WatchdogBadge } from '@/components/polymarket/WatchdogBadge';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +64,9 @@ export default async function AuditIndexPage() {
 
   return (
     <div>
+      {/* FAZA 3.13 — Edge Watchdog (realized-edge verdict, shadow by default) */}
+      <WatchdogBadge />
+
       {/* FAZA 3.11 — Brain scorecard (L5 LEARN, settled PnL) */}
       <BrainScorecard />
 
