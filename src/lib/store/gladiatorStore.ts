@@ -284,7 +284,12 @@ class GladiatorStore {
     const wr = process.env.WILSON_SORT_OFF === '1' ? wrRaw : wrLB;
     const pf = Math.min(100, Math.max(0, g.stats.profitFactor * 25));
     const dd = Math.max(0, 100 - g.stats.maxDrawdown * 3);
-    return wr * 0.40 + pf * 0.35 + dd * 0.25;
+    const rawScore = wr * 0.40 + pf * 0.35 + dd * 0.25;
+    // C21: same profitability tier as recalibrateRanks — prevents inversion in getLeaderboard().
+    const pfRaw = g.stats.profitFactor;
+    const tierBonus = process.env.RANKING_TIER_OFF === '1' ? 0
+      : (pfRaw >= 1.3 ? 200 : pfRaw >= 1.0 ? 100 : 0);
+    return rawScore + tierBonus;
   }
 
   public updateGladiatorStats(id: string, tick: { pnlPercent: number, isWin: boolean }) {
