@@ -8,6 +8,7 @@ import { PolyMarket, PolyDivision } from './polyTypes';
 import { createLogger } from '@/lib/core/logger';
 import { supabase } from '@/lib/store/db';
 import { sentimentAgent } from '@/lib/v2/intelligence/agents/sentimentAgent';
+import { recordLlmCall } from './llmCostTracker';
 
 const log = createLogger('PolySyndicate');
 
@@ -179,7 +180,11 @@ async function getArchitectView(
 ): Promise<ArchitectOpinion> {
   const prompt = buildArchitectPrompt(market, division);
 
-  const response = await callLLM(prompt, 'architect');
+  const response = await callLLM(prompt, 'architect', {
+    marketId: market.id,
+    titleHint: market.title,
+    division,
+  });
   if (!response) {
     return fallbackArchitectOpinion(market);
   }
@@ -206,7 +211,11 @@ async function getOracleView(
 ): Promise<OracleOpinion> {
   const prompt = buildOraclePrompt(market, division);
 
-  const response = await callLLM(prompt, 'oracle');
+  const response = await callLLM(prompt, 'oracle', {
+    marketId: market.id,
+    titleHint: market.title,
+    division,
+  });
   if (!response) {
     return fallbackOracleOpinion(market);
   }
@@ -335,16 +344,23 @@ async function hashPrompt(prompt: string, role: string): Promise<string> {
   return `${role}:${prompt.substring(0, 100)}`.replace(/\s+/g, '_');
 }
 
+// ─── Attribution context — optional, threaded to per-market cost tracker ─
+interface CallAttr {
+  marketId?: string;
+  titleHint?: string;
+  division?: string;
+}
+
 // ─── Call LLM with parallel providers + cache ─────────
-async function callLLM(prompt: string, role: string): Promise<string | null> {
-  // 1. Try cache first
+async function callLLM(prompt: string, role: string, attr?: CallAttr): Promise<string | null> {
+  // 1. Try cache first — cache hits cost $0, not attributed to markets.
   const cached = await getCachedLLMResponse(prompt, role);
   if (cached) return cached;
 
   // 2. Run DeepSeek and OpenAI in parallel
   const results = await Promise.allSettled([
-    DEEPSEEK_KEY() ? callDeepSeek(prompt, role) : Promise.resolve(null),
-    OPENAI_KEY() ? callOpenAI(prompt, role) : Promise.resolve(null),
+    DEEPSEEK_KEY() ? callDeepSeek(prompt, role, attr) : Promise.resolve(null),
+    OPENAI_KEY() ? callOpenAI(prompt, role, attr) : Promise.resolve(null),
   ]);
 
   const deepseekRes = results[0]?.status === 'fulfilled' ? results[0].value : null;
@@ -359,7 +375,7 @@ async function callLLM(prompt: string, role: string): Promise<string | null> {
 
   // 3. Fall back to Gemini if both providers failed
   if (GEMINI_KEY()) {
-    const geminiRes = await callGemini(prompt, role);
+    const geminiRes = await callGemini(prompt, role, attr);
     if (geminiRes) {
       await saveCachedLLMResponse(prompt, role, geminiRes);
       return geminiRes;
@@ -371,7 +387,8 @@ async function callLLM(prompt: string, role: string): Promise<string | null> {
 }
 
 // ─── DeepSeek API call ────────────────────────────────
-async function callDeepSeek(prompt: string, role: string): Promise<string | null> {
+async function callDeepSeek(prompt: string, role: string, attr?: CallAttr): Promise<string | null> {
+  const model = 'deepseek-chat';
   try {
     const res = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
@@ -380,7 +397,7 @@ async function callDeepSeek(prompt: string, role: string): Promise<string | null
         'Authorization': `Bearer ${DEEPSEEK_KEY()}`,
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model,
         messages: [
           {
             role: 'system',
@@ -401,7 +418,20 @@ async function callDeepSeek(prompt: string, role: string): Promise<string | null
     }
 
     const data = await res.json();
-    return data.choices?.[0]?.message?.content || null;
+    const content = data.choices?.[0]?.message?.content || null;
+    const tokens = Number(data.usage?.total_tokens ?? 0);
+    if (content && attr?.marketId) {
+      recordLlmCall({
+        marketId: attr.marketId,
+        role,
+        provider: 'deepseek',
+        model,
+        tokens,
+        titleHint: attr.titleHint,
+        division: attr.division,
+      });
+    }
+    return content;
   } catch (err) {
     log.debug('DeepSeek call failed', { error: String(err) });
     return null;
@@ -409,7 +439,8 @@ async function callDeepSeek(prompt: string, role: string): Promise<string | null
 }
 
 // ─── OpenAI API call ──────────────────────────────────
-async function callOpenAI(prompt: string, role: string): Promise<string | null> {
+async function callOpenAI(prompt: string, role: string, attr?: CallAttr): Promise<string | null> {
+  const model = 'gpt-4o-mini';
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -418,7 +449,7 @@ async function callOpenAI(prompt: string, role: string): Promise<string | null> 
         'Authorization': `Bearer ${OPENAI_KEY()}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model,
         messages: [
           {
             role: 'system',
@@ -439,7 +470,20 @@ async function callOpenAI(prompt: string, role: string): Promise<string | null> 
     }
 
     const data = await res.json();
-    return data.choices?.[0]?.message?.content || null;
+    const content = data.choices?.[0]?.message?.content || null;
+    const tokens = Number(data.usage?.total_tokens ?? 0);
+    if (content && attr?.marketId) {
+      recordLlmCall({
+        marketId: attr.marketId,
+        role,
+        provider: 'openai',
+        model,
+        tokens,
+        titleHint: attr.titleHint,
+        division: attr.division,
+      });
+    }
+    return content;
   } catch (err) {
     log.debug('OpenAI call failed', { error: String(err) });
     return null;
@@ -447,10 +491,11 @@ async function callOpenAI(prompt: string, role: string): Promise<string | null> 
 }
 
 // ─── Gemini API call ──────────────────────────────────
-async function callGemini(prompt: string, role: string): Promise<string | null> {
+async function callGemini(prompt: string, role: string, attr?: CallAttr): Promise<string | null> {
+  const model = 'gemini-1.5-flash';
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY()}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -475,7 +520,20 @@ async function callGemini(prompt: string, role: string): Promise<string | null> 
     }
 
     const data = await res.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    const tokens = Number(data.usageMetadata?.totalTokenCount ?? 0);
+    if (content && attr?.marketId) {
+      recordLlmCall({
+        marketId: attr.marketId,
+        role,
+        provider: 'gemini',
+        model,
+        tokens,
+        titleHint: attr.titleHint,
+        division: attr.division,
+      });
+    }
+    return content;
   } catch (err) {
     log.debug('Gemini call failed', { error: String(err) });
     return null;
