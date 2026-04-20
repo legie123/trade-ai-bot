@@ -323,6 +323,15 @@ export async function flushPendingSyncs(timeoutMs = 5000): Promise<{ flushed: nu
   const start = Date.now();
   let flushed = 0;
 
+  // C16 (2026-04-20): Force-flush dirty gladiator store BEFORE awaiting pending saves.
+  // flushIfDirty() was defined (C5 Batch 1) but NEVER called — debounce timer pending
+  // at flush time would fire AFTER Cloud Run freezes process → gladiator stats lost.
+  // Must be called before pendingSaves await because it CREATES the save promise.
+  try {
+    const { gladiatorStore } = await import('@/lib/store/gladiatorStore');
+    gladiatorStore.flushIfDirty();
+  } catch { /* gladiatorStore not loaded yet — fine, nothing dirty */ }
+
   // FAZA A FIX 2026-04-19: Wait for in-flight saveGladiatorsToDb IIFEs FIRST.
   // They're awaiting the mutex → haven't called syncToCloud yet → syncTasks empty.
   // Without this wait, drain loop exits immediately and Cloud Run freezes before write lands.
