@@ -12,10 +12,34 @@
 //
 // CACHE: 60s. Scraper calls every 30s; halving DB cost is worth it.
 // FAIL-SOFT: never throws. On error, gauges keep their last value.
+//
+// 2026-04-20 PATCH (Pool-Gauges-Fresh):
+//   ROOT CAUSE: gladiatorStore is a process-singleton with no auto-refresh.
+//   Cloud Run instance that handled the scrape was started before forge
+//   added gladiators 15..28 → store cache held only the 14 INITIAL_STRATEGIES
+//   seeded at cold-boot. Other endpoints (diag/graveyard) hit different
+//   instances or had been refreshed via mutations and saw 27 alive.
+//   Symptom: arena_pool_size=14 but real alive=27; popWeighted gauges all 0
+//   (because totalTrades summed across stale 14 had different distribution
+//   than the real 27).
+//
+//   FIX: Before computing gauges, force-refresh the in-process db cache
+//   from Supabase (refreshGladiatorsFromCloud) and reload the singleton
+//   store (gladiatorStore.reloadFromDb). Both are idempotent and fail-soft.
+//   Cost: 1 SELECT json_store every 60s per instance — negligible.
+//
+//   ASSUMPTIONS that, if broken, invalidate this fix:
+//     1. supabase.from('json_store').select('data').eq('id','gladiators') is
+//        the canonical source of truth for the alive pool.
+//     2. reloadFromDb does not race against in-flight writes to the store.
+//        (gladiatorMutex in db.ts protects the write side; reload is a read.)
+//     3. dbInitialized is true by the time /api/metrics is first hit.
+//        If not, refresh is a no-op and we keep stale gauges (acceptable).
 // ============================================================
 import { getPopulationStats } from '@/lib/v2/gladiators/graveyard';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { metrics, safeSet } from '@/lib/observability/metrics';
+import { refreshGladiatorsFromCloud } from '@/lib/store/db';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -24,6 +48,17 @@ let inFlight: Promise<void> | null = null;
 
 async function compute(): Promise<void> {
   try {
+    // POOL-GAUGES-FRESH 2026-04-20: pull cloud → propagate to store.
+    // Both calls are best-effort; failures are swallowed inside the helpers
+    // and we still proceed with whatever the local cache currently has.
+    try {
+      await refreshGladiatorsFromCloud();
+      gladiatorStore.reloadFromDb();
+    } catch (refreshErr) {
+      // eslint-disable-next-line no-console
+      console.warn('[poolGauges] cloud refresh failed (using stale cache)', (refreshErr as Error).message);
+    }
+
     const alive = gladiatorStore.getGladiators();
     const stats = await getPopulationStats(alive);
 
