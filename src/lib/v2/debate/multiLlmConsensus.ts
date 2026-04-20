@@ -100,7 +100,11 @@ interface ProviderDef {
 const PROVIDERS: ProviderDef[] = [
   { name: 'deepseek', model: 'deepseek-chat',      weight: 1.0, pricePerMtokUsd: 0.21 },
   { name: 'openai',   model: 'gpt-4o-mini',        weight: 1.0, pricePerMtokUsd: 0.375 },
-  { name: 'gemini',   model: 'gemini-1.5-pro',     weight: 1.5, pricePerMtokUsd: 3.75 },
+  // NOTE: gemini-1.5-pro was retired from v1beta (404 NOT_FOUND 2026-04-20).
+  // Switched to gemini-2.5-flash — same responseMimeType JSON output, lower
+  // cost (~10× cheaper), latency ~1.1s. Weight dropped 1.5 → 1.0 because
+  // flash is no longer "premium tier"; all 3 providers now equal-weighted.
+  { name: 'gemini',   model: 'gemini-2.5-flash',   weight: 1.0, pricePerMtokUsd: 0.40 },
 ];
 
 // ─── Types ──────────────────────────────────────────────────
@@ -347,7 +351,8 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<{ text: st
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      // Model kept in sync with PROVIDERS[2].model. If you change one, change both.
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
