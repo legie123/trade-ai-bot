@@ -274,7 +274,12 @@ async function processSyncQueue() {
   if (batch.length === 0) { isSyncing = false; return; }
 
   try {
-    const rows = batch.map(t => ({ id: t.id, data: t.data }));
+    // 2026-04-20: stamp updated_at on every upsert so observability queries
+    // (Grafana freshness checks, stale-blob detectors) don't chase a phantom
+    // staleness when `data` is actually fresh. Column was frozen at 2026-04-17
+    // for the `gladiators` row despite blob being rewritten every tick.
+    const nowIso = new Date().toISOString();
+    const rows = batch.map(t => ({ id: t.id, data: t.data, updated_at: nowIso }));
     const { error } = await supabase.from('json_store').upsert(rows);
     if (error) {
       log.warn(`[SyncQueue] Batch upsert failed (${batch.length} rows): ${error.message}. Falling back to per-record.`);
