@@ -132,17 +132,13 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
     }
     const liveCount = gladiators.filter(g => g.isLive).length;
 
-    if (liveCount >= PROMO_CRITERIA.maxLiveGladiators) {
-      return NextResponse.json({
-        status: 'FULL',
-        reason: `Already ${liveCount}/${PROMO_CRITERIA.maxLiveGladiators} LIVE gladiators`,
-        liveGladiators: gladiators.filter(g => g.isLive).map(g => g.name),
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    // FAZA 3/5 BATCH 2/4 — Refresh global indepSampleCache so gladiatorStore.recalibrateRanks
-    // (next 5min tick) uses fresh dedup counts in its own QW-8 gate.
+    // C17 (2026-04-20): ALWAYS hydrate both caches BEFORE the "FULL" early return.
+    // Without this, when 3 slots are occupied (even by cold-start-preserved wrong
+    // gladiators), caches stay empty forever → recalibrateRanks stays in cold-start
+    // mode → wrong gladiators remain LIVE indefinitely. Vicious cycle.
+    // Cache hydration enables recalibrateRanks to apply the full QW-8 gate on the
+    // next tick, which will correctly demote unqualified gladiators and promote
+    // qualified ones — breaking the cold-start persistence loop.
     try {
       await gladiatorStore.refreshIndependentSampleSizes();
     } catch (refreshErr) {
@@ -151,12 +147,30 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
 
     // C15 (2026-04-20): Also refresh Walk-Forward cache so recalibrateRanks doesn't
     // fail-close wfClean=false and demote a just-promoted gladiator.
-    // Without this, auto-promote populates indepSampleCache but leaves wfCache empty,
-    // causing recalibrateRanks to immediately reset isLive=false.
     try {
       await gladiatorStore.runWalkForwardGate();
     } catch (wfErr) {
       console.warn(`[AUTO-PROMOTE] runWalkForwardGate failed: ${String(wfErr)}`);
+    }
+
+    // Force recalibrateRanks NOW with hydrated caches — don't wait for next tick.
+    // This immediately applies QW-8 gate: demotes unqualified LIVE gladiators,
+    // opens slots for qualified ones on the next auto-promote run.
+    gladiatorStore.recalibrateRanks();
+
+    // Re-count after recalibration — slots may have opened.
+    const postRecalLiveCount = gladiators.filter(g => g.isLive).length;
+
+    if (postRecalLiveCount >= PROMO_CRITERIA.maxLiveGladiators) {
+      return NextResponse.json({
+        status: 'FULL',
+        reason: `Already ${postRecalLiveCount}/${PROMO_CRITERIA.maxLiveGladiators} LIVE gladiators (post-recalibration)`,
+        liveGladiators: gladiators.filter(g => g.isLive).map(g => g.name),
+        cacheHydrated: true,
+        preRecalLive: liveCount,
+        postRecalLive: postRecalLiveCount,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     // 3. Find promotion candidates (PHANTOM with enough INDEPENDENT samples).
