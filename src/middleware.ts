@@ -15,6 +15,7 @@ const PUBLIC_PREFIXES = [
   '/api/auth',             // Login endpoint
   '/api/health',            // Top-level health proxy (Cloud Scheduler)
   '/api/v2/health',        // Health check (monitoring)
+  '/api/v2/diag/',         // FAZA 3 Batch 2: read-only diagnostic endpoints (regime, sentiment-flag, cpcv, graveyard, meta-label, sizing-mult, wash)
   '/api/diagnostics/',     // Health diagnostics (master, credits, signal-quality)
   '/api/a2a/',             // A2A routes have SWARM_TOKEN auth
   '/api/cron',             // Has CRON_SECRET auth
