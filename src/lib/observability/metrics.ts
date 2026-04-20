@@ -45,6 +45,9 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   polymarketBrainStatus: client.Gauge<string>;
   polymarketBrainSignalStatus: client.Gauge<string>;
   polymarketLastScanTimestamp: client.Gauge<string>;
+  polymarketDecisionBudgetUsedUsd: client.Gauge<string>;
+  polymarketDecisionBudgetCapUsd: client.Gauge<string>;
+  polymarketDecisionBudgetVerdict: client.Gauge<string>;
 } };
 
 function build() {
@@ -300,6 +303,34 @@ function build() {
     registers: [registry],
   });
 
+  // FAZA 3.16 (2026-04-20) — Decision Budget Gate gauges.
+  // Shadow-only: gauges expose 24h LLM spend vs configured cap so operators can
+  // tune thresholds before wiring `canMakeDecision()` into polySyndicate.
+  //
+  // Verdict encoding (higher=worse; aligned with brain_status + settlement_status):
+  //   0 = unknown   1 = allow   2 = throttle   3 = block
+  //
+  // Source: getDecisionBudgetState() → pulls from llmCostTracker snapshot (local
+  // per-instance 24h window). For fleet-wide caps aggregate via PromQL:
+  //   increase(tradeai_llm_cost_dollars_total[24h])
+  //
+  // Kill: DECISION_BUDGET_ENABLED=0 → verdict forced to 'allow' (gauge = 1).
+  const polymarketDecisionBudgetUsedUsd = new client.Gauge({
+    name: 'tradeai_polymarket_decision_budget_used_usd',
+    help: 'Rolling 24h LLM spend tracked by llmCostTracker in USD (per-instance).',
+    registers: [registry],
+  });
+  const polymarketDecisionBudgetCapUsd = new client.Gauge({
+    name: 'tradeai_polymarket_decision_budget_cap_usd',
+    help: 'Configured daily LLM budget cap in USD (DECISION_BUDGET_USD_DAY).',
+    registers: [registry],
+  });
+  const polymarketDecisionBudgetVerdict = new client.Gauge({
+    name: 'tradeai_polymarket_decision_budget_verdict',
+    help: 'Decision Budget Gate verdict code (0=unknown, 1=allow, 2=throttle, 3=block). Higher=worse.',
+    registers: [registry],
+  });
+
   return {
     registry,
     tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
@@ -316,6 +347,8 @@ function build() {
     livePositionOldestAgeSec, livePositionOverMaxHold,
     polymarketBrainStatus, polymarketBrainSignalStatus,
     polymarketLastScanTimestamp,
+    polymarketDecisionBudgetUsedUsd, polymarketDecisionBudgetCapUsd,
+    polymarketDecisionBudgetVerdict,
   };
 }
 

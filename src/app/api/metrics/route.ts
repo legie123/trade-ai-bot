@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { registry } from '@/lib/observability/metrics';
 import { refreshPoolGauges } from '@/lib/observability/poolGauges';
 import { refreshBrainStatusGauges } from '@/lib/observability/brainStatusGauges';
+import { refreshDecisionBudgetGauges } from '@/lib/observability/decisionBudgetGauges';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,8 @@ export async function GET(req: NextRequest) {
   await refreshPoolGauges();
   // FAZA 3.15 — Brain Status composite gauge (30s aggregator cache, fail-soft).
   await refreshBrainStatusGauges();
+  // FAZA 3.16 — Decision Budget Gate gauges (15s classifier cache, fail-soft).
+  await refreshDecisionBudgetGauges();
 
   const body = await registry.metrics();
   return new NextResponse(body, {
