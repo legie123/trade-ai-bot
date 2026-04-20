@@ -1,13 +1,15 @@
 /**
- * /polymarket/audit — scan history index (server component).
+ * /polymarket/audit — scan history index + brain scorecard (server component).
  *
- * FAZA 3.5. Tabular view of recent cron scan runs: opps found,
- * bets placed, decisions logged, correlation status. Clickable rows
- * drill into /polymarket/audit/scans/[runId].
+ * FAZA 3.5 (scan table) + FAZA 3.11 (L5 brain scorecard).
+ * Tabular view of recent cron scan runs. Clickable rows drill into
+ * /polymarket/audit/scans/[runId]. BrainScorecard above the table
+ * surfaces realized WR / PF / PnL from settlementHook writes.
  */
 import Link from 'next/link';
 import { listRecentScans } from '@/lib/polymarket/scanHistory';
 import { ExplainCard } from '@/components/explain/ExplainCard';
+import { BrainScorecard } from '@/components/polymarket/BrainScorecard';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +62,9 @@ export default async function AuditIndexPage() {
 
   return (
     <div>
+      {/* FAZA 3.11 — Brain scorecard (L5 LEARN, settled PnL) */}
+      <BrainScorecard />
+
       <h1 style={{ fontSize: 20, letterSpacing: '0.1em', fontWeight: 800, marginBottom: 24, color: C.text }}>
         SCAN HISTORY · LAST {scans.length}
       </h1>
