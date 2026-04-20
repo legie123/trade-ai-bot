@@ -15,6 +15,7 @@ import {
   initDB,
 } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
+import { metrics, safeSet } from '@/lib/observability/metrics';
 
 const log = createLogger('PolyState');
 
@@ -151,7 +152,37 @@ export function getLastScans(): Record<string, unknown> {
 
 export function setLastScans(results: Record<string, unknown>): void {
   lastScanResults = results;
-  // Fire-and-forget persist to Supabase; debounced by syncToCloud queue.
+
+  // FAZA 4.2 — persistence observability. Expose per-division scan freshness
+  // as a Prometheus gauge so Grafana can compute age = time() - gauge_value.
+  // Stale age + nonzero persist-failure counter = multi-instance cache drift
+  // or Supabase write path broken (root cause of "opportunities disappear").
+  // ASUMPȚII (rup → gauge wrong, NOT financial):
+  //   - Each scan result has `scannedAt: ISO string` (confirmed in marketScanner.ts:79).
+  //   - If scannedAt missing/invalid → fall back to "now" so operator sees fresh
+  //     (alternative: skip; chose fresh to avoid false-stale alerts on shape drift).
+  //   - Division keys in Record match PolyDivision enum members (low-cardinality label).
+  try {
+    const nowSec = Date.now() / 1000;
+    for (const [division, scan] of Object.entries(results)) {
+      const scannedAt = (scan as { scannedAt?: string } | null)?.scannedAt;
+      let ts = nowSec;
+      if (typeof scannedAt === 'string') {
+        const parsed = new Date(scannedAt).getTime();
+        if (Number.isFinite(parsed)) ts = parsed / 1000;
+      }
+      safeSet(metrics.polymarketLastScanTimestamp, ts, { division });
+    }
+  } catch (e) {
+    // Observability must never break persistence. Log + continue.
+    log.warn('lastScan timestamp gauge update failed', { error: String(e) });
+  }
+
+  // Fire-and-forget persist to Supabase. savePolyLastScansToCloud returns void
+  // (wraps debounced syncToCloud queue); persist failures are observable via
+  // Cloud Logging warnings from processSyncQueue, not here. The timestamp
+  // gauge above is the primary signal: if it stays fresh but UI shows lastScans=0
+  // → multi-instance cache drift (instance that persisted ≠ instance that reads).
   try { savePolyLastScansToCloud(results); } catch { /* non-fatal */ }
 }
 

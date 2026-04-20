@@ -44,6 +44,7 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   livePositionOverMaxHold: client.Gauge<string>;
   polymarketBrainStatus: client.Gauge<string>;
   polymarketBrainSignalStatus: client.Gauge<string>;
+  polymarketLastScanTimestamp: client.Gauge<string>;
 } };
 
 function build() {
@@ -284,6 +285,21 @@ function build() {
     registers: [registry],
   });
 
+  // FAZA 4.2 — POLY SECTOR scan freshness observability for "opportunities disappear" diagnosis.
+  // Root hypothesis: Cloud Run multi-instance in-memory lastScanResults drifts — the
+  // instance that just scanned advances this gauge while sibling instances serving GET
+  // /api/v2/polymarket status report lastScans=0. Gauge is set at setLastScans() time;
+  // age derived in PromQL as time() - value. Persist-failure counter is NOT added in this
+  // batch because savePolyLastScansToCloud is fire-and-forget (wraps debounced syncToCloud);
+  // failures are already logged by processSyncQueue. Future batch (4.3) can add a
+  // per-sync-target error counter if needed.
+  const polymarketLastScanTimestamp = new client.Gauge({
+    name: 'tradeai_polymarket_lastscan_timestamp_seconds',
+    help: 'Unix epoch seconds of last completed Polymarket scan per division (per-instance). Age = time() - value. Stale = UI loses opportunities.',
+    labelNames: ['division'] as const,
+    registers: [registry],
+  });
+
   return {
     registry,
     tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
@@ -299,6 +315,7 @@ function build() {
     polymarketSettlementStatus,
     livePositionOldestAgeSec, livePositionOverMaxHold,
     polymarketBrainStatus, polymarketBrainSignalStatus,
+    polymarketLastScanTimestamp,
   };
 }
 
