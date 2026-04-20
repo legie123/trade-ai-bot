@@ -6,6 +6,11 @@ import {
 import { addSyndicateAudit } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import { omegaExtractor } from '../superai/omegaExtractor';
+// FAZA 3 Batch 9/9 — Multi-LLM consensus shadow hook.
+// Fire-and-forget at the tail of getConsensus. runConsensus early-returns
+// when LLM_CONSENSUS_ENABLED=off (default). Sample/rate/budget gates all
+// live inside runConsensus. No effect on primary — pure observational.
+import { runConsensus as runLlmConsensusShadow, type ConsensusInput as LlmConsensusInput } from '@/lib/v2/debate/multiLlmConsensus';
 
 const log = createLogger('DualMaster');
 
@@ -448,6 +453,48 @@ export class DualMasterConsciousness {
       opinions: [architectOpinion, oracleOpinion],
       hallucinationReport,
     } as unknown as Parameters<typeof addSyndicateAudit>[0]);
+
+    // ─── FAZA 3 Batch 9/9 — Multi-LLM shadow consensus (fire-and-forget) ───
+    // Hook contract:
+    //   - Pure observational. consensus.finalDirection is ALREADY decided here.
+    //   - runConsensus early-returns when LLM_CONSENSUS_ENABLED=off (default).
+    //   - Sample/rate/budget/circuit-breaker gating handled inside runConsensus.
+    //   - No await, no throw propagation — primary path unaffected by ANY failure.
+    //   - Skip when finalDirection=FLAT (consensus only accepts LONG|SHORT).
+    // ASSUMPTIONS (if broken, invalidate the shadow data):
+    //   (1) consensus.weightedConfidence is the right "primaryConfidence" to gate on
+    //   (2) marketData carries the indicator block under expected keys (best-effort)
+    //   (3) Cloud Run env LLM_CONSENSUS_ENABLED=shadow at deploy-time
+    if (consensus.finalDirection !== 'FLAT') {
+      try {
+        const md = marketData as Record<string, unknown>;
+        const indRaw = (md.indicators ?? {}) as Record<string, unknown>;
+        const num = (k: string): number | undefined => {
+          const v = indRaw[k];
+          return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+        };
+        const shadowInput: LlmConsensusInput = {
+          symbol: String(gladiatorDnaContext.symbol || md.symbol || 'UNKNOWN'),
+          proposedDirection: consensus.finalDirection as 'LONG' | 'SHORT',
+          primaryConfidence: Math.max(0, Math.min(1, consensus.weightedConfidence)),
+          regime: typeof md.regime === 'string' ? md.regime : null,
+          indicators: {
+            rsi: num('rsi'),
+            vwapDeviation: num('vwapDeviation'),
+            volumeZ: num('volumeZ'),
+            fundingRate: num('fundingRate'),
+            sentimentScore: num('sentimentScore'),
+            momentumScore: num('momentumScore'),
+          },
+        };
+        // Fire-and-forget; never await, never throw.
+        void runLlmConsensusShadow(shadowInput).catch(() => {
+          /* shadow telemetry is best-effort — silence errors */
+        });
+      } catch {
+        /* defensive: never let shadow input prep break primary */
+      }
+    }
 
     // ─── Cache store ───
     _consensusCache.set(cKey, { result: consensus, ts: Date.now() });
