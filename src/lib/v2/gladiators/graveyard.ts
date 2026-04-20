@@ -267,7 +267,36 @@ export async function getPopulationStats(
 
   const aliveAvgWinRate = aliveWRCount > 0 ? aliveWRSum / aliveWRCount : 0;
   const killedAvgWinRate = killedWRCount > 0 ? killedWRSum / killedWRCount : 0;
-  const selectionLiftPct = aliveAvgWinRate - popWeightedWinRate * 100;
+
+  // ──────────────────────────────────────────────────────────────
+  // 2026-04-20 SELECTION-LIFT FIX — unit-consistent formula.
+  //
+  // LEGACY (broken): lift = aliveSimpleMean - popWeighted*100
+  //   - aliveSimpleMean unweighted (dominated by zero-init fresh gladiators)
+  //   - popWeighted trade-weighted (dominated by killed cohort)
+  //   - Apples-to-pears → ghost negative lift whenever Forge fires
+  //
+  // WEIGHTED (correct): lift = aliveWeightedWR - killedWeightedWR (both *100)
+  //   - Positive → alive pool outperforms the killed cohort (good Butcher calls)
+  //   - Negative → Butcher killed gladiators that would have outperformed survivors
+  //   - Zero-trade fresh gladiators contribute zero weight in BOTH terms → no bias
+  //
+  // ASSUMPTIONS (if broken, revisit):
+  //   - Gladiator.stats.winRate is 0..100 and truly reflects trade-realized WR
+  //   - killed cohort is representative (graveyard table populated post-Batch 5/9)
+  //   - sample size gating happens at consumer side; we expose raw number
+  //
+  // KILL-SWITCH: SELECTION_LIFT_MODE=legacy restores old formula for rollback.
+  //              Default is 'weighted' (fix active).
+  // ──────────────────────────────────────────────────────────────
+  const aliveWeightedWR = aliveTrades > 0 ? aliveWinsWeighted / aliveTrades : 0; // 0..1
+  const killedWeightedWR = killedTrades > 0 ? killedWinsWeighted / killedTrades : 0; // 0..1
+
+  const liftMode = (process.env.SELECTION_LIFT_MODE || 'weighted').toLowerCase();
+  const selectionLiftPct =
+    liftMode === 'legacy'
+      ? aliveAvgWinRate - popWeightedWinRate * 100 // legacy broken formula
+      : (aliveWeightedWR - killedWeightedWR) * 100; // weighted apples-to-apples
 
   return {
     alive: aliveNonOmega.length,
