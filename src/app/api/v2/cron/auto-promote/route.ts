@@ -368,11 +368,10 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
 
     // 4. Evaluate each candidate with Monte Carlo
     const slotsAvailable = PROMO_CRITERIA.maxLiveGladiators - liveCount;
-    // AUDIT FIX BUG-3: Use canonical readinessScore for promotion ranking
+    // C21: Rank promotion candidates by PF*WR (direct profitability metric).
+    // Prior: used stale readinessScore from DB which ignored tier logic.
     candidates.sort((a, b) => {
-      const scoreA = (a.stats as unknown as Record<string, number>).readinessScore ?? (a.stats.profitFactor * a.stats.winRate);
-      const scoreB = (b.stats as unknown as Record<string, number>).readinessScore ?? (b.stats.profitFactor * b.stats.winRate);
-      return scoreB - scoreA;
+      return (b.stats.profitFactor * b.stats.winRate) - (a.stats.profitFactor * a.stats.winRate);
     });
 
     let promoted = 0;

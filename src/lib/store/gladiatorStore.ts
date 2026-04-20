@@ -256,15 +256,16 @@ class GladiatorStore {
     return this.gladiators;
   }
 
-  // AUDIT FIX BUG-3: Single canonical ranking function using readinessScore
+  // AUDIT FIX BUG-3: Single canonical ranking function.
+  // C21 (2026-04-20): ALWAYS use computeQuickScore (has profitability tier).
+  // Prior: used stale readinessScore from DB/gladiatorMetrics → tier logic bypassed.
   public getLeaderboard(): Gladiator[] {
     this.ensureLoaded();
     return this.gladiators
       .filter(g => !g.isOmega)
       .sort((a, b) => {
-        // Primary: readinessScore (composite metric)
-        const scoreA = (a.stats as Record<string, unknown>).readinessScore as number ?? this.computeQuickScore(a);
-        const scoreB = (b.stats as Record<string, unknown>).readinessScore as number ?? this.computeQuickScore(b);
+        const scoreA = this.computeQuickScore(a);
+        const scoreB = this.computeQuickScore(b);
         if (scoreB !== scoreA) return scoreB - scoreA;
         // Tiebreaker: profitFactor × winRate
         return (b.stats.profitFactor * b.stats.winRate) - (a.stats.profitFactor * a.stats.winRate);
