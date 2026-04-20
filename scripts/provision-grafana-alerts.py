@@ -133,6 +133,31 @@ RULES = [
         ),
         runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
     ),
+    # FAZA 3/4 2026-04-20 — zombie survey alert. gauge = |alive ∩ graveyard|.
+    # Steady-state 0. Non-zero > 15 for 2h indicates either a persistence race
+    # (saveGladiatorsToDb write swallowed post-response) or a false-positive
+    # graveyard write (Butcher killed something still alive in pool). 2h gate
+    # filters out the ~60s eventual-consistency window where Butcher has just
+    # fired but the pool refresh hasn't propagated to all Cloud Run instances.
+    build_rule(
+        uid="tradeai-arena-zombie",
+        title="TRADE AI — Arena zombie gladiators (persistence race)",
+        expr='max(tradeai_arena_zombie_count{service="trade-ai"})',
+        threshold=15,
+        for_duration="2h",
+        severity="warning",
+        summary="Arena zombie count >15 for 2+ hours — persistence race suspected",
+        description=(
+            "tradeai_arena_zombie_count measures gladiators present in BOTH the alive pool "
+            "and the graveyard (killed_at set). Expected steady-state: 0. "
+            "A sustained non-zero > 15 for 2h indicates Butcher's saveGladiatorsToDb write "
+            "is being dropped (Cloud Run CPU-throttles post-response) OR a false-positive "
+            "graveyard insert. Investigate: check logs for `[Butcher] skipRemoteMerge` vs "
+            "`[MERGE-SEED] Blacklist blocked` frequency, then audit executeWeaklings call-sites "
+            "for any new fire-and-forget invoker lacking `flushPendingSyncs` at tail."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
 ]
 
 
