@@ -42,6 +42,8 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   polymarketSettlementStatus: client.Gauge<string>;
   livePositionOldestAgeSec: client.Gauge<string>;
   livePositionOverMaxHold: client.Gauge<string>;
+  polymarketBrainStatus: client.Gauge<string>;
+  polymarketBrainSignalStatus: client.Gauge<string>;
 } };
 
 function build() {
@@ -254,6 +256,34 @@ function build() {
     registers: [registry],
   });
 
+  // FAZA 3.15 (2026-04-20) — Brain Status composite gauge.
+  // Promotes the getBrainStatus() rollup into a Prometheus number so Grafana
+  // alerting can page oncall the moment the brain flips to RED.
+  //
+  // Encoding (aligned with polymarket_settlement_status for operator memory):
+  //   UNKNOWN = 0   (cache-miss / kill-switch / all sub-probes UNKNOWN)
+  //   GREEN   = 1   (ready to place money)
+  //   AMBER   = 2   (degraded — watch, don't page)
+  //   RED     = 3   (broken — page)
+  //
+  // Alert rules (recommended):
+  //   tradeai_polymarket_brain_status >= 3                  for 5m → sev-2 page
+  //   tradeai_polymarket_brain_status == 2                  for 30m → sev-3 warn
+  //   max_over_time(brain_status[1h]) == 0                  → probe dead
+  //
+  // Kill-switch: BRAIN_STATUS_METRICS_ENABLED=0 → writer no-op (gauge stale).
+  const polymarketBrainStatus = new client.Gauge({
+    name: 'tradeai_polymarket_brain_status',
+    help: 'Brain Status composite verdict (0=unknown, 1=green, 2=amber, 3=red). Strictest-wins over edge/settlement/feed/ops signals.',
+    registers: [registry],
+  });
+  const polymarketBrainSignalStatus = new client.Gauge({
+    name: 'tradeai_polymarket_brain_signal_status',
+    help: 'Per-signal status code feeding the Brain Status rollup (0=unknown, 1=green, 2=amber, 3=red).',
+    labelNames: ['source'] as const, // source=edge|settlement|feed|ops
+    registers: [registry],
+  });
+
   return {
     registry,
     tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
@@ -268,6 +298,7 @@ function build() {
     polymarketSettlementSettled, polymarketSettlementPending,
     polymarketSettlementStatus,
     livePositionOldestAgeSec, livePositionOverMaxHold,
+    polymarketBrainStatus, polymarketBrainSignalStatus,
   };
 }
 
