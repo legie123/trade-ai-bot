@@ -575,13 +575,26 @@ class GladiatorStore {
       //   indepSampleCache populated by refreshIndependentSampleSizes(). Fail-closed if cache
       //   empty → treat as 0 samples → no LIVE promotion until refresh runs.
       // WF fail-closed (require explicit pass) blocks OVERFIT gladiators.
+      // C15 (2026-04-20): If indepSampleCache has NEVER been populated (cold start),
+      // preserve DB-persisted isLive state instead of fail-closing all to false.
+      // This prevents cold-start demotion of legitimately promoted gladiators.
+      // Once refreshIndependentSampleSizes() runs (via auto-promote cron), the
+      // cache is populated and the full QW-8 gate resumes normal fail-closed behavior.
+      const cacheHydrated = this.indepSampleCache.size > 0;
+
       scored.forEach((entry, index) => {
         entry.gladiator.rank = index + 1;
-        // BATCH 2/4: use indepSampleCache if populated, else fall back to totalTrades minus 1
-        // (fail-closed: if never refreshed, indep defaults to 0 → no promotion).
-        const indepTT = this.indepSampleCache.has(entry.gladiator.id)
-          ? (this.indepSampleCache.get(entry.gladiator.id) ?? 0)
-          : 0;
+
+        if (!cacheHydrated) {
+          // Cold start: preserve existing isLive from DB state.
+          // Only enforce rank <= 3 (hard structural limit).
+          if (index >= 3) entry.gladiator.isLive = false;
+          // Else: keep entry.gladiator.isLive as loaded from DB.
+          return;
+        }
+
+        // Normal path: full QW-8 gate with independent sample cache.
+        const indepTT = this.indepSampleCache.get(entry.gladiator.id) ?? 0;
         const meetsThreshold = indepTT >= 50
           && entry.gladiator.stats.winRate >= 40
           && entry.gladiator.stats.profitFactor >= 1.3;
