@@ -564,17 +564,17 @@ class GladiatorStore {
       scored.sort((a, b) => b.score - a.score);
 
       // Assign ranks and live status
-      // INSTITUTIONAL RULE (QW-8 tightening, 2026-04-18):
-      //   tt>=50, WR>=58%, PF>=1.3, WF fail-closed.
-      // FAZA 3/5 BATCH 2/4 (2026-04-19): `tt` now = INDEPENDENT SAMPLE SIZE, not raw totalTrades.
-      //   Raw totalTrades is wash-contaminated (1 signal × N gladiators = N rows, 1 real sample).
+      // INSTITUTIONAL RULE (QW-8):
+      //   tt>=50, WR>=40%, PF>=1.3, WF fail-closed.
+      // C14 (2026-04-20): WR gate 58% → 40%. With asymmetric TP=1.0%/SL=-0.5% (2:1 R:R),
+      // break-even WR = ~33%, PF≥1.3 requires WR≥39.4%. Old 58% was calibrated for
+      // symmetric ±0.5% and made LIVE promotion mathematically impossible with current TP/SL.
+      // Top gladiator (PF=1.69, WR=41.4%, tt=382) was blocked despite being clearly profitable.
+      // PF≥1.3 remains the primary profitability gate; WR≥40% is a sanity floor.
+      // FAZA 3/5 BATCH 2/4 (2026-04-19): `tt` = INDEPENDENT SAMPLE SIZE (wash-deduped).
       //   indepSampleCache populated by refreshIndependentSampleSizes(). Fail-closed if cache
       //   empty → treat as 0 samples → no LIVE promotion until refresh runs.
-      // Rationale: sub TP/SL simetric ±0.5%, gate anterior (20/45/1.1) lăsa ~41% false-positives
-      // pe strategii pur-noise (Binomial math: p(WR>=55%|n=20,p=0.5)=0.412). Pragurile 58/1.3 + n=50
-      // reduc false-positives sub ~10%. WF fail-closed (require explicit pass) elimină gap-ul
-      // 20-29 trades unde wfCache era gol și trecea prin !wfResult.
-      // Asumpție critică: TP/SL asimetric TP=+1.0 / SL=-0.5 (QW-11). Dacă se schimbă → recalibrează.
+      // WF fail-closed (require explicit pass) blocks OVERFIT gladiators.
       scored.forEach((entry, index) => {
         entry.gladiator.rank = index + 1;
         // BATCH 2/4: use indepSampleCache if populated, else fall back to totalTrades minus 1
@@ -583,7 +583,7 @@ class GladiatorStore {
           ? (this.indepSampleCache.get(entry.gladiator.id) ?? 0)
           : 0;
         const meetsThreshold = indepTT >= 50
-          && entry.gladiator.stats.winRate >= 58
+          && entry.gladiator.stats.winRate >= 40
           && entry.gladiator.stats.profitFactor >= 1.3;
         // Walk-Forward gate: fail-closed — require explicit WF pass, not absence.
         const wfResult = this.wfCache.get(entry.gladiator.id);
