@@ -8,7 +8,7 @@
 // ============================================================
 import { NextRequest, NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
-import { initDB, saveGladiatorsToDb, refreshGladiatorsFromCloud } from '@/lib/store/db';
+import { initDB, saveGladiatorsToDb, refreshGladiatorsFromCloud, flushPendingSyncs } from '@/lib/store/db';
 import { engageKillSwitch, disengageKillSwitch, getKillSwitchState, resetDailyTriggers } from '@/lib/core/killSwitch';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { watchdogPing, getWatchdogState } from '@/lib/core/watchdog';
@@ -356,7 +356,25 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
           });
           // Store is authoritative after Butcher+Forge — skip remote merge
           // (would re-introduce freshly-purged IDs if 300s debounce elapsed).
-          saveGladiatorsToDb(gladiatorStore.getGladiators(), { skipRemoteMerge: true });
+          // FIX 2026-04-20 (ZOMBIE-PURGE): await + flushPendingSyncs.
+          // Root cause: saveGladiatorsToDb is fire-and-forget; Cloud Run
+          // CPU-throttles the process after the HTTP response, so the
+          // syncToCloud queue never drained. json_store 'gladiators' last
+          // updated 2026-04-17 (3+ days stale) → cold-start reloadFromDb
+          // resurrected freshly-killed gladiators. Now we await the save
+          // and explicitly drain pending syncs before returning.
+          // Kill-switch: ARENA_ROTATION_FLUSH_MS env (default 8000); set 0
+          // to skip flush (revert to fire-and-forget) without code change.
+          await saveGladiatorsToDb(gladiatorStore.getGladiators(), { skipRemoteMerge: true });
+          const _flushTimeout = Number(process.env.ARENA_ROTATION_FLUSH_MS ?? 8000);
+          if (_flushTimeout > 0) {
+            const flushResult = await flushPendingSyncs(_flushTimeout);
+            if (flushResult.timedOut) {
+              log.warn(`[arena:rotation] flushPendingSyncs timed out after ${_flushTimeout}ms — zombies may reappear on cold-start`);
+            } else {
+              log.info(`[arena:rotation] flush: ${flushResult.flushed} tasks drained`);
+            }
+          }
 
           const leaderboard = gladiators.map(g => ({
             name: g.name, tt: g.stats.totalTrades, wr: g.stats.winRate, pf: g.stats.profitFactor, isLive: g.isLive,
