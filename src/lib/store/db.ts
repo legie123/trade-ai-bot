@@ -229,6 +229,19 @@ export async function initDB() {
 
     log.info('Supabase database initialized from cloud Postgres tables');
 
+    // FAZA 4/4 2026-04-20 — populate seed-revive blacklist BEFORE reloadFromDb
+    // so mergeSeedMissing sees accurate state on the first merge. Without this
+    // await, cold-start would revive recently-killed seeds until the first
+    // background refresh (fire-and-forget from poolGauges) completes ~60s later.
+    try {
+      const { refreshSeedBlacklist } = await import('@/lib/store/seedBlacklist');
+      await refreshSeedBlacklist(true);
+    } catch (blErr) {
+      log.warn('[initDB] seedBlacklist refresh failed (safe default: no filtering)', {
+        error: (blErr as Error).message,
+      });
+    }
+
     // FIX: gladiatorStore singleton seeds defaults on import (before initDB runs).
     // Force-reload from now-populated cache so isLive/status match Supabase.
     try {

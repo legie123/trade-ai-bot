@@ -40,6 +40,7 @@ import { getPopulationStats } from '@/lib/v2/gladiators/graveyard';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { metrics, safeSet } from '@/lib/observability/metrics';
 import { refreshGladiatorsFromCloud } from '@/lib/store/db';
+import { refreshSeedBlacklist } from '@/lib/store/seedBlacklist';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -57,6 +58,17 @@ async function compute(): Promise<void> {
     } catch (refreshErr) {
       // eslint-disable-next-line no-console
       console.warn('[poolGauges] cloud refresh failed (using stale cache)', (refreshErr as Error).message);
+    }
+
+    // FAZA 4/4 2026-04-20 — piggy-back seed blacklist refresh on the 60s TTL.
+    // Warm instances get a free update without a dedicated cron. refresh has
+    // its own 5min TTL internally so the actual Supabase read runs at most
+    // every 5min per instance. Failure is silent (fail-soft — safe default
+    // is "no filter", i.e. seeds revive, which was pre-fix behavior).
+    try {
+      await refreshSeedBlacklist();
+    } catch {
+      /* swallowed — blacklist module already logs internally */
     }
 
     const alive = gladiatorStore.getGladiators();
