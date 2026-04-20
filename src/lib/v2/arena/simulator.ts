@@ -13,6 +13,9 @@ const log = createLogger('ArenaSimulator');
 // so cron shadow-DNA path (src/app/api/cron/route.ts) uses identical values.
 import { netPnlFromGross } from '@/lib/v2/fees/feeModel';
 
+// AUDIT-R2 FAZA B (2026-04-20) — direction-gate drop Counter for arena telemetry.
+import { metrics, safeInc } from '@/lib/observability/metrics';
+
 // Delegate to global price cache (MEXC → DexScreener → CoinGecko)
 async function getCachedPrice(symbol: string): Promise<number> {
   const normalizedSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
@@ -107,10 +110,12 @@ export class ArenaSimulator {
       const isShort = norm === 'SELL' || norm === 'SHORT';
       if (isLong && process.env.DIRECTION_LONG_DISABLED === '1') {
         log.warn(`[Combat Engine] AUDIT-R2 arena gate: dropping LONG ${routedSignal.symbol} (DIRECTION_LONG_DISABLED=1) — no phantom distribution`);
+        safeInc(metrics.arenaGateDrops, { direction: 'LONG', reason: 'disabled_long' });
         return;
       }
       if (isShort && process.env.DIRECTION_SHORT_DISABLED === '1') {
         log.warn(`[Combat Engine] AUDIT-R2 arena gate: dropping SHORT ${routedSignal.symbol} (DIRECTION_SHORT_DISABLED=1) — no phantom distribution`);
+        safeInc(metrics.arenaGateDrops, { direction: 'SHORT', reason: 'disabled_short' });
         return;
       }
     }

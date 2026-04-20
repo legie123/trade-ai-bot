@@ -48,6 +48,7 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   polymarketDecisionBudgetUsedUsd: client.Gauge<string>;
   polymarketDecisionBudgetCapUsd: client.Gauge<string>;
   polymarketDecisionBudgetVerdict: client.Gauge<string>;
+  arenaGateDrops: client.Counter<string>;
 } };
 
 function build() {
@@ -331,6 +332,24 @@ function build() {
     registers: [registry],
   });
 
+  // AUDIT-R2 FAZA B (2026-04-20) — Arena direction gate drop counter.
+  // Counts phantom distributions blocked at ArenaSimulator.distributeSignalToGladiators
+  // because pool-wide DIRECTION_{LONG,SHORT}_DISABLED policy is active. Distinct from
+  // dualMaster LONG→FLAT rewrites: this one runs in the PAPER/simulator layer.
+  //
+  // Labels:
+  //   direction = LONG | SHORT  (the dropped signal's normalized direction)
+  //   reason    = disabled_long | disabled_short  (which kill-switch fired)
+  //
+  // Kill: DIRECTION_GATE_ENABLED=0 bypasses both branches → this counter stays flat.
+  //       Per-direction: DIRECTION_LONG_DISABLED=0 / DIRECTION_SHORT_DISABLED=0.
+  const arenaGateDrops = new client.Counter({
+    name: 'tradeai_arena_gate_drops_total',
+    help: 'Signals dropped by arena direction gate before phantom distribution (AUDIT-R2 FAZA B).',
+    labelNames: ['direction', 'reason'] as const,
+    registers: [registry],
+  });
+
   return {
     registry,
     tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
@@ -349,6 +368,7 @@ function build() {
     polymarketLastScanTimestamp,
     polymarketDecisionBudgetUsedUsd, polymarketDecisionBudgetCapUsd,
     polymarketDecisionBudgetVerdict,
+    arenaGateDrops,
   };
 }
 
