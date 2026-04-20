@@ -15,7 +15,7 @@ import { emitPromotion } from '@/lib/v2/alerts/eventHub';
 import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
 // FAZA A BATCH 1: domain metrics hook
-import { metrics, safeInc } from '@/lib/observability/metrics';
+import { metrics, safeInc, safeObserve } from '@/lib/observability/metrics';
 // FAZA A BATCH 3: cron run/duration instrumentation
 import { instrumentCron } from '@/lib/observability/cronInstrument';
 
@@ -231,7 +231,7 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
               ? 'WASH_FAIL_CLOSED: cross-gladiator score fetch failed'
               : `wash overlap=${wash.maxOverlapRatio.toFixed(3)} |corr|=${absCorr.toFixed(3)} peer=${wash.washPeerId ?? 'none'} (thr ovr>${washCfg.maxOverlap}, |corr|>${washCfg.pnlCorrThreshold})`;
 
-            // Always emit telemetry (shadow ring + structured log) regardless of mode.
+            // Always emit telemetry (shadow ring + structured log + histograms) regardless of mode.
             washRingPush({
               ts: Date.now(),
               gladiatorId: g.id,
@@ -242,6 +242,12 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
               blocked: wouldBlock,
               reason: reasonText,
             });
+            // FAZA 3/5 BATCH 4/4 — persist distribution to Prometheus for 30-day Grafana calibration.
+            // Skip the fail-closed sentinel (overlap=1.0, corr=1.0) so it doesn't pollute buckets.
+            if (!failedClosed) {
+              safeObserve(metrics.washOverlap, wash.maxOverlapRatio, { mode: washCfg.mode });
+              safeObserve(metrics.washAbsCorr, absCorr, { mode: washCfg.mode });
+            }
             console.log(JSON.stringify({
               tag: '[WASH-SHADOW]',
               mode: washCfg.mode,

@@ -33,6 +33,8 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   llmCalls: client.Counter<string>;
   cronRuns: client.Counter<string>;
   cronDuration: client.Histogram<string>;
+  washOverlap: client.Histogram<string>;
+  washAbsCorr: client.Histogram<string>;
 } };
 
 function build() {
@@ -167,6 +169,26 @@ function build() {
     registers: [registry],
   });
 
+  // FAZA 3/5 BATCH 4/4 (2026-04-20) — Wash Guard distribution histograms.
+  // Buckets cover [0,1] with extra resolution near typical danger zone (>0.5).
+  // Calibration via Grafana: histogram_quantile(0.95, rate(tradeai_wash_overlap_bucket[24h]))
+  // → if p95 << current threshold (0.70), thresholds are too permissive.
+  const washBuckets = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0];
+  const washOverlap = new client.Histogram({
+    name: 'tradeai_wash_overlap',
+    help: 'Distribution of cross-gladiator wash overlap ratio per promotion eval (shadow+enforce)',
+    labelNames: ['mode'] as const, // mode=shadow|on
+    buckets: washBuckets,
+    registers: [registry],
+  });
+  const washAbsCorr = new client.Histogram({
+    name: 'tradeai_wash_abs_corr',
+    help: 'Distribution of cross-gladiator wash |Pearson(signed pnl)| per promotion eval (shadow+enforce)',
+    labelNames: ['mode'] as const,
+    buckets: washBuckets,
+    registers: [registry],
+  });
+
   return {
     registry,
     tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
@@ -176,6 +198,7 @@ function build() {
     selectionLiftPct, popWeightedPF, popWeightedWR,
     llmCostDollars, llmCalls,
     cronRuns, cronDuration,
+    washOverlap, washAbsCorr,
   };
 }
 
