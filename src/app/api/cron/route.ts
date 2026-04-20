@@ -481,10 +481,18 @@ export async function GET(request: NextRequest) {
     // BEFORE we return — otherwise stats are lost on instance restart/scale-down.
     const _flushStart = Date.now();
     const { flushPendingSyncs } = await import('@/lib/store/db');
-    const flushResult = await flushPendingSyncs(4000);
+    // RUFLO FAZA 3 / FLUSH-TIMEOUT FIX 2026-04-19:
+    // Observed 3× `flushPendingSyncs timed out` WARN in 30min on rev trade-ai-00541
+    // under Supabase latency spike (80ms → 210ms, 2.6×). Prior 4000ms budget, combined
+    // with C7 FIX #12 save budget = timeoutMs/3 (≤1500ms for 4 trackers), left only
+    // ~2500ms for drain loop — insufficient when Supabase tail latency exceeds 300ms.
+    // Default raised to 8000ms; env-gated rollback via FLUSH_TIMEOUT_MS=4000.
+    // ASUMPȚIE: cron interval > FLUSH_TIMEOUT_MS (default cron 60s ⇒ OK for 8s/15s).
+    const _flushTimeout = parseInt(process.env.FLUSH_TIMEOUT_MS || '8000', 10);
+    const flushResult = await flushPendingSyncs(_flushTimeout);
     _p2Timing.flush = Date.now() - _flushStart;
     if (flushResult.timedOut) {
-      log.warn('flushPendingSyncs timed out — some data may not have persisted');
+      log.warn(`flushPendingSyncs timed out after ${_flushTimeout}ms — some data may not have persisted`);
     }
 
     // AUDIT-R3.1 AUTO-RECONCILE — rebuild per-gladiator stats from battles ledger.
