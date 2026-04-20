@@ -579,7 +579,24 @@ class GladiatorStore {
         const ddPenalty = process.env.DD_PENALTY_MODE === 'legacy'
           ? (g.stats.maxDrawdown > 15 ? -20 : g.stats.maxDrawdown > 10 ? -10 : 0)
           : (ddNorm > 8 ? -20 : ddNorm > 5 ? -10 : 0);
-        const score = (wrScore * 0.4) + (pfScore * 0.35) + recencyBonus + tradeBonus + ddPenalty;
+        const rawScore = (wrScore * 0.4) + (pfScore * 0.35) + recencyBonus + tradeBonus + ddPenalty;
+
+        // C21 (2026-04-20): Profitability tier prevents scoring inversion.
+        // PRIOR BUG: gladiators with PF<1.0 and tt=20 (low DD by lack of exposure)
+        // outranked PF=1.36/tt=546 veterans. A strategy that LOSES money should never
+        // rank above one that MAKES money, regardless of DD or sample size.
+        //
+        // Tier system (additive offset ensures strict ordering):
+        //   PF >= 1.3 (institutional): +200 (always top tier)
+        //   PF >= 1.0 (break-even+):   +100 (middle tier)
+        //   PF <  1.0 (losing):           +0 (bottom tier)
+        //
+        // Within each tier, rawScore determines ordering normally.
+        // Kill-switch: RANKING_TIER_OFF=1 reverts to raw score only.
+        const pf = g.stats.profitFactor;
+        const tierBonus = process.env.RANKING_TIER_OFF === '1' ? 0
+          : (pf >= 1.3 ? 200 : pf >= 1.0 ? 100 : 0);
+        const score = rawScore + tierBonus;
         return { gladiator: g, score };
       });
 
