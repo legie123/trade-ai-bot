@@ -8,6 +8,8 @@ import { routeSignal } from '@/lib/router/signalRouter';
 import { signalStore } from '@/lib/store/signalStore';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 import { initDB } from '@/lib/store/db';
+// P2-6b (2026-04-20): pull cid from AsyncLocalStorage scope set by cron wrap.
+import { getCurrentCid } from '@/lib/observability/correlationId';
 
 const log = createLogger('MemeApi');
 const manager = ManagerVizionar.getInstance();
@@ -26,7 +28,10 @@ export async function GET() {
     if (result.signals && result.signals.length > 0) {
       for (const rawSig of result.signals) {
         if (rawSig.signal !== 'NEUTRAL') {
-          const routed = routeSignal(rawSig);
+          // P2-6b: stamp cid onto rawSig BEFORE routeSignal so RoutedSignal (extends Signal)
+          // inherits it. cid flows to processSignal → dualMaster → syndicate_audits.
+          const rawWithCid = { ...rawSig, correlationId: getCurrentCid() || undefined };
+          const routed = routeSignal(rawWithCid);
           signalStore.addSignal(routed);
           ArenaSimulator.getInstance().distributeSignalToGladiators(routed);
           

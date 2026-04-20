@@ -9,6 +9,9 @@ import { routeSignal } from '@/lib/router/signalRouter';
 import { signalStore } from '@/lib/store/signalStore';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 import { initDB } from '@/lib/store/db';
+// P2-6b (2026-04-20): pull cid from AsyncLocalStorage scope set by cron wrap.
+// Outside cron scope (direct HTTP call) returns '' → signal stamped with no cid.
+import { getCurrentCid } from '@/lib/observability/correlationId';
 
 const log = createLogger('BtcSignalsRoute');
 const manager = ManagerVizionar.getInstance();
@@ -67,6 +70,9 @@ export async function GET() {
            timestamp: analysis.timestamp,
            source: 'BTC Scout V2',
            message: rawSig.reason,
+           // P2-6b: cid flows signal → processSignal → dualMaster → syndicate_audits.
+           // '' (kill-switch off) normalized to undefined so the field is omitted.
+           correlationId: getCurrentCid() || undefined,
          };
 
          const routed = routeSignal(signalPayload);

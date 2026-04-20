@@ -29,6 +29,13 @@ export interface Signal {
   source: string;
   message?: string;
   confidence?: number;
+  /**
+   * End-to-end audit trail ID — P2-6b (2026-04-20).
+   * Stamped by arena route handler from `x-correlation-id` header.
+   * Flows: arena → processSignal → getConsensus → addSyndicateAudit → DB.
+   * ASUMPȚIE: absence ("" / undefined) = kill-switch off; persistență best-effort.
+   */
+  correlationId?: string;
 }
 
 export type SignalType = 'BUY' | 'SELL' | 'LONG' | 'SHORT' | 'ALERT' | 'NEUTRAL';

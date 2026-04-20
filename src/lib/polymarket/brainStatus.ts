@@ -36,7 +36,6 @@ import { getEdgeWatchdogState, EdgeVerdict } from './edgeWatchdog';
 import { probeSettlementHealth, HealthStatus as SettlementStatus } from './settlementHealth';
 import { getFeedHealth, FeedStatus } from './feedHealth';
 import { getOpsFlagsSnapshot, Risk } from './opsFlags';
-import { logBrainStatusSnapshot } from './brainStatusLog';
 
 export type BrainVerdict = 'GREEN' | 'AMBER' | 'RED' | 'UNKNOWN';
 
@@ -272,10 +271,6 @@ export async function getBrainStatus(): Promise<BrainStatus> {
     cacheHit: false,
   };
   cache = { status, expiresAt: now + envInt('BRAIN_STATUS_CACHE_MS', 30_000) };
-  // Batch 3.18 — fire-and-forget snapshot log for regression detection.
-  // Only fresh computes are persisted; cache-hits are suppressed inside
-  // logBrainStatusSnapshot(). Kill-switch BRAIN_STATUS_LOG_ENABLED=0 default.
-  logBrainStatusSnapshot(status);
   return status;
 }
 

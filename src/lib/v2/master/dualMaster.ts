@@ -11,6 +11,9 @@ import { omegaExtractor } from '../superai/omegaExtractor';
 // when LLM_CONSENSUS_ENABLED=off (default). Sample/rate/budget gates all
 // live inside runConsensus. No effect on primary — pure observational.
 import { runConsensus as runLlmConsensusShadow, type ConsensusInput as LlmConsensusInput } from '@/lib/v2/debate/multiLlmConsensus';
+// FAZA 7c (2026-04-20) — SHORT LIVE conditional gate helper.
+// Pure function; reads env at call time so kill-switches flip without redeploy.
+import { shouldAdmitShortLive } from '@/lib/v2/arena/directionGate';
 
 const log = createLogger('DualMaster');
 
@@ -444,14 +447,22 @@ export class DualMasterConsciousness {
     // ─── OMEGA: Hallucination Defense ───
     const hallucinationReport = this.runHallucinationDefense(architectOpinion, oracleOpinion, prompt);
     
-    const consensus = this.arbitrate(architectOpinion, oracleOpinion, hallucinationReport);
+    const consensus = this.arbitrate(architectOpinion, oracleOpinion, hallucinationReport, { symbol });
     
-    // Single audit write with hallucination report attached
+    // Single audit write with hallucination report attached.
+    // P2-6b (2026-04-20): correlation_id pulled from marketData (stamped by arena
+    // route from x-correlation-id header). Absence = kill-switch off; DB column
+    // left NULL. addSyndicateAudit persists to `correlation_id` column for
+    // end-to-end query in Supabase (idx_audits_cid covers this).
+    const cidForAudit = typeof (marketData as Record<string, unknown>).correlationId === 'string'
+      ? ((marketData as Record<string, unknown>).correlationId as string)
+      : '';
     addSyndicateAudit({
       ...consensus,
       symbol: (marketData as Record<string, unknown>).symbol || 'UNKNOWN_ASSET',
       opinions: [architectOpinion, oracleOpinion],
       hallucinationReport,
+      correlation_id: cidForAudit || null,
     } as unknown as Parameters<typeof addSyndicateAudit>[0]);
 
     // ─── FAZA 3 Batch 9/9 — Multi-LLM shadow consensus (fire-and-forget) ───
@@ -554,7 +565,15 @@ export class DualMasterConsciousness {
     };
   }
 
-  private arbitrate(architect: MasterOpinion, oracle: MasterOpinion, hallucinationReport: HallucinationReport): DualConsensus {
+  private arbitrate(
+    architect: MasterOpinion,
+    oracle: MasterOpinion,
+    hallucinationReport: HallucinationReport,
+    // FAZA 7c (2026-04-20): ctx carries the symbol required by the SHORT LIVE
+    // conditional gate (session+symbol whitelist). Optional — legacy callers
+    // without the ctx param still work; gate simply treats symbol='UNKNOWN'.
+    ctx?: { symbol?: string },
+  ): DualConsensus {
     let finalDirection: 'LONG' | 'SHORT' | 'FLAT' = 'FLAT';
     let finalConfidence = 0;
 
@@ -616,6 +635,44 @@ export class DualMasterConsciousness {
         log.warn(`[DualMaster] AUDIT-R2 gate active: LONG → FLAT (DIRECTION_LONG_DISABLED=1, was confidence=${(finalConfidence * 100).toFixed(1)}%)`);
         finalDirection = 'FLAT';
         finalConfidence = 0;
+      }
+    }
+
+    // FAZA 7c (2026-04-20) — SHORT LIVE conditional gate (session + symbol whitelist).
+    // Scope: ONLY the LIVE arbitration path (this function). PAPER/phantom lane is
+    // ArenaSimulator.distributeSignalToGladiators — untouched, keeps generating samples
+    // for out-of-sample validation of the edge found in FAZA 6.
+    //
+    // Design choice: this block runs AFTER the AUDIT-R2 LONG→FLAT rewrite so that
+    // (1) LONG is already neutralized upstream; (2) the gate only sees genuine SHORT
+    // candidates. If finalDirection is already FLAT (either branch), gate is a no-op.
+    //
+    // Default config: SHORT_LIVE_GATE_ENABLED unset → shouldAdmitShortLive returns
+    // {admit:true, reason:'gate_off'} and the block below is a pure pass-through.
+    // Shadow mode (SHORT_LIVE_GATE_SHADOW=1, default when enabled) increments the
+    // `shadow_*` blocked counter but does NOT rewrite direction — observation only.
+    //
+    // ASSUMPTIONS (broken → gate must be re-evaluated, not removed):
+    //   (B1) Symbol is reliably propagated via ctx.symbol. When UNKNOWN (upstream
+    //        context lost), gate treats it as opaque — empty symbol whitelist
+    //        passes, non-empty whitelist misses → counted, shadow still admits.
+    //   (B2) DIRECTION_LONG_DISABLED remains canonical LONG kill. If LONG is ever
+    //        re-enabled, this gate does NOT extend to LONG — deliberately SHORT-only
+    //        scope so empirical edges are not conflated.
+    if (finalDirection === 'SHORT') {
+      const gate = shouldAdmitShortLive(ctx?.symbol, Date.now());
+      if (!gate.admit) {
+        log.warn(
+          `[DualMaster] FAZA 7c gate active: SHORT ${gate.symbol} → FLAT ` +
+          `(reason=${gate.reason}, session=${gate.session}, was confidence=${(finalConfidence * 100).toFixed(1)}%)`,
+        );
+        finalDirection = 'FLAT';
+        finalConfidence = 0;
+      } else if (gate.reason.startsWith('shadow_would_block')) {
+        log.info(
+          `[DualMaster] FAZA 7c gate shadow: SHORT ${gate.symbol} would be blocked ` +
+          `(reason=${gate.reason}, session=${gate.session}) — no enforcement (SHADOW mode)`,
+        );
       }
     }
 

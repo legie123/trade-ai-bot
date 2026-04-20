@@ -233,18 +233,33 @@ export async function GET(request: NextRequest) {
         const { GET: runBtc } = await import('@/app/api/btc-signals/route');
         const { GET: runSolana } = await import('@/app/api/solana-signals/route');
         const { GET: runMeme } = await import('@/app/api/meme-signals/route');
-        // CRITICAL: await scanners — Cloud Run freezes process after response.
-        const _st = Date.now();
-        const _tBtc = Date.now();
-        const pBtc = runBtc().finally(() => { _p2Timing.scanBtc = Date.now() - _tBtc; });
-        const _tSol = Date.now();
-        const pSol = runSolana().finally(() => { _p2Timing.scanSol = Date.now() - _tSol; });
-        const _tMeme = Date.now();
-        const pMeme = runMeme().finally(() => { _p2Timing.scanMeme = Date.now() - _tMeme; });
-        const scanResults = await Promise.allSettled([pBtc, pSol, pMeme]);
-        _p2Timing.scanners = Date.now() - _st;
-        _p2Timing.scannersWithImport = Date.now() - _t;
-        log.info(`[Market Scanners] completed`, { btc: scanResults[0].status, sol: scanResults[1].status, meme: scanResults[2].status, ms: _p2Timing.scanners });
+        // ─── P2-6b (2026-04-20) — cid mint + AsyncLocalStorage wrap ───
+        // Cron→scanner GETs are IN-PROCESS imports (no HTTP headers flow). We mint a
+        // fresh cid per tick and wrap the scanner promises in cidContext.run so
+        // getCurrentCid() inside btc/solana/meme-signals → processSignal → dualMaster
+        // stamps correlation_id on syndicate_audits for end-to-end audit trail.
+        // ASUMPȚIE: Cloud Run gen2 single-threaded Node runtime per tick —
+        // AsyncLocalStorage isolates context per async scope. Cross-tick contamination
+        // impossible (each tick is its own GET handler invocation).
+        // KILL-SWITCH: CORRELATION_ID_ENABLED=off → newCorrelationId returns '';
+        // cidContext.run('', ...) still executes; downstream `if (cid)` guards make
+        // cid propagation a no-op. Safe to disable without code change.
+        const { newCorrelationId, cidContext } = await import('@/lib/observability/correlationId');
+        const cid = newCorrelationId();
+        await cidContext.run(cid, async () => {
+          // CRITICAL: await scanners — Cloud Run freezes process after response.
+          const _st = Date.now();
+          const _tBtc = Date.now();
+          const pBtc = runBtc().finally(() => { _p2Timing.scanBtc = Date.now() - _tBtc; });
+          const _tSol = Date.now();
+          const pSol = runSolana().finally(() => { _p2Timing.scanSol = Date.now() - _tSol; });
+          const _tMeme = Date.now();
+          const pMeme = runMeme().finally(() => { _p2Timing.scanMeme = Date.now() - _tMeme; });
+          const scanResults = await Promise.allSettled([pBtc, pSol, pMeme]);
+          _p2Timing.scanners = Date.now() - _st;
+          _p2Timing.scannersWithImport = Date.now() - _t;
+          log.info(`[Market Scanners] completed`, { cid, btc: scanResults[0].status, sol: scanResults[1].status, meme: scanResults[2].status, ms: _p2Timing.scanners });
+        });
       })().catch(e => log.error('Failed to trigger background scanners', { error: String(e) })),
 
       // (C) AutoDebug diagnostics (non-blocking, ~100ms)

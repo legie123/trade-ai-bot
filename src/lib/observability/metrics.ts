@@ -50,10 +50,13 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   polymarketDecisionBudgetCapUsd: client.Gauge<string>;
   polymarketDecisionBudgetVerdict: client.Gauge<string>;
   arenaGateDrops: client.Counter<string>;
-  // AUDIT-R5 P0 (2026-04-20) — simulator close-outcome telemetry (SHADOW).
+  // AUDIT-R5 P0 — simulator close-outcome telemetry (SHADOW).
   simulatorCloseOutcomes: client.Counter<string>;
   simulatorHoldTime: client.Histogram<string>;
   simulatorCloseFinalPnl: client.Histogram<string>;
+  // FAZA 7c — SHORT LIVE conditional gate (SHADOW by default).
+  shortLiveGateAdmitted: client.Counter<string>;
+  shortLiveGateBlocked: client.Counter<string>;
 } };
 
 function build() {
@@ -370,32 +373,67 @@ function build() {
     registers: [registry],
   });
 
-  // ─── AUDIT-R5 P0 (2026-04-20) ─────────────────────────────────────────────────
-  // Phantom-trade close-outcome telemetry. SHADOW — pure instrumentation fired at
-  // simulator close loop. Used to retune TP=1.0%/SL=-0.5% against empirical
-  // tp_hit_rate vs sl_hit_rate per direction and against break-even WR math
-  // (WR_BE = (SL + c) / (TP + SL) = 43.3% at c=0.15% round-trip cost).
+  // AUDIT-R5 P0 (2026-04-20) — Simulator close-outcome telemetry (SHADOW).
+  // Purpose: reconstruct the empirical TP-hit vs SL-hit vs MAX_HOLD vs NEUTRAL
+  // distribution per direction so that TP/SL thresholds (currently hardcoded
+  // 1.0% / -0.5% in simulator.ts:186-187) can be re-tuned on empirical MFE/MAE,
+  // not on the 2026-04-18 volatility-split heuristic.
   //
-  // Kill-switch: SIMULATOR_TELEMETRY_ENABLED=0 skips the emission block entirely.
-  // Labels: direction = LONG | SHORT, outcome = tp_hit | sl_hit | max_hold_close | neutral.
+  // Kill-switch: SIMULATOR_TELEMETRY_ENABLED=0 → no observations written.
+  // Costs: ~3 metric writes per closed phantom trade × ~O(100) closes/tick
+  //        → negligible (<1ms per tick at the Prom client pooled layer).
+  //
+  // ASSUMPTIONS (if broken → labels drift from code semantics, NOT PnL impact):
+  //   (1) simulator.ts:246-248 keeps hitTP/hitSL/isExpired boolean semantics
+  //   (2) NEUTRAL_ZONE formula stays |pnl| < |SL|/2 at line 280
+  //   (3) label `direction` stays LONG|SHORT (FLAT never reaches simulator)
   const simulatorCloseOutcomes = new client.Counter({
     name: 'tradeai_simulator_close_outcome_total',
     help: 'Phantom-trade close outcomes by direction. outcome=tp_hit|sl_hit|max_hold_close|neutral. SHADOW — use for TP/SL retune (AUDIT-R5 P0).',
     labelNames: ['direction', 'outcome'] as const,
     registers: [registry],
   });
+
   const simulatorHoldTime = new client.Histogram({
     name: 'tradeai_simulator_hold_time_seconds',
     help: 'Hold time of phantom trade at close, by direction × outcome. Buckets aligned with MAX_HOLD_SEC=3600 upper bound.',
     labelNames: ['direction', 'outcome'] as const,
+    // Buckets: < 1min, 1-5, 5-15, 15-30, 30-60, 60-90, 90-120min.
+    // MAX_HOLD_SEC=3600 forces most closes ≤3600; wider buckets reveal stragglers.
     buckets: [60, 300, 900, 1800, 3600, 5400, 7200],
     registers: [registry],
   });
+
   const simulatorCloseFinalPnl = new client.Histogram({
     name: 'tradeai_simulator_close_final_pnl_pct',
     help: 'Final pnlPercent (gross, clamped to TP/SL on hit) at close, by direction × outcome. Use to verify TP/SL clamping and MAX_HOLD pnl distribution.',
     labelNames: ['direction', 'outcome'] as const,
+    // Buckets spanning realistic PnL% range. TP hits cluster at 1.0, SL at -0.5,
+    // MAX_HOLD closes should distribute around 0 if symmetric alpha, biased if not.
     buckets: [-2, -1, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 2.0],
+    registers: [registry],
+  });
+
+  // FAZA 7c (2026-04-20) — SHORT LIVE conditional gate (session + symbol whitelist).
+  // Tracks dualMaster LIVE-path outcomes only; PAPER/phantom continues unchanged
+  // via ArenaSimulator.distributeSignalToGladiators → that lane is the holdout sampler.
+  //
+  // admitted labels: session=ASIA|LONDON|NEWYORK|OFF, symbol=BTC|SOL|PYTH|...
+  // blocked labels : reason=session|symbol (enforcement) | shadow_session|shadow_symbol (shadow);
+  //                  session + symbol as above.
+  //
+  // Kill: SHORT_LIVE_GATE_ENABLED=0 → counters stay flat (gate_off bypasses Counter inc
+  // by design, so admitted counts remain meaningful as "pass through whitelist").
+  const shortLiveGateAdmitted = new client.Counter({
+    name: 'tradeai_short_live_gate_admitted_total',
+    help: 'SHORT LIVE signals admitted through session+symbol whitelist gate (FAZA 7c).',
+    labelNames: ['session', 'symbol'] as const,
+    registers: [registry],
+  });
+  const shortLiveGateBlocked = new client.Counter({
+    name: 'tradeai_short_live_gate_blocked_total',
+    help: 'SHORT LIVE signals blocked by session+symbol gate; shadow_* variants count but do not enforce (FAZA 7c).',
+    labelNames: ['reason', 'session', 'symbol'] as const,
     registers: [registry],
   });
 
@@ -419,6 +457,7 @@ function build() {
     polymarketDecisionBudgetVerdict,
     arenaGateDrops,
     simulatorCloseOutcomes, simulatorHoldTime, simulatorCloseFinalPnl,
+    shortLiveGateAdmitted, shortLiveGateBlocked,
   };
 }
 
