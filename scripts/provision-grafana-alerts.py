@@ -326,6 +326,44 @@ RULES = [
     # Forge dedup) and degrades scan latency; catching early prevents a
     # cost/perf incident. `for=30m` absorbs the 60s refresh TTL plus forge
     # burst windows.
+    # Batch 3.21 2026-04-20 — LIVE position stuck sentinel. Uses the FAZA 3.12
+    # shadow gauge tradeai_live_position_over_max_hold. Gauge increments when
+    # a LIVE position ages past LIVE_MAX_HOLD_SEC (env-controlled). Currently
+    # shadow-only (doesn't force-close); gauge = count of positions over
+    # threshold. Sustained >= 1 for 30m means either (1) LIVE_MAX_HOLD_SEC was
+    # set aggressively and a real position is aging past it without ops
+    # knowing, or (2) the positions cron that would normally rotate/close is
+    # stuck, or (3) enforcement was never turned on and we're piling up
+    # stale LIVE positions.
+    #
+    # Dormancy: with the current DIRECTION_LONG_DISABLED=1 + no LIVE trading
+    # the gauge is flat at 0 — rule stays inactive until operator re-enables
+    # LIVE + sets LIVE_MAX_HOLD_SEC, at which point it becomes a real signal.
+    # severity=warning because a stuck LIVE position bleeds real capital;
+    # info feels too weak for a money-at-risk condition.
+    build_rule(
+        uid="tradeai-live-position-stuck",
+        title="TRADE AI — LIVE position stuck past max hold",
+        expr='max(tradeai_live_position_over_max_hold{service="trade-ai"})',
+        threshold=1,
+        for_duration="30m",
+        severity="warning",
+        summary="At least one LIVE position has been over max hold for 30+ minutes",
+        description=(
+            "tradeai_live_position_over_max_hold counts LIVE positions aged past "
+            "LIVE_MAX_HOLD_SEC. Sustained >=1 for 30m means a position is stuck and "
+            "shadow enforcement (FAZA 3.12) isn't closing it. Likely causes: "
+            "(1) LIVE_MAX_HOLD_SEC set but enforcement shadow-only (intended); "
+            "(2) positions cron failed or instance crashed before close-side ran; "
+            "(3) exchange order rejected and fallback close logic missing. "
+            "Immediate action: inspect /api/v2/trades (filter status=open) and "
+            "tradeai_live_position_oldest_age_sec gauge to get the aged position's "
+            "symbol, then decide: manual close via exchange UI OR flip "
+            "LIVE_MAX_HOLD_ENFORCE=1 (if implemented). Cross-check with "
+            "tradeai_live_position_oldest_age_sec for exact stall duration."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
     build_rule(
         uid="tradeai-arena-pool-oversized",
         title="TRADE AI — Arena pool size OVERSIZED (rotation imbalance)",
