@@ -40,8 +40,19 @@ def req(method, path, data=None, headers_extra=None):
 
 
 def build_rule(uid, title, expr, threshold, for_duration, severity, summary, description,
-               runbook_url=None):
-    """Standard 3-node rule: A=query, B=reduce(last), C=threshold."""
+               runbook_url=None, operator="gte"):
+    """Standard 3-node rule: A=query, B=reduce(last), C=threshold.
+
+    `operator` selects the threshold evaluator type:
+      - "gte" (default) — fires when value >= threshold (classic upper-bound alert)
+      - "lt"            — fires when value < threshold (for low-water alerts)
+      - "gt"/"lte"      — strict variants, rarely needed
+
+    For composite conditions (e.g. "coverage low AND volume high") prefer
+    PromQL `bool` conjunction inside `expr` + default `gte` threshold=1 — keeps
+    the DAG single-node and easy to debug in Grafana UI. Use `operator="lt"`
+    only when the metric itself is the thing being bound below.
+    """
     return {
         "uid": uid,
         "title": title,
@@ -92,7 +103,7 @@ def build_rule(uid, title, expr, threshold, for_duration, severity, summary, des
                     "expression": "B",
                     "conditions": [
                         {
-                            "evaluator": {"type": "gte", "params": [threshold]},
+                            "evaluator": {"type": operator, "params": [threshold]},
                             "operator": {"type": "and"},
                             "query": {"params": ["B"]},
                             "reducer": {"type": "last", "params": []},
@@ -261,6 +272,78 @@ RULES = [
             "dead-man-switch. Immediate action: `gcloud run services describe trade-ai --region=europe-west1` "
             "to check revision health, then `curl -H \"Authorization: Bearer $METRICS_TOKEN\" "
             "https://trade-ai-3rzn6ry36q-ew.a.run.app/api/metrics | grep polymarket_brain`."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
+    # Batch 3.20 2026-04-20 — data-quality sentinel. Fires when settlement
+    # coverage drops below 50% BUT we also have material acted volume (>50
+    # trades in window). The bool conjunction ensures we don't page during
+    # cold-start / low-volume windows where coverage is arithmetically 0
+    # because denominator is tiny. This catches the silent-writeback-regression
+    # failure mode: positions being acted on but settled_* writeback stops
+    # (supabase drop / CLOB resolve dead / FAZA 3.7 hook fails) — brain-status
+    # settlement signal won't turn RED until acted >=50 AND oldest >30d, so
+    # this alert fills the earlier-warning gap.
+    #
+    # `for=6h` tolerates slow eventual-consistency: settled writes lag acted
+    # writes by design (CLOB resolution window = hours), so short dips below
+    # 0.5 are expected during active trading bursts. A sustained 6h deficit
+    # means the settlement pipeline is genuinely broken.
+    build_rule(
+        uid="tradeai-poly-settlement-coverage-low",
+        title="TRADE AI — Polymarket settlement coverage LOW (data-quality)",
+        expr=(
+            'max((tradeai_polymarket_settlement_coverage{service="trade-ai"} < bool 0.5)'
+            ' * (tradeai_polymarket_settlement_acted{service="trade-ai"} > bool 50))'
+        ),
+        threshold=1,
+        for_duration="6h",
+        severity="warning",
+        summary="Polymarket settlement coverage <50% with acted>50 for 6+ hours",
+        description=(
+            "tradeai_polymarket_settlement_coverage has been < 0.5 while "
+            "tradeai_polymarket_settlement_acted > 50 for 6h. This means bets are "
+            "being placed but settled_* writeback is stalled — the learning loop "
+            "(FAZA 3.7) is starved of real outcomes and will regress to seed stats. "
+            "Likely causes: (1) probeSettlementHealth cron stopped; (2) CLOB resolve "
+            "endpoint dead; (3) Supabase write error on settled_* columns; (4) the "
+            "FAZA 3.7 hook (src/lib/polymarket/settlement/writeback.ts) silently "
+            "throwing. Inspect /api/v2/polymarket/settlement-health (7d+30d windows) "
+            "and grep Cloud Run logs for `[settlement-writeback]` + `[probeSettle]`. "
+            "Kill-switches: POLYMARKET_SETTLE_ENABLED, SETTLEMENT_WRITEBACK_ENABLED."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
+    # Batch 3.20 2026-04-20 — pool-state sentinel. Fires when arena_pool_size
+    # > 50 for 30m. Current steady-state is 14-37 gladiators (validated
+    # post-zombie-purge commit da57168). A jump to 50+ means either:
+    #   (a) Forge is running without Butcher (asymmetric rotation);
+    #   (b) Butcher's saveGladiatorsToDb writes are being dropped (covered
+    #       partially by arena-zombie rule, but that measures killed-but-alive
+    #       mismatch, not total cardinality);
+    #   (c) Someone raised MAX_GLADIATORS env without tuning Butcher.
+    # Pool size > 50 blows up phantomEval cost (O(N^2) DNA similarity in
+    # Forge dedup) and degrades scan latency; catching early prevents a
+    # cost/perf incident. `for=30m` absorbs the 60s refresh TTL plus forge
+    # burst windows.
+    build_rule(
+        uid="tradeai-arena-pool-oversized",
+        title="TRADE AI — Arena pool size OVERSIZED (rotation imbalance)",
+        expr='max(tradeai_arena_pool_size{service="trade-ai"} > bool 50)',
+        threshold=1,
+        for_duration="30m",
+        severity="warning",
+        summary="Arena gladiator pool > 50 for 30+ minutes — rotation imbalance",
+        description=(
+            "tradeai_arena_pool_size has been > 50 for 30m. Steady-state is "
+            "14-37 gladiators. A sustained excess indicates Forge is minting without "
+            "Butcher reaping (arena:rotation manual cadence broken) OR MAX_GLADIATORS "
+            "env was raised without retuning Butcher's killWeak threshold. Impact: "
+            "phantomEval cost grows O(N^2) via Forge dedup DNA similarity (70/30 "
+            "num/cat) — scan latency can double at 60+ gladiators. "
+            "Immediate action: POST /api/v2/admin with {\"command\":\"arena:rotation\"} "
+            "to force a Butcher pass (see memory `Zombie Purge fix 2026-04-20`). "
+            "If pool stays high, check ARENA_ROTATION_FLUSH_MS and FORGE_DEDUP_ENABLED."
         ),
         runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
     ),
