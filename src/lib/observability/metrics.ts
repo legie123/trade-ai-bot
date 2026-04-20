@@ -35,6 +35,11 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   cronDuration: client.Histogram<string>;
   washOverlap: client.Histogram<string>;
   washAbsCorr: client.Histogram<string>;
+  polymarketSettlementCoverage: client.Gauge<string>;
+  polymarketSettlementActed: client.Gauge<string>;
+  polymarketSettlementSettled: client.Gauge<string>;
+  polymarketSettlementPending: client.Gauge<string>;
+  polymarketSettlementStatus: client.Gauge<string>;
 } };
 
 function build() {
@@ -189,6 +194,44 @@ function build() {
     registers: [registry],
   });
 
+  // FAZA 3.9 (2026-04-20) — Polymarket settlement observability gauges.
+  // Source: probeSettlementHealth() in src/lib/polymarket/settlementHealth.ts
+  // Freshness: depends on cadence of /api/v2/polymarket/settlement-health calls
+  //   (manual poll, external alert, or Cloud Scheduler — not automatic).
+  // Status encoding (gauge value):
+  //   unknown=-1 (DB outage / not configured), idle=0 (no activity),
+  //   green=1 (healthy or awaiting resolutions), yellow=2 (stale/suspicious),
+  //   red=3 (settle loop likely broken).
+  const polymarketSettlementCoverage = new client.Gauge({
+    name: 'tradeai_polymarket_settlement_coverage',
+    help: 'Polymarket settlement coverage: settled/acted ratio (0..1) per window.',
+    labelNames: ['window'] as const, // '7d' | '30d'
+    registers: [registry],
+  });
+  const polymarketSettlementActed = new client.Gauge({
+    name: 'tradeai_polymarket_settlement_acted',
+    help: 'Polymarket decisions that triggered a position per window.',
+    labelNames: ['window'] as const,
+    registers: [registry],
+  });
+  const polymarketSettlementSettled = new client.Gauge({
+    name: 'tradeai_polymarket_settlement_settled',
+    help: 'Polymarket acted decisions that reached a settled_at row per window.',
+    labelNames: ['window'] as const,
+    registers: [registry],
+  });
+  const polymarketSettlementPending = new client.Gauge({
+    name: 'tradeai_polymarket_settlement_pending',
+    help: 'Polymarket acted-but-unsettled decisions per window.',
+    labelNames: ['window'] as const,
+    registers: [registry],
+  });
+  const polymarketSettlementStatus = new client.Gauge({
+    name: 'tradeai_polymarket_settlement_status',
+    help: 'Polymarket settlement health status code (unknown=-1, idle=0, green=1, yellow=2, red=3).',
+    registers: [registry],
+  });
+
   return {
     registry,
     tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
@@ -199,6 +242,9 @@ function build() {
     llmCostDollars, llmCalls,
     cronRuns, cronDuration,
     washOverlap, washAbsCorr,
+    polymarketSettlementCoverage, polymarketSettlementActed,
+    polymarketSettlementSettled, polymarketSettlementPending,
+    polymarketSettlementStatus,
   };
 }
 
