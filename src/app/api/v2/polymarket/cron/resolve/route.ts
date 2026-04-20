@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getMarket } from '@/lib/polymarket/polyClient';
 import { recordPolyOutcome, promoteToLive, retireUnderperformer } from '@/lib/polymarket/polyGladiators';
 import { closePosition } from '@/lib/polymarket/polyWallet';
+import { settleDecision } from '@/lib/polymarket/settlementHook';
 import {
   ensureInitialized,
   getWallet,
@@ -113,13 +114,44 @@ export async function GET(request: Request) {
                   : isWin ? 1.00
                   : 0.00;
 
-                closePosition(wallet, position, exitPrice);
+                // FAZA 3.7 — snapshot BEFORE close: closePosition mutates
+                // position.exitPrice/closedAt/pnl AND filters the row out of
+                // allPositions/divBalance.positions. If we read decisionId/
+                // capital AFTER the call, the row is still reachable via the
+                // local `position` reference but this is brittle — capture
+                // eagerly so the settle-hook call is decoupled from wallet
+                // internals.
+                const capital = position.capitalAllocated;
+                const decisionId = position.decisionId;
+                const enteredAtMs = new Date(position.enteredAt).getTime();
+
+                const netPnL = closePosition(wallet, position, exitPrice);
                 positionsClosed++;
+
+                // FAZA 3.7 — write realized PnL back onto polymarket_decisions
+                // so the learning loop can compute REAL WR / PF per division.
+                // Best-effort + fire-and-forget (void): a failed UPDATE must
+                // never block the resolve cron. decisionId is undefined for
+                // positions opened before FAZA 3.7 threading shipped — those
+                // simply stay un-settled (NULL settled_at) which is fine.
+                if (decisionId) {
+                  const pnlPct = capital > 0 ? (netPnL / capital) * 100 : 0;
+                  const horizonMs = Math.max(0, Date.now() - enteredAtMs);
+                  void settleDecision({
+                    decisionId,
+                    pnlPercent: pnlPct,
+                    pnlUsd: netPnL,
+                    outcome,
+                    horizonMs,
+                  });
+                }
 
                 log.info('Position closed', {
                   gladiator: gladiator.id,
                   marketId: bet.marketId,
                   outcome,
+                  netPnL: netPnL.toFixed(2),
+                  hasDecisionId: !!decisionId,
                 });
               }
             }

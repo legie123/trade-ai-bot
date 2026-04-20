@@ -40,6 +40,7 @@ export interface PolyPosition {
   currentValue?: number;
   unrealizedPnL?: number;
   roi?: number; // Return on invested capital
+  decisionId?: string; // FAZA 3.7 — links wallet position to polymarket_decisions row for settlement writeback
 }
 
 export interface PolyWallet {
@@ -192,7 +193,8 @@ export function openPosition(
   direction: 'BUY_YES' | 'BUY_NO',
   entryPrice: number,
   confidence: number,
-  edgeScore: number, // NEW: from scanner, 0-100
+  edgeScore: number, // from scanner, 0-100
+  decisionId?: string, // FAZA 3.7 — link to polymarket_decisions.decision_id for settlement
 ): PolyPosition | null {
   // CRITICAL: Validate paper trading only
   validatePaperTrading(wallet);
@@ -249,6 +251,7 @@ export function openPosition(
     currentValue: betSize,
     unrealizedPnL: 0,
     roi: 0,
+    decisionId, // FAZA 3.7 — undefined when caller cannot resolve decision row
   };
 
   // Update division balance

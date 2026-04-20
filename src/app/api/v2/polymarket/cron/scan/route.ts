@@ -95,8 +95,12 @@ export async function GET(request: Request) {
           // Always log decision (acted or not). Best-effort persist — never blocks.
           // This row is the audit trail for FAZA 3.4 drill-down. runId links
           // the decision to its scan-history row (nullable — scan history is soft).
+          // FAZA 3.7: AWAIT logDecision to capture decisionId (uuid is generated
+          // locally even if INSERT fails, so threading is safe regardless of DB
+          // state). decisionId is attached to the wallet position so resolve
+          // cron can call settleDecision() with realized PnL.
           decisionsLogged++;
-          void logDecision({
+          const logRes = await logDecision({
             gladiator,
             market: opportunity.market,
             decision: correlated,
@@ -104,6 +108,7 @@ export async function GET(request: Request) {
             acted: correlated.shouldAct,
             runId,
           });
+          const decisionId = logRes.decisionId;
 
           // Place phantom bet if correlation says so (replaces old plain CONF_MIN gate).
           // Back-compat: if correlation is disabled, correlated.shouldAct falls back to
@@ -152,6 +157,7 @@ export async function GET(request: Request) {
                 bet.entryPrice,
                 evaluation.confidence,
                 opportunity.edgeScore,
+                decisionId, // FAZA 3.7 — thread uuid so resolve can settle pnl
               );
 
               if (position) {

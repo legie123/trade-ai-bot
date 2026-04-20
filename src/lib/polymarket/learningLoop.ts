@@ -1,32 +1,43 @@
 /**
- * learningLoop.ts — Polymarket adaptation engine (FAZA 3.6).
+ * learningLoop.ts — Polymarket adaptation engine (FAZA 3.6 + 3.7).
  *
- * SCOPE (honest, narrow): we have decisions logged but NOT yet outcomes per
- * decision (would require settlement-time hook on position close — FAZA 3.7).
- * So this module does NOT compute WR per decision. It computes what IS
- * defensible from the data we actually have:
+ * SCOPE:
+ *   FAZA 3.6 layer (always-on, embargo-protected look-ahead safety):
+ *     1. Per-division activity & selection lift
+ *        - decisions logged, acted, acted_rate
+ *        - avg edge_score acted vs skipped (selection lift = discrimination)
+ *     2. Skip-reason histogram per division
+ *     3. Factor drift week-over-week
+ *        - distribution of edge / goldsky / karma / liquidity / final multipliers
+ *     4. Gladiator dormancy
  *
- *   1. Per-division activity & selection lift
- *      - decisions logged, acted, acted_rate
- *      - avg edge_score acted vs skipped (selection lift = how aggressive is
- *        the act-vs-skip discrimination on edge alone)
- *   2. Skip-reason histogram per division
- *      - top reasons we abstain → tells operator which gate is binding
- *   3. Factor drift week-over-week
- *      - distribution of edge / goldsky / karma / liquidity multipliers,
- *        compared against the prior 7d window
- *   4. Gladiator dormancy
- *      - last_decision_at, decisions_7d, acted_7d per gladiator
- *      - operator can decide kill criteria; module does NOT auto-kill
+ *   FAZA 3.7 layer (added 2026-04-20, gated by settlement column presence):
+ *     5. Real WR / PF / avg pnl % per division using settled_* columns
+ *        from polymarket_decisions (populated by settlementHook on close).
+ *        - DOES count CANCEL outcomes separately (refund, not real W/L).
+ *        - PF = sum(wins) / abs(sum(losses)). null when losses = 0.
+ *        - WR = wins / (wins + losses) = wins / nDecisive (excludes cancel).
+ *        - Sample-size gate: n_settled >= 10 before surfacing WR < 50%
+ *          warnings. Below that, signals are noise.
  *
- * EMBARGO: drops decisions from last EMBARGO_HOURS (default 24h) so any
- * downstream settlement layer can catch up. Pure look-ahead protection.
+ * EMBARGO (FAZA 3.6 only): drops decisions from last EMBARGO_HOURS (default
+ * 24h). Settlement stats DO NOT apply embargo because the outcome is already
+ * known (settled_at not null means market closed, look-ahead cannot leak).
  *
  * KILL-SWITCHES
  *   POLY_LEARNING_ENABLED=0 → returns { enabled: false } (endpoint OK)
+ *   (FAZA 3.7 settle-side kill-switch lives in settlementHook.ts)
  *
  * SAFETY: pure read-side. Never writes to polymarket_decisions, gladiators,
  * or wallet. Soft-fails to empty report on Supabase outage.
+ *
+ * ASUMPTII care invalideaza:
+ * - settled_pnl_pct is authoritative for WR math — if settlementHook writes
+ *   gross instead of net, WR stays valid but PF becomes optimistic.
+ * - settled_outcome ∈ {YES, NO, CANCEL}. Other values are treated as
+ *   CANCEL-equivalent (excluded from WR) to fail safe.
+ * - enough settled rows (>= 10) exist before WR is a meaningful signal.
+ *   Below that, we show n but suppress warnings.
  */
 import { createClient } from '@supabase/supabase-js';
 import { createLogger } from '@/lib/core/logger';
@@ -56,6 +67,12 @@ interface DecisionRow {
   acted: boolean;
   skip_reason: string | null;
   decided_at: string;
+  // FAZA 3.7 — settlement columns (nullable until settlementHook writes)
+  settled_at: string | null;
+  settled_pnl_pct: number | null;   // realized PnL as % of capital, net of fees
+  settled_pnl_usd: number | null;   // realized PnL in USD, net of fees
+  settled_outcome: string | null;   // 'YES' | 'NO' | 'CANCEL'
+  horizon_ms: number | null;        // enteredAt → settled_at, ms
 }
 
 export interface DivisionSummary {
@@ -100,6 +117,29 @@ export interface GladiatorActivity {
   dormant: boolean;
 }
 
+/**
+ * FAZA 3.7 — per-scope settlement stats (overall + per-division).
+ * Populated from polymarket_decisions.settled_* columns. NO embargo applied:
+ * the outcome is already known at settle time, look-ahead cannot leak.
+ */
+export interface SettlementStats {
+  scope: string;               // 'OVERALL' | division name
+  nSettled: number;            // rows with settled_at NOT NULL in window
+  nDecisive: number;           // nSettled − cancelCount (used as WR denom)
+  cancelCount: number;         // settled_outcome = 'CANCEL'
+  cancelRate: number;          // cancelCount / nSettled (0 if nSettled=0)
+  wins: number;                // settled_pnl_pct > 0
+  losses: number;              // settled_pnl_pct < 0
+  /** wins / nDecisive. null if nDecisive=0 (guards divide-by-zero). */
+  winRate: number | null;
+  /** sum(wins_pct) / abs(sum(losses_pct)). null if no losing rows. */
+  profitFactor: number | null;
+  avgPnlPct: number | null;    // mean of settled_pnl_pct (decisive rows only)
+  medianPnlPct: number | null; // median of settled_pnl_pct (decisive rows)
+  totalPnlUsd: number;         // sum of settled_pnl_usd (all decisive rows)
+  medianHorizonHours: number | null; // median of horizon_ms / 3_600_000
+}
+
 export interface WeeklyLearningReport {
   enabled: boolean;
   generatedAt: string;
@@ -112,6 +152,8 @@ export interface WeeklyLearningReport {
   factorDrift: FactorDrift[];
   gladiatorActivity: GladiatorActivity[];
   dormantGladiators: GladiatorActivity[];
+  /** FAZA 3.7 — empty array if no settled rows exist in window */
+  settlementStats: SettlementStats[];
   warnings: string[];
 }
 
@@ -223,6 +265,100 @@ function buildGladiatorActivity(rows: DecisionRow[]): GladiatorActivity[] {
   return out;
 }
 
+/**
+ * FAZA 3.7 — compute SettlementStats for a single scope (OVERALL or division).
+ * Only consumes rows where settled_at IS NOT NULL.
+ * CANCEL outcomes are reported separately and excluded from WR / PF math
+ * (they are refunds, not real wins/losses).
+ *
+ * Invariants:
+ * - If 0 settled rows → all aggregates null/0, winRate/profitFactor=null.
+ * - If all decisive rows are wins → profitFactor=null (no loss denom).
+ * - Otherwise numeric. `winRate` ∈ [0,1].
+ */
+function buildSettlementStats(rows: DecisionRow[], scope: string): SettlementStats {
+  const settled = rows.filter(r => r.settled_at != null);
+  const nSettled = settled.length;
+  const cancelCount = settled.filter(r => (r.settled_outcome ?? '').toUpperCase() === 'CANCEL').length;
+  const decisive = settled.filter(r => {
+    const outcome = (r.settled_outcome ?? '').toUpperCase();
+    return outcome === 'YES' || outcome === 'NO';
+  });
+  const nDecisive = decisive.length;
+
+  // Extract pnl_pct from decisive rows only (valid finite numbers)
+  const pnls: number[] = [];
+  let sumPnlUsd = 0;
+  for (const r of decisive) {
+    const pct = r.settled_pnl_pct;
+    if (typeof pct === 'number' && Number.isFinite(pct)) pnls.push(pct);
+    const usd = r.settled_pnl_usd;
+    if (typeof usd === 'number' && Number.isFinite(usd)) sumPnlUsd += usd;
+  }
+
+  const wins = pnls.filter(p => p > 0).length;
+  const losses = pnls.filter(p => p < 0).length;
+  // NOTE: pnl==0 counted as neither. Happens on exact-entry exits (rare) or
+  // near-zero settlement. Bias-neutral.
+  const sumWins = pnls.filter(p => p > 0).reduce((s, x) => s + x, 0);
+  const sumLossesAbs = Math.abs(pnls.filter(p => p < 0).reduce((s, x) => s + x, 0));
+
+  const winRate = nDecisive > 0 ? wins / nDecisive : null;
+  const profitFactor = sumLossesAbs > 0 ? sumWins / sumLossesAbs : null;
+  const avgPnlPct = pnls.length > 0 ? pnls.reduce((s, x) => s + x, 0) / pnls.length : null;
+  const pnlsSorted = [...pnls].sort((a, b) => a - b);
+  const medianPnlPct = quantile(pnlsSorted, 0.5);
+
+  // Horizon stats (use all settled rows with valid horizon_ms, not just decisive)
+  const horizons: number[] = [];
+  for (const r of settled) {
+    const h = r.horizon_ms;
+    if (typeof h === 'number' && Number.isFinite(h) && h >= 0) horizons.push(h);
+  }
+  horizons.sort((a, b) => a - b);
+  const medianHorizonMs = quantile(horizons, 0.5);
+  const medianHorizonHours = medianHorizonMs != null ? medianHorizonMs / 3_600_000 : null;
+
+  return {
+    scope,
+    nSettled,
+    nDecisive,
+    cancelCount,
+    cancelRate: nSettled > 0 ? cancelCount / nSettled : 0,
+    wins,
+    losses,
+    winRate,
+    profitFactor,
+    avgPnlPct,
+    medianPnlPct,
+    totalPnlUsd: sumPnlUsd,
+    medianHorizonHours,
+  };
+}
+
+function buildAllSettlementStats(rows: DecisionRow[]): SettlementStats[] {
+  const out: SettlementStats[] = [];
+  const overall = buildSettlementStats(rows, 'OVERALL');
+  // Only emit OVERALL row if any settled rows exist, else empty report.
+  if (overall.nSettled === 0) return out;
+  out.push(overall);
+
+  const byDiv = new Map<string, DecisionRow[]>();
+  for (const r of rows) {
+    if (r.settled_at == null) continue;
+    const k = r.division || 'UNKNOWN';
+    if (!byDiv.has(k)) byDiv.set(k, []);
+    byDiv.get(k)!.push(r);
+  }
+  for (const [div, divRows] of byDiv.entries()) {
+    out.push(buildSettlementStats(divRows, div));
+  }
+  // Sort non-overall by nSettled desc for operator priority
+  const [ov, ...rest] = out;
+  rest.sort((a, b) => b.nSettled - a.nSettled);
+  return [ov, ...rest];
+}
+
 function buildFactorDrift(current: DecisionRow[], prior: DecisionRow[]): FactorDrift[] {
   const factors: FactorDistribution['factor'][] = [
     'edge_score',
@@ -266,6 +402,7 @@ export async function buildWeeklyReport(): Promise<WeeklyLearningReport> {
     factorDrift: [],
     gladiatorActivity: [],
     dormantGladiators: [],
+    settlementStats: [],
     warnings: [],
   };
 
@@ -289,9 +426,13 @@ export async function buildWeeklyReport(): Promise<WeeklyLearningReport> {
     // Fetch decisions for both windows in two queries (cleaner than
     // single fetch + client filter when row counts grow).
     const fetchWin = async (startMs: number, endMs: number): Promise<DecisionRow[]> => {
+      // FAZA 3.7 — SELECT extended with settled_* columns; migration
+      // 20260420_polymarket_decision_settlement.sql adds these as nullable so
+      // existing rows without settlement just return null (handled downstream).
+      // If migration not yet applied, Supabase returns error → soft-fail to [].
       const { data, error } = await supa
         .from('polymarket_decisions')
-        .select('decision_id, gladiator_id, division, direction, edge_score, goldsky_confirm, moltbook_karma, liquidity_sanity, final_score, acted, skip_reason, decided_at')
+        .select('decision_id, gladiator_id, division, direction, edge_score, goldsky_confirm, moltbook_karma, liquidity_sanity, final_score, acted, skip_reason, decided_at, settled_at, settled_pnl_pct, settled_pnl_usd, settled_outcome, horizon_ms')
         .gte('decided_at', new Date(startMs).toISOString())
         .lt('decided_at', new Date(endMs).toISOString())
         .order('decided_at', { ascending: false })
@@ -316,6 +457,11 @@ export async function buildWeeklyReport(): Promise<WeeklyLearningReport> {
     const gladiatorActivity = buildGladiatorActivity(current);
     const dormant = gladiatorActivity.filter(g => g.dormant);
 
+    // FAZA 3.7 — settlement stats use the FULL current-window rows (settled
+    // ones only filtered inside buildSettlementStats). NO embargo strip:
+    // settled_at NOT NULL means the market resolved, no look-ahead leak.
+    const settlementStats = buildAllSettlementStats(current);
+
     const warnings: string[] = [];
     if (current.length === 0) warnings.push('no decisions in current window');
     if (prior.length === 0) warnings.push('no decisions in prior window — drift not computable');
@@ -332,6 +478,22 @@ export async function buildWeeklyReport(): Promise<WeeklyLearningReport> {
     if (dormant.length > 0) {
       warnings.push(`${dormant.length} gladiator(s) dormant >${DORMANT_DAYS}d`);
     }
+    // FAZA 3.7 — settlement-side warnings.
+    // Sample-size gate: WR<50% on n<10 is statistical noise, suppressed.
+    // This protects against shutting down a strategy on 2-3 unlucky resolutions.
+    const SETTLEMENT_MIN_SAMPLE = Number.parseInt(process.env.POLY_SETTLEMENT_MIN_SAMPLE ?? '10', 10);
+    for (const ss of settlementStats) {
+      if (ss.scope === 'OVERALL') continue; // overall-level losses already implied by per-div detail
+      if (ss.nDecisive >= SETTLEMENT_MIN_SAMPLE && ss.winRate != null && ss.winRate < 0.50) {
+        warnings.push(`underwater: ${ss.scope} WR=${(ss.winRate * 100).toFixed(1)}% n=${ss.nDecisive} (decisive)`);
+      }
+      if (ss.nDecisive >= SETTLEMENT_MIN_SAMPLE && ss.profitFactor != null && ss.profitFactor < 1.0) {
+        warnings.push(`unprofitable: ${ss.scope} PF=${ss.profitFactor.toFixed(2)} n=${ss.nDecisive}`);
+      }
+      if (ss.nSettled >= SETTLEMENT_MIN_SAMPLE && ss.cancelRate > 0.30) {
+        warnings.push(`high cancel rate: ${ss.scope} ${(ss.cancelRate * 100).toFixed(1)}% (n_settled=${ss.nSettled})`);
+      }
+    }
 
     return {
       enabled: true,
@@ -345,6 +507,7 @@ export async function buildWeeklyReport(): Promise<WeeklyLearningReport> {
       factorDrift,
       gladiatorActivity,
       dormantGladiators: dormant,
+      settlementStats,
       warnings,
     };
   } catch (err) {
