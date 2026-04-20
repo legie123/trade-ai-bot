@@ -70,17 +70,20 @@ export function logBrainStatusSnapshot(status: BrainStatus): void {
   };
 
   // Fire and forget. Swallow errors to keep the probe non-blocking.
-  void supa
-    .from('polymarket_brain_status_log')
-    .insert(row)
-    .then((res: { error: { message: string; code?: string } | null }) => {
+  // supabase-js returns PromiseLike (only .then), not Promise — so wrap
+  // in an async IIFE for a real try/catch.
+  void (async () => {
+    try {
+      const res = (await supa!
+        .from('polymarket_brain_status_log')
+        .insert(row)) as { error: { message: string; code?: string } | null };
       if (res.error) {
         log.warn(
           `snapshot insert failed: ${res.error.message}${res.error.code ? ` (code ${res.error.code})` : ''}`,
         );
       }
-    })
-    .catch?.((e: unknown) => {
+    } catch (e) {
       log.warn(`snapshot insert exception: ${(e as Error).message}`);
-    });
+    }
+  })();
 }
