@@ -6,6 +6,7 @@
  */
 import { getEventsHealth } from '@/lib/polymarket/eventsStore';
 import { getGoldskyStatus } from '@/lib/polymarket/goldskyClient';
+import { ExplainCard } from '@/components/explain/ExplainCard';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -61,11 +62,48 @@ export default async function GoldskyHealthPage() {
       </h1>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 28 }}>
-        <Kpi label="INGEST" value={ingestHealthy ? 'HEALTHY' : 'DEGRADED'} color={ingestHealthy ? C.green : C.orange} />
-        <Kpi label="LAG" value={fmtLag(health.lagSeconds)} color={lagColor(health.lagSeconds)} />
-        <Kpi label="5 MIN" value={String(health.eventsLast5min)} />
-        <Kpi label="1 HOUR" value={String(health.eventsLast1h)} />
-        <Kpi label="24 HOURS" value={String(health.eventsLast24h)} />
+        <ExplainCard
+          label="INGEST"
+          value={ingestHealthy ? 'HEALTHY' : 'DEGRADED'}
+          color={ingestHealthy ? C.green : C.orange}
+          layer="L1"
+          source={{ label: 'goldsky', query: 'polymarket_events pipeline' }}
+          rationale={ingestHealthy
+            ? 'Webhook writing + events flowing in last 60min.'
+            : 'Degraded: check supabase config, write-through flag, or webhook secret mismatch.'}
+          timestamp={health.lastEventAt ? new Date(health.lastEventAt).getTime() : null}
+          staleMs={1800_000}
+          freshMs={300_000}
+        />
+        <ExplainCard
+          label="LAG"
+          value={fmtLag(health.lagSeconds)}
+          color={lagColor(health.lagSeconds)}
+          layer="L1"
+          source={{ label: 'derived', query: 'now - max(events.ingested_at)' }}
+          rationale="Time since last event. <5min=healthy · 5-30min=aging · >30min=stale."
+        />
+        <ExplainCard
+          label="5 MIN"
+          value={String(health.eventsLast5min)}
+          layer="L1"
+          source={{ label: 'supabase', query: "count(*) where ingested_at > now()-'5m'" }}
+          rationale="Short-window throughput. Zero = dead feed."
+        />
+        <ExplainCard
+          label="1 HOUR"
+          value={String(health.eventsLast1h)}
+          layer="L1"
+          source={{ label: 'supabase', query: "count(*) where ingested_at > now()-'1h'" }}
+          rationale="Sustained throughput. Benchmark ≥ daily-avg/24."
+        />
+        <ExplainCard
+          label="24 HOURS"
+          value={String(health.eventsLast24h)}
+          layer="L1"
+          source={{ label: 'supabase', query: "count(*) where ingested_at > now()-'24h'" }}
+          rationale="Daily volume. Sudden drop = pipeline regression."
+        />
       </div>
 
       <Section title="CONFIGURATION">
@@ -124,14 +162,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{ padding: '14px 18px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
-      <div style={{ fontSize: 9, color: C.mutedLight, letterSpacing: '0.15em', fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 20, fontFamily: 'monospace', fontWeight: 800, color: color || C.text, marginTop: 6 }}>{value}</div>
-    </div>
-  );
-}
 
 function ConfigCell({ k, v, good }: { k: string; v: string; good?: boolean }) {
   return (

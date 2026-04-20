@@ -11,6 +11,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { ExplainCard } from '@/components/explain/ExplainCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,26 +112,42 @@ export default async function DecisionInspectorPage({ params }: { params: Promis
         {d.decided_at} · division={d.division} · gladiator=<span title={d.gladiator_id}>{d.gladiator_id.slice(0, 12)}</span>
       </div>
 
-      {/* Headline: direction + acted + finalScore */}
+      {/* Headline: direction + acted + finalScore — maieutic L4 audit layer */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 28 }}>
-        <Kpi
+        <ExplainCard
           label="DIRECTION"
           value={d.direction}
           color={d.direction === 'BUY_YES' ? C.green : d.direction === 'BUY_NO' ? C.red : C.muted}
+          layer="L4"
+          source={{ label: 'supabase', query: `polymarket_decisions.direction (decision_id=${d.decision_id.slice(0, 8)})` }}
+          rationale="Trade side the gladiator chose. BUY_YES=prediction resolves yes · BUY_NO=resolves no · SKIP=no action."
         />
-        <Kpi
+        <ExplainCard
           label="ACTED"
           value={d.acted ? 'YES' : 'NO'}
           color={d.acted ? C.green : C.muted}
+          layer="L4"
+          source={{ label: 'supabase', query: 'polymarket_decisions.acted' }}
+          rationale={d.acted ? 'Bet was placed post-gates.' : 'Decision logged but no bet — check skip_reason below.'}
         />
-        <Kpi
+        <ExplainCard
           label="FINAL SCORE"
           value={fmtNum(finalScore, 1)}
           color={finalScore >= 45 ? C.green : C.orange}
+          layer="L4"
+          source={{ label: 'derived', query: 'edge × goldsky × moltbook × liquidity' }}
+          rationale="Composite gate. >=45 required to act. Multiplicative — a single zero factor kills the trade."
+          confidence={{
+            level: finalScore >= 45 ? 'HIGH' : finalScore >= 30 ? 'MED' : 'LOW',
+            reason: 'Score-threshold heuristic',
+          }}
         />
-        <Kpi
+        <ExplainCard
           label="CONFIDENCE"
           value={fmtNum(d.confidence, 0)}
+          layer="L4"
+          source={{ label: 'gladiator', query: 'syndicate.confidence' }}
+          rationale="Syndicate-vote confidence (0-100). Not same as edge — edge = market-level, confidence = gladiator-level."
         />
       </div>
 
@@ -258,15 +275,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 style={{ fontSize: 11, letterSpacing: '0.2em', color: C.mutedLight, fontWeight: 700, marginBottom: 12 }}>{title}</h2>
       {children}
     </section>
-  );
-}
-
-function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{ padding: '14px 18px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
-      <div style={{ fontSize: 9, color: C.mutedLight, letterSpacing: '0.15em', fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 20, fontFamily: 'monospace', fontWeight: 800, color: color || C.text, marginTop: 6 }}>{value}</div>
-    </div>
   );
 }
 

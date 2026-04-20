@@ -7,6 +7,7 @@
  */
 import Link from 'next/link';
 import { listRecentScans } from '@/lib/polymarket/scanHistory';
+import { ExplainCard } from '@/components/explain/ExplainCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,13 +64,57 @@ export default async function AuditIndexPage() {
         SCAN HISTORY · LAST {scans.length}
       </h1>
 
-      {/* KPI strip */}
+      {/* KPI strip — maieutic explain layer (L4 audit) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 28 }}>
-        <Kpi label="RUNS" value={String(scans.length)} />
-        <Kpi label="OPPORTUNITIES" value={String(totalOpps)} />
-        <Kpi label="DECISIONS" value={String(totalDecisions)} />
-        <Kpi label="BETS PLACED" value={String(totalBets)} color={totalBets > 0 ? C.green : C.text} />
-        <Kpi label="HIT RATE" value={`${hitRate}%`} sub={`${activeCorrelation}/${scans.length} w/ correlation`} />
+        <ExplainCard
+          label="RUNS"
+          value={String(scans.length)}
+          layer="L4"
+          source={{ label: 'supabase', query: 'polymarket_scan_history' }}
+          rationale="Cron scan-run count in current window. Gap = cron down or supabase migration missing."
+        />
+        <ExplainCard
+          label="OPPORTUNITIES"
+          value={String(totalOpps)}
+          layer="L4"
+          source={{ label: 'supabase', query: 'polymarket_scan_history.opportunities_found' }}
+          rationale="Raw opps surfaced by scanner (pre-karma/pre-sentinel). Upstream signal volume."
+          confidence={{
+            level: scans.length >= 30 ? 'HIGH' : scans.length >= 10 ? 'MED' : 'LOW',
+            sampleSize: scans.length,
+            reason: 'Wilson heuristic on scan count',
+          }}
+        />
+        <ExplainCard
+          label="DECISIONS"
+          value={String(totalDecisions)}
+          layer="L4"
+          source={{ label: 'supabase', query: 'polymarket_decisions' }}
+          rationale="Decisions persisted post-gates. decisions<opps = selection working; decisions=0 = all gates closed."
+          drillDownHref="/polymarket/audit/decisions"
+          drillDownLabel="BY DECISION ↗"
+        />
+        <ExplainCard
+          label="BETS PLACED"
+          value={String(totalBets)}
+          color={totalBets > 0 ? C.green : C.text}
+          layer="L4"
+          source={{ label: 'supabase', query: 'polymarket_scan_history.bets_placed' }}
+          rationale={totalBets === 0 ? 'Zero bets — either phantom-mode or all decisions skipped.' : 'Live/phantom bets executed post-decision.'}
+        />
+        <ExplainCard
+          label="HIT RATE"
+          value={`${hitRate}%`}
+          sub={`${activeCorrelation}/${scans.length} w/ correlation`}
+          layer="L4"
+          source={{ label: 'derived', query: 'bets_placed / opportunities_found' }}
+          rationale="Selection efficiency: how much of surfaced signal converts to action."
+          confidence={{
+            level: totalOpps >= 100 ? 'HIGH' : totalOpps >= 30 ? 'MED' : 'LOW',
+            sampleSize: totalOpps,
+            reason: 'Sample = total opportunities in window',
+          }}
+        />
       </div>
 
       {/* Table */}
@@ -119,16 +164,6 @@ export default async function AuditIndexPage() {
       <p style={{ marginTop: 16, fontSize: 10, color: C.muted, fontFamily: 'monospace', textAlign: 'right' }}>
         polymarket_scan_history · append-only · {new Date().toISOString()}
       </p>
-    </div>
-  );
-}
-
-function Kpi({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
-  return (
-    <div style={{ padding: '14px 18px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
-      <div style={{ fontSize: 9, color: C.mutedLight, letterSpacing: '0.15em', fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: 'monospace', fontWeight: 800, color: color || C.text, marginTop: 6 }}>{value}</div>
-      {sub && <div style={{ fontSize: 9, color: C.muted, fontFamily: 'monospace', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }

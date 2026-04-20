@@ -12,6 +12,7 @@
  * Cookie-gated by parent /polymarket/audit/layout.tsx.
  */
 import { buildWeeklyReport, getLearningConfig } from '@/lib/polymarket/learningLoop';
+import { ExplainCard } from '@/components/explain/ExplainCard';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -67,20 +68,52 @@ export default async function LearningReportPage() {
         </div>
       )}
 
-      {/* KPIs */}
+      {/* KPIs — L5 LEARN layer (drift / regime / retrospective) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 28 }}>
-        <Kpi label="DECISIONS" value={String(report.totalDecisions)} />
-        <Kpi label="ACTED" value={String(report.totalActed)} color={report.totalActed > 0 ? C.green : C.text} />
-        <Kpi label="ACTED RATE" value={fmtPct(actedRate)} />
-        <Kpi
+        <ExplainCard
+          label="DECISIONS"
+          value={String(report.totalDecisions)}
+          layer="L5"
+          source={{ label: 'supabase', query: `polymarket_decisions (last ${cfg.windowDays}d)` }}
+          rationale={`Decisions logged in learning window. Need N≥30 for statistical lift interpretation.`}
+          confidence={{
+            level: report.totalDecisions >= 100 ? 'HIGH' : report.totalDecisions >= 30 ? 'MED' : 'LOW',
+            sampleSize: report.totalDecisions,
+            reason: 'Wilson heuristic — small-N lift is noise',
+          }}
+        />
+        <ExplainCard
+          label="ACTED"
+          value={String(report.totalActed)}
+          color={report.totalActed > 0 ? C.green : C.text}
+          layer="L5"
+          source={{ label: 'derived', query: 'decisions.acted=true' }}
+          rationale="Bets actually placed. Zero = all gates closed in window; investigate skip reasons."
+        />
+        <ExplainCard
+          label="ACTED RATE"
+          value={fmtPct(actedRate)}
+          layer="L5"
+          source={{ label: 'derived', query: 'acted / decisions' }}
+          rationale="Selection tightness. <5% = extremely selective · >50% = gates too loose."
+        />
+        <ExplainCard
           label="DORMANT GLADS"
           value={String(report.dormantGladiators.length)}
           color={report.dormantGladiators.length > 0 ? C.orange : C.green}
+          layer="L5"
+          source={{ label: 'derived', query: `max(last_decision_at) > ${cfg.dormantDays}d` }}
+          rationale={`Gladiators with no decision in ${cfg.dormantDays}d. Candidates for retire or retune.`}
         />
-        <Kpi
+        <ExplainCard
           label="WARNINGS"
           value={String(report.warnings.length)}
           color={report.warnings.length > 0 ? C.orange : C.green}
+          layer="L5"
+          source={{ label: 'derived', query: 'learningLoop.detectWarnings()' }}
+          rationale={report.warnings.length > 0
+            ? 'Attention required: drift/coverage/ratio anomalies detected — see panel below.'
+            : 'All heuristic gates clean.'}
         />
       </div>
 
@@ -272,15 +305,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 style={{ fontSize: 11, letterSpacing: '0.2em', color: C.mutedLight, fontWeight: 700, marginBottom: 12 }}>{title}</h2>
       {children}
     </section>
-  );
-}
-
-function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{ padding: '14px 18px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
-      <div style={{ fontSize: 9, color: C.mutedLight, letterSpacing: '0.15em', fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: 'monospace', fontWeight: 800, color: color || C.text, marginTop: 6 }}>{value}</div>
-    </div>
   );
 }
 

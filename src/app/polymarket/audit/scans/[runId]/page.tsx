@@ -8,6 +8,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getScanRun } from '@/lib/polymarket/scanHistory';
+import { ExplainCard } from '@/components/explain/ExplainCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,15 +91,42 @@ export default async function ScanInspectorPage({ params }: { params: Promise<{ 
         {run.started_at} → {run.finished_at ?? 'in-progress'} · {run.duration_ms ? `${(run.duration_ms / 1000).toFixed(1)}s` : '—'}
       </div>
 
-      {/* Summary */}
+      {/* Summary — L4 audit layer per run */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 28 }}>
-        <Kpi label="OPPS FOUND" value={String(run.opportunities_found)} />
-        <Kpi label="DECISIONS" value={String(run.decisions_logged)} />
-        <Kpi label="ACTED" value={String(acted.length)} color={acted.length > 0 ? C.green : C.text} />
-        <Kpi
+        <ExplainCard
+          label="OPPS FOUND"
+          value={String(run.opportunities_found)}
+          layer="L4"
+          source={{ label: 'supabase', query: `polymarket_scan_history (run_id=${runId.slice(0, 8)})` }}
+          rationale="Raw markets surfaced this tick before any gate."
+          timestamp={new Date(run.started_at).getTime()}
+        />
+        <ExplainCard
+          label="DECISIONS"
+          value={String(run.decisions_logged)}
+          layer="L4"
+          source={{ label: 'supabase', query: 'polymarket_decisions.run_id' }}
+          rationale={run.decisions_logged === run.opportunities_found
+            ? 'All opps produced a decision trail.'
+            : 'Decisions<opps: some markets filtered pre-log (e.g. liquidity-hard-zero)'}
+        />
+        <ExplainCard
+          label="ACTED"
+          value={String(acted.length)}
+          color={acted.length > 0 ? C.green : C.text}
+          layer="L4"
+          source={{ label: 'derived', query: 'decisions.acted=true' }}
+          rationale={acted.length === 0 ? 'Zero bets: check skip reasons below — which gate bound?' : 'Bets placed post-gates.'}
+        />
+        <ExplainCard
           label="CORRELATION"
           value={run.correlation_disabled ? 'OFF' : 'ON'}
           color={run.correlation_disabled ? C.red : C.green}
+          layer="L4"
+          source={{ label: 'env', query: 'env_snapshot.POLYMARKET_CORRELATION_ENABLED' }}
+          rationale={run.correlation_disabled
+            ? 'Correlation gate bypassed — bets may cluster in single risk bucket.'
+            : 'Correlation gate active — diversifies exposure across uncorrelated markets.'}
         />
       </div>
 
@@ -207,15 +235,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 style={{ fontSize: 11, letterSpacing: '0.2em', color: C.mutedLight, fontWeight: 700, marginBottom: 12 }}>{title}</h2>
       {children}
     </section>
-  );
-}
-
-function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{ padding: '14px 18px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
-      <div style={{ fontSize: 9, color: C.mutedLight, letterSpacing: '0.15em', fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: 'monospace', fontWeight: 800, color: color || C.text, marginTop: 6 }}>{value}</div>
-    </div>
   );
 }
 
