@@ -65,6 +65,10 @@ async function compute(): Promise<void> {
     safeSet(metrics.arenaPoolSize, stats.alive);
     safeSet(metrics.arenaAlive, stats.alive);
     safeSet(metrics.arenaKilled, stats.killed);
+    // FAZA 3/4 2026-04-20 — zombie survey. Expected 0 steady-state; >15/2h
+    // triggers Grafana alert. Uses the same graveyard read as getPopulationStats
+    // so zero additional DB cost.
+    safeSet(metrics.arenaZombieCount, stats.zombieCount);
     safeSet(metrics.selectionLiftPct, stats.selectionLiftPct);
     safeSet(metrics.popWeightedPF, stats.popWeightedProfitFactor);
     safeSet(metrics.popWeightedWR, stats.popWeightedWinRate);

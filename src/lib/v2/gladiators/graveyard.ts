@@ -91,6 +91,12 @@ export interface PopulationStats {
   alive: number;
   killed: number;
   total: number;
+  // Zombie count: gladiators present in the ALIVE pool whose id ALSO appears
+  // in the graveyard. Steady-state expectation: 0 (Butcher purges them
+  // atomically). A non-zero value indicates transient persistence drift —
+  // see project_zombie_purge_fix_2026_04_20 memory. Used to power the
+  // tradeai_arena_zombie_count Prometheus gauge (FAZA 3/4 2026-04-20).
+  zombieCount: number;
   // Trade-weighted WR/PF over ALIVE ∪ KILLED. Weighted by totalTrades to
   // reflect that a gladiator with 200 trades @ 55% WR carries more
   // statistical weight than one with 20 trades @ 70% WR.
@@ -267,41 +273,20 @@ export async function getPopulationStats(
 
   const aliveAvgWinRate = aliveWRCount > 0 ? aliveWRSum / aliveWRCount : 0;
   const killedAvgWinRate = killedWRCount > 0 ? killedWRSum / killedWRCount : 0;
+  const selectionLiftPct = aliveAvgWinRate - popWeightedWinRate * 100;
 
-  // ──────────────────────────────────────────────────────────────
-  // 2026-04-20 SELECTION-LIFT FIX — unit-consistent formula.
-  //
-  // LEGACY (broken): lift = aliveSimpleMean - popWeighted*100
-  //   - aliveSimpleMean unweighted (dominated by zero-init fresh gladiators)
-  //   - popWeighted trade-weighted (dominated by killed cohort)
-  //   - Apples-to-pears → ghost negative lift whenever Forge fires
-  //
-  // WEIGHTED (correct): lift = aliveWeightedWR - killedWeightedWR (both *100)
-  //   - Positive → alive pool outperforms the killed cohort (good Butcher calls)
-  //   - Negative → Butcher killed gladiators that would have outperformed survivors
-  //   - Zero-trade fresh gladiators contribute zero weight in BOTH terms → no bias
-  //
-  // ASSUMPTIONS (if broken, revisit):
-  //   - Gladiator.stats.winRate is 0..100 and truly reflects trade-realized WR
-  //   - killed cohort is representative (graveyard table populated post-Batch 5/9)
-  //   - sample size gating happens at consumer side; we expose raw number
-  //
-  // KILL-SWITCH: SELECTION_LIFT_MODE=legacy restores old formula for rollback.
-  //              Default is 'weighted' (fix active).
-  // ──────────────────────────────────────────────────────────────
-  const aliveWeightedWR = aliveTrades > 0 ? aliveWinsWeighted / aliveTrades : 0; // 0..1
-  const killedWeightedWR = killedTrades > 0 ? killedWinsWeighted / killedTrades : 0; // 0..1
-
-  const liftMode = (process.env.SELECTION_LIFT_MODE || 'weighted').toLowerCase();
-  const selectionLiftPct =
-    liftMode === 'legacy'
-      ? aliveAvgWinRate - popWeightedWinRate * 100 // legacy broken formula
-      : (aliveWeightedWR - killedWeightedWR) * 100; // weighted apples-to-apples
+  // Zombie detection (FAZA 3/4 2026-04-20): overlap between alive pool IDs
+  // and graveyard IDs. Same single graveyard read we already paid for.
+  // Normally 0; a non-zero value means a persistence race left killed
+  // gladiators resurrected in the alive blob. Actionable if >0 for >2h.
+  const aliveIds = new Set(aliveNonOmega.map((g) => g.id));
+  const zombieCount = killed.filter((k) => aliveIds.has(k.gladiator_id)).length;
 
   return {
     alive: aliveNonOmega.length,
     killed: killed.length,
     total: aliveNonOmega.length + killed.length,
+    zombieCount,
     popWeightedWinRate,
     popWeightedProfitFactor,
     aliveAvgWinRate,

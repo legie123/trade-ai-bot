@@ -26,6 +26,7 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   arenaPoolSize: client.Gauge<string>;
   arenaAlive: client.Gauge<string>;
   arenaKilled: client.Gauge<string>;
+  arenaZombieCount: client.Gauge<string>;
   selectionLiftPct: client.Gauge<string>;
   popWeightedPF: client.Gauge<string>;
   popWeightedWR: client.Gauge<string>;
@@ -133,6 +134,21 @@ function build() {
   const arenaKilled = new client.Gauge({
     name: 'tradeai_arena_killed_total',
     help: 'Cumulative killed (graveyard residents)',
+    registers: [registry],
+  });
+
+  // FAZA 3/4 2026-04-20 — Zombie Survey Gauge
+  // Counts gladiators present in the ALIVE pool whose id also exists in the
+  // graveyard. Expected steady-state: 0. A non-zero value (especially >15
+  // sustained for >2h) signals a persistence race — killed gladiators
+  // resurrecting in the json_store blob. This gauge intentionally does NOT
+  // invoke the Butcher itself (that would introduce kill-rate volatility and
+  // extra LLM cost). It is a SURVEY signal only. Grafana alert threshold:
+  //   tradeai_arena_zombie_count > 15 for 2h → ops paging.
+  //   Persistent drift → consider adding a scheduled arena:rotation cron.
+  const arenaZombieCount = new client.Gauge({
+    name: 'tradeai_arena_zombie_count',
+    help: 'Gladiators in alive pool also present in graveyard. Steady-state=0; >15 for >2h indicates persistence race.',
     registers: [registry],
   });
 
@@ -355,7 +371,7 @@ function build() {
     tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
     gladiatorKills, gladiatorForges, gladiatorPromotions,
     decisions,
-    arenaPoolSize, arenaAlive, arenaKilled,
+    arenaPoolSize, arenaAlive, arenaKilled, arenaZombieCount,
     selectionLiftPct, popWeightedPF, popWeightedWR,
     llmCostDollars, llmCalls,
     cronRuns, cronDuration,
