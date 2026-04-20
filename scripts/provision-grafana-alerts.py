@@ -385,6 +385,37 @@ RULES = [
         ),
         runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
     ),
+    # --- Batch 3.23: Cron duration p95 watchdog ------------------------------
+    # FAZA A Batch 3 instrumented crons (positions/sentiment/auto-promote) with
+    # histogram `tradeai_cron_duration_seconds{cron}`. p95 over 10m rolling window
+    # catches sustained latency spikes (Supabase slowdown, GCP network glitch,
+    # DB connection pool exhaustion). 60s threshold picked for positions/sentiment
+    # which steady-state run <5s. If a custom cron (e.g. miniBacktest) genuinely
+    # needs >60s steady-state, add a per-cron exclusion via label match.
+    # False-positive shield: for=15m, and histogram needs sustained slow samples.
+    build_rule(
+        uid="tradeai-cron-duration-p95-high",
+        title="TRADE AI — Cron duration p95 > 60s (latency/starvation)",
+        expr='max(histogram_quantile(0.95, sum by (le,cron) (rate(tradeai_cron_duration_seconds_bucket{service="trade-ai"}[10m]))) > bool 60)',
+        threshold=1,
+        for_duration="15m",
+        severity="warning",
+        summary="Any instrumented cron's p95 runtime > 60s sustained 15m",
+        description=(
+            "One or more of the instrumented crons (positions / sentiment / "
+            "auto-promote) has a 95th-percentile runtime > 60s over the last 10m, "
+            "sustained for 15m. Steady-state is <5s. Common causes: "
+            "(1) Supabase request latency spike (see memory `Flush-timeout fix 2026-04-20` "
+            "— 2.6x latency triggered flushPendingSyncs WARN); "
+            "(2) json_store updated_at write-amplification; "
+            "(3) Connection pool exhausted (high concurrency + no throttle); "
+            "(4) External provider timeout (MEXC/Polymarket/Goldsky) blocking the cron. "
+            "Immediate action: inspect Cloud Run logs for cron name in alert labels, "
+            "check `tradeai_cron_duration_seconds_count` vs `sum` ratio to get mean, "
+            "verify Supabase status page, consider flipping FLUSH_TIMEOUT_MS env."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
     # --- Batch 3.22: LLM cost runaway guard -----------------------------------
     # tradeai_llm_cost_dollars_total{provider,model} is a Counter (FAZA A Batch 4,
     # callLLM.ts wrapper). rate([10m]) * 3600 converts to $/hr burn rate.
