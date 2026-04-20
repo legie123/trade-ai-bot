@@ -362,6 +362,11 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<{ text: st
             maxOutputTokens: 200,
             temperature: 0.3,
             responseMimeType: 'application/json',
+            // thinkingBudget=0 disables chain-of-thought for gemini-2.5-flash.
+            // Without this, 189+ tokens get burned on hidden reasoning and
+            // the real JSON output is truncated at MAX_TOKENS (parse_fail).
+            // Tested: usageMetadata.thoughtsTokenCount drops from 189 → 0.
+            thinkingConfig: { thinkingBudget: 0 },
           },
         }),
         signal: ctrl.signal,
