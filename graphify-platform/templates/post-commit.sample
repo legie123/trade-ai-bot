@@ -37,8 +37,10 @@ fi
 OUT_DIR="$REPO_ROOT/$SCAN_TARGET/graphify-out"
 
 # Rebuild graphify (incremental if exists, fresh if not)
+# v0.4.23 syntax: `graphify update <path>` (subcommand FIRST, then path).
+# Old syntax `graphify <path> --update` errors silently → hook bails without trace.
 if [[ -d "$OUT_DIR" ]]; then
-  graphify "$SCAN_TARGET" --update >/dev/null 2>&1 || exit 0
+  graphify update "$SCAN_TARGET" >/dev/null 2>&1 || exit 0
 else
   bash "$PLATFORM_DIR/bin/graphify-safe" "$SCAN_TARGET" >/dev/null 2>&1 || exit 0
 fi
