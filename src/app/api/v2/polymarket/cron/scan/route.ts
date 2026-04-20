@@ -7,6 +7,7 @@ import { openPosition } from '@/lib/polymarket/polyWallet';
 import { correlateDecision } from '@/lib/polymarket/correlationLayer';
 import { logDecision } from '@/lib/polymarket/decisionLog';
 import { startScanRun, finishScanRun } from '@/lib/polymarket/scanHistory';
+import { probeSettlementHealth } from '@/lib/polymarket/settlementHealth';
 import {
   ensureInitialized,
   getWallet,
@@ -199,6 +200,11 @@ export async function GET(request: Request) {
       errors: scanErrors,
       envSnapshot,
     });
+
+    // FAZA 3.10 — fire-and-forget settlement gauge refresh so Prometheus
+    // sees fresh Polymarket settlement state every scan tick (~15min).
+    // Zero blocking: errors are swallowed (probe is pure observability).
+    void probeSettlementHealth().catch(() => {});
 
     return NextResponse.json({
       status: 'ok',

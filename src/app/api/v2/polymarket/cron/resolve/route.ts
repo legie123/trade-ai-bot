@@ -4,6 +4,7 @@ import { getMarket } from '@/lib/polymarket/polyClient';
 import { recordPolyOutcome, promoteToLive, retireUnderperformer } from '@/lib/polymarket/polyGladiators';
 import { closePosition } from '@/lib/polymarket/polyWallet';
 import { settleDecision } from '@/lib/polymarket/settlementHook';
+import { probeSettlementHealth } from '@/lib/polymarket/settlementHealth';
 import {
   ensureInitialized,
   getWallet,
@@ -190,6 +191,11 @@ export async function GET(request: Request) {
 
     await persistWallet();
     await persistGladiators();
+
+    // FAZA 3.10 — fire-and-forget settlement gauge refresh. Resolve is the
+    // cron that WRITES settled_* rows, so probing right after is the freshest
+    // possible refresh. Fire-and-forget: never blocks, never crashes.
+    void probeSettlementHealth().catch(() => {});
 
     return NextResponse.json({
       status: 'ok',
