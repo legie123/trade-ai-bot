@@ -90,6 +90,31 @@ export class ArenaSimulator {
       return;
     }
 
+    // AUDIT-R2 FAZA B — pool-wide direction gate applied at PAPER/arena layer.
+    // Previously dualMaster.ts converted LONG→FLAT only for live-execution routing;
+    // phantomTrades still distributed LONG signals and polluted gladiator stats
+    // (empirical: 577 LONG PAPER trades dragged arena WR to 26.8%, EV_net=-0.16%).
+    // Gating here stops forward sampling on a direction we know is EV-negative.
+    //
+    // Kill-switches (mirror dualMaster.ts):
+    //   DIRECTION_GATE_ENABLED=0   → bypass entirely (restore pre-gate distribution)
+    //   DIRECTION_LONG_DISABLED=1  → drop LONG signals before phantom creation
+    //   DIRECTION_SHORT_DISABLED=1 → drop SHORT signals before phantom creation
+    // Both disables default permissive (unset → no effect).
+    if (process.env.DIRECTION_GATE_ENABLED !== '0') {
+      const norm = routedSignal.normalized;
+      const isLong = norm === 'BUY' || norm === 'LONG';
+      const isShort = norm === 'SELL' || norm === 'SHORT';
+      if (isLong && process.env.DIRECTION_LONG_DISABLED === '1') {
+        log.warn(`[Combat Engine] AUDIT-R2 arena gate: dropping LONG ${routedSignal.symbol} (DIRECTION_LONG_DISABLED=1) — no phantom distribution`);
+        return;
+      }
+      if (isShort && process.env.DIRECTION_SHORT_DISABLED === '1') {
+        log.warn(`[Combat Engine] AUDIT-R2 arena gate: dropping SHORT ${routedSignal.symbol} (DIRECTION_SHORT_DISABLED=1) — no phantom distribution`);
+        return;
+      }
+    }
+
     let accepted = 0;
     let rejected = 0;
     let dedupSkipped = 0;
