@@ -350,7 +350,7 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
           gladiators.forEach((g, idx) => {
             g.rank = idx + 1;
             const meets = g.stats.totalTrades >= 50
-              && g.stats.winRate >= 58
+              && g.stats.winRate >= 40
               && g.stats.profitFactor >= 1.3;
             g.isLive = g.rank <= 3 && meets;
           });
@@ -394,7 +394,7 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
       // ─── GLADIATORS RESET-STATS (post-QW-7 recovery; auth-required) ───
       // Șterge stats poluate pre-QW-7 și demotează toți la IN_TRAINING. Safe: gladiatorii
       // vor reacumula stats prin phantoms curente (TP/SL asimetric 1.0%/-0.5%). Fail-safe:
-      // nimeni LIVE până nu atinge QW-8 gate (trades>=50, WR>=58, PF>=1.3).
+      // nimeni LIVE până nu atinge QW-8 gate (trades>=50, WR>=40, PF>=1.3).
       case 'gladiators:reset-stats': {
         const reason = String(params?.reason || 'manual-admin-reset-post-qw7');
         const result = gladiatorStore.resetAllStats(reason);

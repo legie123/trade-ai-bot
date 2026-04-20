@@ -74,10 +74,12 @@ function getWashConfig(): WashConfig {
 // PRIOR: 20/45/1.1 was dangerously loose — allowed LIVE promotion on 20 wash-contaminated
 // phantom rows (potentially = 3-5 independent signals).
 // NOW: minPhantomTrades semantic = INDEPENDENT SAMPLES (dedupe per minute+symbol+direction).
-// Thresholds match gladiatorStore QW-8: tt>=50, WR>=58%, PF>=1.3.
+// Thresholds match gladiatorStore QW-8: tt>=50, WR>=40%, PF>=1.3.
+// C14 (2026-04-20): WR 58→40 aligned with asymmetric TP=1.0%/SL=-0.5%.
+// Break-even WR ~33%, PF≥1.3 at WR≥39.4%. PF remains primary profitability gate.
 const PROMO_CRITERIA = {
   minPhantomTrades: 50,      // INDEPENDENT samples, not raw totalTrades
-  minWinRate: 58,
+  minWinRate: 40,
   minProfitFactor: 1.3,
   maxRuinProbability: 10,    // Monte Carlo ruin < 10%
   maxRiskPerTrade: 1.0,      // %
@@ -160,7 +162,7 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
       g.stats.totalTrades >= PROMO_CRITERIA.minPhantomTrades
     );
     // RUFLO FAZA 3 Batch 5 (C9) 2026-04-19: Wilson CI floor for promotion.
-    // Even after passing raw WR≥58 + indep count ≥50, we demand 95% pessimistic
+    // Even after passing raw WR≥40 + indep count ≥50, we demand 95% pessimistic
     // WR estimate to be ≥50%. This symmetrically mirrors Butcher (kill < 0.35).
     // Gate zone: Butcher spares [0.35, 0.50]; Promoter blocks [0.35, 0.50] too
     // → these gladiators stay in PHANTOM until more data resolves ambiguity.
