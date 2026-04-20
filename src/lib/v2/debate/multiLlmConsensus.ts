@@ -44,6 +44,9 @@
 
 import { createLogger } from '@/lib/core/logger';
 import { metrics, safeInc } from '@/lib/observability/metrics';
+// Pas 5: fire-and-forget audit persist. Gated by LLM_CONSENSUS_PERSIST_ENABLED
+// inside the module — zero cost when off. NEVER await this, NEVER let it throw.
+import { persistConsensusAudit } from './multiLlmConsensusAudit';
 
 const log = createLogger('LlmConsensus');
 
@@ -596,6 +599,9 @@ export async function runConsensus(input: ConsensusInput): Promise<ConsensusResu
       promptVersion: PROMPT_VERSION,
     };
     emitMetrics(empty);
+    // Pas 5: persist degraded run (validVotes<2) — diagnostically important
+    // for detecting provider billing / circuit breaker cascades.
+    void persistConsensusAudit(input, empty).catch(() => { /* swallow */ });
     return empty;
   }
 
@@ -625,6 +631,9 @@ export async function runConsensus(input: ConsensusInput): Promise<ConsensusResu
   };
 
   emitMetrics(finalResult);
+  // Pas 5: persist executed consensus run. Primary research dataset for
+  // divergenceFromPrimary × loss-cluster correlation studies. Fire-and-forget.
+  void persistConsensusAudit(input, finalResult).catch(() => { /* swallow */ });
   log.info(
     `[Consensus] ${input.symbol} ${input.proposedDirection} conf=${conf.toFixed(2)} → ${agg.vote} ` +
     `(score=${agg.score.toFixed(2)}, agree=${agg.agreementRatio.toFixed(2)}, ` +
