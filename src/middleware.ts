@@ -44,8 +44,20 @@ const PUBLIC_PREFIXES = [
   '/api/polymarket/ingest', // Goldsky webhook — x-trade-auth header checked internally
 ];
 
+// HARDENING 2026-04-19: env-driven prefix whitelist survives source-tree reverts.
+// Set PUBLIC_PREFIXES_EXTRA in Cloud Run env (comma-separated). Example:
+//   PUBLIC_PREFIXES_EXTRA="/api/v2/diag/,/api/v2/experimental/"
+// Even if this file is reverted by a future commit, the env lives in Cloud Run and
+// re-reads on next cold start — but only if THIS env-read code stays present.
+const EXTRA_PREFIXES: readonly string[] = (process.env.PUBLIC_PREFIXES_EXTRA || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix));
+  if (PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix))) return true;
+  if (EXTRA_PREFIXES.some(prefix => pathname.startsWith(prefix))) return true;
+  return false;
 }
 
 // Edge-safe base64url encode/decode (no Buffer in Edge Runtime)
