@@ -555,7 +555,16 @@ class GladiatorStore {
         const pfScore = Math.min(g.stats.profitFactor / 3.0, 1.0) * 100; // PF 3.0 = max 100
         const recencyBonus = (Date.now() - g.lastUpdated) < 3600_000 ? 10 : 0;
         const tradeBonus = Math.min(g.stats.totalTrades / 50, 1.0) * 15; // 50 trades = full 15pts
-        const ddPenalty = g.stats.maxDrawdown > 15 ? -20 : g.stats.maxDrawdown > 10 ? -10 : 0;
+        // C18 (2026-04-20): DD penalty normalized by sqrt(n) to prevent survivorship bias.
+        // PRIOR BUG: flat -20 at DD>15% penalized veterans (n=400, DD=16.6% is p75 at WR=35%)
+        // equally to a rookie who hit DD=16% in 50 trades (catastrophic). Monte Carlo shows
+        // expected max DD grows ~sqrt(n): at WR=35%/TP=1.0%/SL=-0.5%, median DD at n=400
+        // is 12.5% vs 4.5% at n=50. Normalizing by sqrt(n/50) gives DD-per-unit-experience.
+        // Kill-switch: DD_PENALTY_MODE=legacy reverts to flat thresholds.
+        const ddNorm = n > 0 ? g.stats.maxDrawdown / Math.sqrt(n / 50) : g.stats.maxDrawdown;
+        const ddPenalty = process.env.DD_PENALTY_MODE === 'legacy'
+          ? (g.stats.maxDrawdown > 15 ? -20 : g.stats.maxDrawdown > 10 ? -10 : 0)
+          : (ddNorm > 8 ? -20 : ddNorm > 5 ? -10 : 0);
         const score = (wrScore * 0.4) + (pfScore * 0.35) + recencyBonus + tradeBonus + ddPenalty;
         return { gladiator: g, score };
       });
