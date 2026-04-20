@@ -50,8 +50,19 @@ const ALLOWED_VERDICTS = new Set(['GREEN', 'AMBER', 'RED', 'UNKNOWN']);
 const ALLOWED_SIGNAL_VERDICTS = new Set(['green', 'amber', 'red', 'unknown']);
 const ALLOWED_SOURCES = new Set(['edge', 'settlement', 'feed', 'ops']);
 
-// Postgres "relation does not exist" code — migration hasn't been applied.
+// Table-missing detection. Raw Postgres returns code '42P01' ("relation does
+// not exist"), but the Supabase PostgREST proxy wraps that and surfaces its
+// own error code 'PGRST205' with a human-readable message. Match both, and
+// fall back to a message substring for safety.
 const PG_UNDEFINED_TABLE = '42P01';
+const POSTGREST_TABLE_MISSING = 'PGRST205';
+function isTableMissing(err: { message?: string; code?: string } | null): boolean {
+  if (!err) return false;
+  if (err.code === PG_UNDEFINED_TABLE) return true;
+  if (err.code === POSTGREST_TABLE_MISSING) return true;
+  const m = (err.message || '').toLowerCase();
+  return m.includes('could not find the table') || m.includes('does not exist');
+}
 
 type Row = {
   id: string;
@@ -156,7 +167,7 @@ export async function GET(request: Request) {
 
     if (res.error) {
       // Migration not applied yet — soft-fail to empty instead of 500.
-      if (res.error.code === PG_UNDEFINED_TABLE) {
+      if (isTableMissing(res.error)) {
         return NextResponse.json(
           {
             ok: true,
