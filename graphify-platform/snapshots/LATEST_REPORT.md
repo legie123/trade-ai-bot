@@ -1,7 +1,7 @@
 # Graph Report - /home/runner/work/trade-ai-bot/trade-ai-bot/src  (2026-04-20)
 
 ## Corpus Check
-- 311 files · ~254,255 words
+- 311 files · ~254,327 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -638,11 +638,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `GET()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 24`, `Community 26`, `Community 27`, `Community 28`, `Community 33`?**
-  _High betweenness centrality (0.511) - this node is a cross-community bridge._
+  _High betweenness centrality (0.541) - this node is a cross-community bridge._
 - **Why does `POST()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 14`, `Community 15`, `Community 16`, `Community 18`, `Community 20`, `Community 22`, `Community 27`, `Community 28`?**
-  _High betweenness centrality (0.175) - this node is a cross-community bridge._
-- **Why does `analyzeBTC()` connect `Community 4` to `Community 8`, `Community 0`?**
-  _High betweenness centrality (0.040) - this node is a cross-community bridge._
+  _High betweenness centrality (0.149) - this node is a cross-community bridge._
+- **Why does `PolyWsClient` connect `Community 12` to `Community 0`?**
+  _High betweenness centrality (0.028) - this node is a cross-community bridge._
 - **Are the 205 inferred relationships involving `GET()` (e.g. with `isAuthenticated()` and `runKarmaRead()`) actually correct?**
   _`GET()` has 205 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 82 inferred relationships involving `POST()` (e.g. with `.getCurrentSynthesis()` and `.getModifierForSymbol()`) actually correct?**
