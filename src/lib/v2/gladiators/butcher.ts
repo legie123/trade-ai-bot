@@ -210,6 +210,20 @@ export class TheButcher {
       // into `survivors`. Without this flag, every kill was silently reverted
       // on the next remote merge window and PF<1.0 zombies resurrected.
       // See db.ts saveGladiatorsToDb for the merge logic.
+      //
+      // ⚠️  PERSISTENCE RACE WARNING (2026-04-20): this call is fire-and-forget
+      // (no await). It relies on the CALLER to flush pending syncs before the
+      // Cloud Run handler returns — otherwise the IIFE dies mid-flight when
+      // Cloud Run CPU-throttles after HTTP response and the json_store write
+      // never lands (zombies resurrect on next cold-start reloadFromDb).
+      // Current safe callers: arena:rotation in command/route.ts (has
+      // `await flushPendingSyncs(ARENA_ROTATION_FLUSH_MS||8000)` at tail).
+      // Currently DEAD paths that would be UNSAFE if rewired without a flush:
+      //   - src/scripts/cron_dailyRotation.ts (standalone, no HTTP)
+      //   - PromotersAggregator.evaluateAndRecruit() (no live consumer)
+      // If you wire a NEW invoker of executeWeaklings() from an HTTP handler,
+      // you MUST add `await flushPendingSyncs(...)` after this returns or
+      // change this line to `await saveGladiatorsToDb(...)`.
       saveGladiatorsToDb(survivors, { skipRemoteMerge: true });
       // Re-hydrate the store
       gladiatorStore.hydrate(survivors);
