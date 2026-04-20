@@ -51,8 +51,9 @@ const RANGE: Record<string, string> = {
     'sum(increase(tradeai_trade_executions_total{service="trade-ai",result=~"win|loss"}[1h]))',
 };
 
-type InstantResult = { value: number | null; ts: number | null };
-type RangeResult = { points: Array<[number, number]> };
+type QueryStatus = 'ok' | 'error' | 'empty';
+type InstantResult = { value: number | null; ts: number | null; status: QueryStatus };
+type RangeResult = { points: Array<[number, number]>; status: QueryStatus };
 
 async function promGet(path: string, params: Record<string, string>): Promise<unknown> {
   if (!TOKEN) throw new Error('GRAFANA_DASHBOARD_TOKEN missing');
@@ -78,18 +79,24 @@ async function promGet(path: string, params: Record<string, string>): Promise<un
 function parseInstant(j: unknown): InstantResult {
   const r = j as { data?: { result?: Array<{ value?: [number, string] }> } } | null;
   const first = r?.data?.result?.[0]?.value;
-  if (!first) return { value: null, ts: null };
+  if (!first) return { value: null, ts: null, status: 'empty' };
   const v = Number(first[1]);
-  return { value: Number.isFinite(v) ? v : null, ts: first[0] * 1000 };
+  return {
+    value: Number.isFinite(v) ? v : null,
+    ts: first[0] * 1000,
+    status: Number.isFinite(v) ? 'ok' : 'empty',
+  };
 }
 
 function parseRange(j: unknown): RangeResult {
   const r = j as { data?: { result?: Array<{ values?: Array<[number, string]> }> } } | null;
   const vals = r?.data?.result?.[0]?.values || [];
+  const points = vals
+    .map(([t, v]): [number, number] => [t * 1000, Number(v)])
+    .filter(([, v]) => Number.isFinite(v));
   return {
-    points: vals
-      .map(([t, v]): [number, number] => [t * 1000, Number(v)])
-      .filter(([, v]) => Number.isFinite(v)),
+    points,
+    status: points.length > 0 ? 'ok' : 'empty',
   };
 }
 
@@ -118,7 +125,7 @@ export async function GET() {
         const j = await promGet('query', { query });
         instantResults[key] = parseInstant(j);
       } catch {
-        instantResults[key] = { value: null, ts: null };
+        instantResults[key] = { value: null, ts: null, status: 'error' };
       }
     }),
     ...Object.entries(RANGE).map(async ([key, query]) => {
@@ -131,10 +138,16 @@ export async function GET() {
         });
         rangeResults[key] = parseRange(j);
       } catch {
-        rangeResults[key] = { points: [] };
+        rangeResults[key] = { points: [], status: 'error' };
       }
     }),
   ]);
+
+  // Summary counters — let UI compute PartialBadge without iterating.
+  const totalQueries = Object.keys(INSTANT).length + Object.keys(RANGE).length;
+  const failedQueries =
+    Object.values(instantResults).filter((r) => r.status === 'error').length +
+    Object.values(rangeResults).filter((r) => r.status === 'error').length;
 
   return NextResponse.json(
     {
@@ -142,6 +155,13 @@ export async function GET() {
       fetchedAt: now * 1000,
       instant: instantResults,
       range: rangeResults,
+      queryHealth: {
+        total: totalQueries,
+        failed: failedQueries,
+        empty:
+          Object.values(instantResults).filter((r) => r.status === 'empty').length +
+          Object.values(rangeResults).filter((r) => r.status === 'empty').length,
+      },
     },
     {
       headers: {
