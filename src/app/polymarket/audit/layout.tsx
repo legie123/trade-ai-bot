@@ -12,6 +12,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { verifyToken } from '@/lib/auth';
 import { FeedHeartbeatStrip } from '@/components/polymarket/FeedHeartbeatStrip';
+import { BrainStatusPill } from '@/components/polymarket/BrainStatusPill';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +52,7 @@ export default async function AuditLayout({ children }: { children: React.ReactN
         <Link href="/polymarket/audit/llm-cost" style={{ color: C.text, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>LLM $</Link>
         <Link href="/polymarket/audit/flags" style={{ color: C.text, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>Flags</Link>
         <div style={{ flex: 1 }} />
+        <BrainStatusPill />
         <FeedHeartbeatStrip />
         <Link href="/polymarket" style={{ color: C.muted, fontSize: 11, textDecoration: 'none', marginLeft: 16 }}>← back to command</Link>
       </nav>
