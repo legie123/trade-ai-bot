@@ -9,6 +9,8 @@ import { routeSignal } from '@/lib/router/signalRouter';
 import { signalStore } from '@/lib/store/signalStore';
 import { ArenaSimulator } from '@/lib/v2/arena/simulator';
 import { initDB } from '@/lib/store/db';
+// P2-6b (2026-04-20): pull cid from AsyncLocalStorage scope set by cron wrap.
+import { getCurrentCid } from '@/lib/observability/correlationId';
 
 const log = createLogger('SolanaSignalsRoute');
 const manager = ManagerVizionar.getInstance();
@@ -17,7 +19,10 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 let cache: { data: Record<string, unknown>; expiresAt: number } | null = null;
-const CACHE_TTL_MS = 15_000;
+// C20 (2026-04-20): Route cache 15s→90s. Prior: every 15s re-ran analyzeMultiCoin + processSignal
+// even though 4h candle data doesn't change. 90s aligns with cron period (~60s) plus margin.
+// On cache hit, returns instantly (no processSignal, no OHLC fetches).
+const CACHE_TTL_MS = 90_000;
 
 export async function GET() {
   try {
@@ -59,6 +64,8 @@ export async function GET() {
                timestamp: result.timestamp,
                source: 'Solana Scout V2',
                message: rawSig.reason,
+               // P2-6b: cid flows signal → processSignal → dualMaster → syndicate_audits.
+               correlationId: getCurrentCid() || undefined,
              };
 
              const routed = routeSignal(signalPayload);

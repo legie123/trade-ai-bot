@@ -70,8 +70,12 @@ if (!g.__solCache) {
 const cache = g.__solCache;
 
 const PRICE_TTL = 1 * 60_000;
-const OHLC_TTL = 5 * 60_000;
-const RESULT_TTL = 2 * 60_000;
+// C20 (2026-04-20): 4h candles don't need 5min refresh. 10min is safe.
+// Prior: OHLC_TTL=5min, RESULT_TTL=2min → OHLC re-fetched every 2min (result cache miss
+// triggers full re-analysis including OHLC). At 8 coins × 3s timeout = 6-12s per re-fetch.
+// New: OHLC 10min, RESULT 5min. First cold tick still ~4s, subsequent 0ms for 5min.
+const OHLC_TTL = 10 * 60_000;
+const RESULT_TTL = 5 * 60_000;
 
 function calcEMA(values: number[], period: number): number {
   if (values.length === 0) return 0;
@@ -137,7 +141,8 @@ async function fetchOHLC(coinId: string): Promise<Candle[]> {
     let mexcSymbol = `${coin.symbol.toUpperCase()}USDT`;
     if (coin.symbol.toUpperCase() === 'RNDR') mexcSymbol = 'RENDERUSDT';
 
-    const res = await fetchWithRetry(`https://api.mexc.com/api/v3/klines?symbol=${mexcSymbol}&interval=4h&limit=250`, { retries: 1, timeoutMs: 3000 });
+    // C20: timeout 3s→2s. Kline endpoint is fast; 3s was too generous and delayed fallback.
+    const res = await fetchWithRetry(`https://api.mexc.com/api/v3/klines?symbol=${mexcSymbol}&interval=4h&limit=250`, { retries: 1, timeoutMs: 2000 });
     const klines = await res.json();
     
     if (Array.isArray(klines) && klines.length > 0) {
@@ -172,7 +177,7 @@ async function fetchOHLC(coinId: string): Promise<Candle[]> {
     try {
       const cgRes = await fetchWithRetry(
         `https://api.coingecko.com/api/v3/coins/${coinId}/ohlc?vs_currency=usd&days=7`,
-        { retries: 1, timeoutMs: 4000 }
+        { retries: 1, timeoutMs: 2500 }
       );
       const cgData = await cgRes.json();
       if (Array.isArray(cgData) && cgData.length >= 20) {
@@ -302,10 +307,10 @@ export async function analyzeMultiCoin(): Promise<MultiCoinResult> {
   let totalSignals = 0;
 
   // PERF FIX 2026-04-18: OHLC was sequential (8 coins × 3s = 24s worst case).
-  // Parallelize with concurrency=4 to stay under MEXC rate limits (~20 req/s).
-  // Expected: max(2 batches × 3s) ≈ 6s worst case.
+  // C20 (2026-04-20): Raised concurrency 4→8 (all parallel). 8 requests is well under
+  // MEXC rate limit (~20 req/s). Eliminates second sequential batch (was 2×3s → 1×3s).
   const validCoins = SOLANA_COINS.filter(c => isSymbolValid(c.symbol));
-  const OHLC_CONCURRENCY = 4;
+  const OHLC_CONCURRENCY = 8;
   const ohlcResults: { coin: typeof validCoins[0]; candles: Candle[] }[] = [];
   for (let i = 0; i < validCoins.length; i += OHLC_CONCURRENCY) {
     const batch = validCoins.slice(i, i + OHLC_CONCURRENCY);
