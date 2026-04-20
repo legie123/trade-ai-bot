@@ -158,6 +158,112 @@ RULES = [
         ),
         runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
     ),
+    # Batch 3.19 2026-04-20 — per-signal attribution. Composite rule above
+    # pages first at 5m; these four fire at 10m ONLY if a single source has
+    # been stuck RED for that long (composite already fired → this tells
+    # ops which signal is holding the brain red). Severity=info to avoid
+    # double-paging on the same root cause. Expressions target the
+    # tradeai_polymarket_brain_signal_status gauge emitted by
+    # src/lib/observability/brainStatusGauges.ts (FAZA 3.15).
+    #
+    # Encoding reminder: 0=unknown 1=green 2=amber 3=red.
+    build_rule(
+        uid="tradeai-brain-signal-edge-red",
+        title="TRADE AI — Brain signal EDGE RED (polymarket)",
+        expr='max(tradeai_polymarket_brain_signal_status{service="trade-ai",source="edge"})',
+        threshold=3,
+        for_duration="10m",
+        severity="info",
+        summary="Polymarket brain edge (watchdog) signal stuck RED for 10+ minutes",
+        description=(
+            "tradeai_polymarket_brain_signal_status{source=\"edge\"} at RED (3) for 10m. "
+            "Source: edgeWatchdog realized PF/WR over recent settled trades. "
+            "RED means profit factor collapsed OR win rate below floor AND sample ≥ minimum "
+            "(see batch 3.13 — EDGE_WATCHDOG_ENABLED). Check /polymarket/audit (scorecard + edge panel). "
+            "If UNHEALTHY persists 30m+ consider flipping EDGE_WATCHDOG_ENFORCE=1 (blocks new bets) until recovery."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
+    build_rule(
+        uid="tradeai-brain-signal-settlement-red",
+        title="TRADE AI — Brain signal SETTLEMENT RED (polymarket)",
+        expr='max(tradeai_polymarket_brain_signal_status{service="trade-ai",source="settlement"})',
+        threshold=3,
+        for_duration="10m",
+        severity="info",
+        summary="Polymarket brain settlement pipeline signal RED for 10+ minutes",
+        description=(
+            "tradeai_polymarket_brain_signal_status{source=\"settlement\"} at RED (3) for 10m. "
+            "Source: probeSettlementHealth — 30d window with acted ≥ 50 but settled = 0 and "
+            "oldest pending > 30d. Indicates the settlement cron stopped writing or the CLOB "
+            "resolve endpoint is dead. Check /polymarket/audit (settlement stats) and the cron "
+            "that calls settlePolymarketPositions. Kill-switch: POLYMARKET_SETTLE_ENABLED."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
+    build_rule(
+        uid="tradeai-brain-signal-feed-red",
+        title="TRADE AI — Brain signal FEED RED (polymarket)",
+        expr='max(tradeai_polymarket_brain_signal_status{service="trade-ai",source="feed"})',
+        threshold=3,
+        for_duration="10m",
+        severity="info",
+        summary="Polymarket brain feed aggregate signal RED for 10+ minutes",
+        description=(
+            "tradeai_polymarket_brain_signal_status{source=\"feed\"} at RED (3) for 10m. "
+            "Source: getFeedHealth aggregate (goldsky + scanner + polymarket). "
+            "After FAZA 3.17 unconfigured feeds map to 'unconfigured' (0, not 3) so any RED "
+            "is a real stale/error condition on a CONFIGURED feed. Check /polymarket/audit/feed-health "
+            "to isolate which feed is stale. Typical cause: Goldsky pipeline stopped or Polymarket "
+            "scanner cron failed."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
+    build_rule(
+        uid="tradeai-brain-signal-ops-red",
+        title="TRADE AI — Brain signal OPS RED (polymarket)",
+        expr='max(tradeai_polymarket_brain_signal_status{service="trade-ai",source="ops"})',
+        threshold=3,
+        for_duration="10m",
+        severity="info",
+        summary="Polymarket brain ops-flags signal RED for 10+ minutes",
+        description=(
+            "tradeai_polymarket_brain_signal_status{source=\"ops\"} at RED (3) for 10m. "
+            "Source: opsFlags — at least one CRITICAL kill-switch is at state='off'. "
+            "This is usually intentional (operator pulled the switch). If unexpected, inspect "
+            "/polymarket/audit/flags for the off-CRITICAL flag(s). Current steady-state is AMBER "
+            "because DIRECTION_LONG_DISABLED is active (HIGH risk); RED means someone flipped a "
+            "CRITICAL protection off."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
+    # Probe watchdog — detects when the brain-status gauge stops emitting at all.
+    # Uses absent() so it only fires when the series is truly missing (scrape
+    # failure, BRAIN_STATUS_METRICS_ENABLED=0, app crash loop, Grafana Agent
+    # misconfigured). for=15m absorbs transient scrape gaps. Severity=warning:
+    # no brain-status readings means we're flying blind, which is as bad as
+    # a sustained RED — maybe worse because alerts can't fire.
+    build_rule(
+        uid="tradeai-brain-probe-absent",
+        title="TRADE AI — Brain Status probe ABSENT (polymarket)",
+        expr='absent(tradeai_polymarket_brain_status{service="trade-ai"})',
+        threshold=1,
+        for_duration="15m",
+        severity="warning",
+        summary="Polymarket brain status gauge absent for 15+ minutes — probe dead",
+        description=(
+            "tradeai_polymarket_brain_status series missing from Prometheus for 15m. "
+            "Root causes (in order of likelihood): (1) Cloud Run revision crash-looping; "
+            "(2) BRAIN_STATUS_METRICS_ENABLED env flipped to 0; "
+            "(3) Grafana Agent scrape misconfigured; "
+            "(4) /api/metrics returning non-200 (check METRICS_TOKEN auth). "
+            "With the probe dead all other brain-* rules stop firing — this IS the top-level "
+            "dead-man-switch. Immediate action: `gcloud run services describe trade-ai --region=europe-west1` "
+            "to check revision health, then `curl -H \"Authorization: Bearer $METRICS_TOKEN\" "
+            "https://trade-ai-3rzn6ry36q-ew.a.run.app/api/metrics | grep polymarket_brain`."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
 ]
 
 
