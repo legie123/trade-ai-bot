@@ -1,12 +1,12 @@
 # Graph Report - /home/runner/work/trade-ai-bot/trade-ai-bot/src  (2026-04-20)
 
 ## Corpus Check
-- 291 files · ~236,838 words
+- 292 files · ~238,681 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1467 nodes · 2824 edges · 93 communities detected
-- Extraction: 69% EXTRACTED · 31% INFERRED · 0% AMBIGUOUS · INFERRED: 876 edges (avg confidence: 0.8)
+- 1472 nodes · 2836 edges · 93 communities detected
+- Extraction: 69% EXTRACTED · 31% INFERRED · 0% AMBIGUOUS · INFERRED: 880 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -105,7 +105,7 @@
 - [[_COMMUNITY_Community 92|Community 92]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `GET()` - 287 edges
+1. `GET()` - 289 edges
 2. `POST()` - 116 edges
 3. `GladiatorStore` - 26 edges
 4. `DELETE()` - 25 edges
@@ -123,92 +123,92 @@
   /home/runner/work/trade-ai-bot/trade-ai-bot/src/app/api/dashboard/route.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/v2/alerts/eventHub.ts
 - `getCachedPrice()` --calls--> `getOrFetchPrice()`  [INFERRED]
   /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/v2/arena/simulator.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/cache/priceCache.ts
+- `handle()` --calls--> `lastCouplingState()`  [INFERRED]
+  /home/runner/work/trade-ai-bot/trade-ai-bot/src/app/api/v2/polymarket/sentinel-coupling/route.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/polymarket/sentinelCoupling.ts
 - `GET()` --calls--> `lastTuneResult()`  [INFERRED]
-  /home/runner/work/trade-ai-bot/trade-ai-bot/src/app/api/dashboard/route.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/polymarket/thresholdTuner.ts
-- `GET()` --calls--> `lastDivisionTuneResult()`  [INFERRED]
   /home/runner/work/trade-ai-bot/trade-ai-bot/src/app/api/dashboard/route.ts → /home/runner/work/trade-ai-bot/trade-ai-bot/src/lib/polymarket/thresholdTuner.ts
 
 ## Communities
 
 ### Community 0 - "Community 0"
 Cohesion: 0.02
-Nodes (107): calculateAdaptiveSize(), captureDivisionSnapshot(), captureSnapshot(), persistAsync(), persistDivAsync(), recentDivisionSnapshots(), recentSnapshots(), snapshotStats() (+99 more)
+Nodes (89): calculateAdaptiveSize(), errorResponse(), successResponse(), captureDivisionSnapshot(), captureSnapshot(), persistAsync(), persistDivAsync(), recentDivisionSnapshots() (+81 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.03
-Nodes (40): TheButcher, wilsonLower(), runDailyRotation(), getGladiatorBattles(), getGladiatorsFromDb(), getIndependentSampleSize(), getPhantomTrades(), refreshGladiatorsFromCloud() (+32 more)
+Nodes (44): TheButcher, wilsonLower(), computeDegradation(), computeStats(), getCpcvConfig(), getCpcvMode(), isFoldOverfit(), loadTrades() (+36 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.03
-Nodes (46): AlphaScout, errorResponse(), successResponse(), getResilientPrice(), releaseTaskLease(), tryAcquireTaskLease(), GladiatorRegistry, MemoryCache (+38 more)
-
-### Community 3 - "Community 3"
 Cohesion: 0.04
 Nodes (52): fetchWithRetry(), sleep(), calcBollingerBands(), sma(), stdDev(), analyzeBTC(), calcEMA(), emptyResult() (+44 more)
 
+### Community 3 - "Community 3"
+Cohesion: 0.05
+Nodes (60): addGladiatorDna(), addGladiatorDnaBatch(), appendToEquityCurve(), AsyncMutex, buildWashKeyMap(), clearSystemHealthData(), flushPendingSyncs(), getBotConfig() (+52 more)
+
 ### Community 4 - "Community 4"
-Cohesion: 0.07
-Nodes (41): MexcAdapter, addInvalidSymbol(), isSymbolValid(), updateLivePosition(), updatePostTrade(), executeMexcTrade(), getExchangeInfoCached(), getPositionSize() (+33 more)
+Cohesion: 0.06
+Nodes (48): MexcAdapter, addInvalidSymbol(), getLivePositions(), isSymbolValid(), updateLivePosition(), updatePostTrade(), executeMexcTrade(), getExchangeInfoCached() (+40 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.06
-Nodes (49): requireCronAuth(), buildReasoning(), classifyRisk(), determineRecommendation(), evaluateOpportunity(), getEdgeFloor(), getPriceHistory(), scanDivision() (+41 more)
+Cohesion: 0.04
+Nodes (42): alertBetPlaced(), alertBetResolved(), alertDailyDigest(), alertRiskHalt(), isRateLimited(), sendTelegramAlert(), TELEGRAM_BOT_TOKEN(), TELEGRAM_CHAT_ID() (+34 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.05
-Nodes (31): alertBetPlaced(), alertBetResolved(), alertDailyDigest(), alertRiskHalt(), isRateLimited(), sendTelegramAlert(), TELEGRAM_BOT_TOKEN(), TELEGRAM_CHAT_ID() (+23 more)
+Cohesion: 0.04
+Nodes (50): getResilientPrice(), releaseTaskLease(), tryAcquireTaskLease(), asNum(), asStr(), extractFields(), getEventsHealth(), insertGoldskyEvent() (+42 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.06
-Nodes (49): addGladiatorDna(), addGladiatorDnaBatch(), appendToEquityCurve(), AsyncMutex, buildWashKeyMap(), clearSystemHealthData(), flushPendingSyncs(), getCrossGladiatorWashScore() (+41 more)
+Cohesion: 0.07
+Nodes (47): buildReasoning(), classifyRisk(), determineRecommendation(), evaluateOpportunity(), getEdgeFloor(), getPriceHistory(), scanDivision(), scoreLiquidity() (+39 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.07
 Nodes (42): checkHealth(), providerFetch(), birdeyeHealthCheck(), getMultiPrice(), getTokenOverview(), getTokenPrice(), headers(), calculateDealScore() (+34 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.09
-Nodes (32): AutoDebugEngine, engageWithFeed(), extractInsightsWithLLM(), generateSmartReplyLLM(), runMoltbookDailySweep(), solveMathChallenge(), tryPostingToMoltbook(), bucketUpvotes() (+24 more)
+Cohesion: 0.07
+Nodes (19): callLLM(), costUsd(), isAbortError(), priceFor(), recordCall(), acquireTradeLock(), addDecision(), isPositionOpenStrict() (+11 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.08
-Nodes (17): callLLM(), costUsd(), isAbortError(), priceFor(), recordCall(), acquireTradeLock(), addDecision(), isPositionOpenStrict() (+9 more)
+Cohesion: 0.09
+Nodes (32): AutoDebugEngine, engageWithFeed(), extractInsightsWithLLM(), generateSmartReplyLLM(), runMoltbookDailySweep(), solveMathChallenge(), tryPostingToMoltbook(), bucketUpvotes() (+24 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.07
 Nodes (22): addSyndicateAudit(), getGladiatorDna(), callDeepSeek(), callGemini(), callOpenAI(), checkMarketDataAnchoring(), consensusCacheKey(), DualMasterConsciousness (+14 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.07
-Nodes (14): CoindeskRssAdapter, extract(), extractSymbols(), parseRssItems(), CointelegraphRssAdapter, extractSymbols(), extractTag(), extractTopics() (+6 more)
+Cohesion: 0.06
+Nodes (15): CoindeskRssAdapter, extract(), extractSymbols(), parseRssItems(), CointelegraphRssAdapter, extractSymbols(), extractTag(), extractTopics() (+7 more)
 
 ### Community 13 - "Community 13"
 Cohesion: 0.08
-Nodes (27): getEquityCurve(), getLivePositions(), getSyncQueueStats(), getFreshHealthSnapshot(), startHeartbeat(), takeSnapshot(), checkDailyLossLimit(), checkExposureLimit() (+19 more)
+Nodes (26): getEquityCurve(), getSyncQueueStats(), getFreshHealthSnapshot(), startHeartbeat(), takeSnapshot(), checkDailyLossLimit(), checkExposureLimit(), disengageKillSwitch() (+18 more)
 
 ### Community 14 - "Community 14"
+Cohesion: 0.1
+Nodes (32): buildBearPrompt(), buildBullPrompt(), callLLM(), DebateEngine, heuristicDebate(), parseArgument(), scoreDebate(), fetch_() (+24 more)
+
+### Community 15 - "Community 15"
 Cohesion: 0.09
 Nodes (20): binanceRequest(), getBinanceBalances(), getBinanceConfig(), getBinanceExchangeInfo(), getBinanceOpenPositions(), getBinancePrice(), placeBinanceLimitOrder(), placeBinanceMarketOrder() (+12 more)
 
-### Community 15 - "Community 15"
-Cohesion: 0.11
-Nodes (32): computeDegradation(), computeStats(), getCpcvConfig(), getCpcvMode(), isFoldOverfit(), loadTrades(), parseTsMs(), runCpcvValidate() (+24 more)
-
 ### Community 16 - "Community 16"
-Cohesion: 0.13
-Nodes (21): getBotConfig(), getDecisions(), emitDemotion(), emitError(), emitEvent(), emitKillSwitch(), emitPromotion(), emitSentinelVeto() (+13 more)
+Cohesion: 0.08
+Nodes (8): CryptoPanicAdapter, getAggregateFeedHealth(), HeuristicSentimentAdapter, NewsCollector, getEnabledNewsAdapters(), getSentimentAdapter(), listAllAdapters(), SentimentAgent
 
 ### Community 17 - "Community 17"
-Cohesion: 0.07
-Nodes (8): CryptoPanicAdapter, getAggregateFeedHealth(), HeuristicSentimentAdapter, NewsCollector, getEnabledNewsAdapters(), getSentimentAdapter(), listAllAdapters(), SentimentAgent
+Cohesion: 0.12
+Nodes (17): flushBuffer(), forceFlush(), generateId(), logDecision(), startFlushTimer(), uuid(), createDefaultEnsemble(), extractFeatures() (+9 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.1
-Nodes (14): buildBearPrompt(), buildBullPrompt(), callLLM(), DebateEngine, heuristicDebate(), parseArgument(), scoreDebate(), flushBuffer() (+6 more)
+Nodes (13): BybitAdapter, ExchangeRouter, bybitRequest(), cancelBybitOrder(), getBaseUrl(), getBybitBalance(), getBybitConfig(), getBybitOpenOrders() (+5 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.1
-Nodes (13): BybitAdapter, ExchangeRouter, bybitRequest(), cancelBybitOrder(), getBaseUrl(), getBybitBalance(), getBybitConfig(), getBybitOpenOrders() (+5 more)
+Cohesion: 0.09
+Nodes (3): AlphaScout, PromotersAggregator, WsStreamManager
 
 ### Community 20 - "Community 20"
 Cohesion: 0.16
@@ -595,14 +595,14 @@ Nodes (0):
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `GET()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 27`?**
-  _High betweenness centrality (0.524) - this node is a cross-community bridge._
-- **Why does `POST()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 18`, `Community 19`, `Community 20`?**
-  _High betweenness centrality (0.154) - this node is a cross-community bridge._
-- **Why does `fetchWithRetry()` connect `Community 3` to `Community 8`, `Community 0`, `Community 6`?**
-  _High betweenness centrality (0.048) - this node is a cross-community bridge._
-- **Are the 195 inferred relationships involving `GET()` (e.g. with `isAuthenticated()` and `runKarmaRead()`) actually correct?**
-  _`GET()` has 195 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `GET()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 13`, `Community 15`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 27`?**
+  _High betweenness centrality (0.555) - this node is a cross-community bridge._
+- **Why does `POST()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 17`, `Community 18`, `Community 19`, `Community 20`?**
+  _High betweenness centrality (0.137) - this node is a cross-community bridge._
+- **Why does `fetchWithRetry()` connect `Community 2` to `Community 8`, `Community 0`, `Community 5`?**
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
+- **Are the 197 inferred relationships involving `GET()` (e.g. with `isAuthenticated()` and `runKarmaRead()`) actually correct?**
+  _`GET()` has 197 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 81 inferred relationships involving `POST()` (e.g. with `.getCurrentSynthesis()` and `.getModifierForSymbol()`) actually correct?**
   _`POST()` has 81 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 24 inferred relationships involving `DELETE()` (e.g. with `seedPaper()` and `resetForPaperMode()`) actually correct?**
