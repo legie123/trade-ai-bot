@@ -595,6 +595,11 @@ export function addSyndicateAudit(audit: Record<string, unknown>): void {
       weightedConfidence: auditRec.weightedConfidence || 0,
       opinions: auditRec.opinions || [],
       hallucinationReport: auditRec.hallucinationReport || null,
+      // P2-6b (2026-04-20): end-to-end correlation_id for audit trail.
+      // Column added via migration (idx_audits_cid). NULL = kill-switch off
+      // or call-site didn't stamp cid. Non-breaking: pre-migration rows return
+      // NULL; new rows carry cid when orchestrator propagates it.
+      correlation_id: typeof auditRec.correlation_id === 'string' ? auditRec.correlation_id : null,
     };
     // SAFETY FAZA 3.1: Handle BOTH PostgREST payload error AND transport-level promise rejection.
     // Supabase builder returns PromiseLike (not full Promise), so .catch() is not available.
@@ -632,18 +637,42 @@ export async function refreshGladiatorsFromCloud(): Promise<void> {
 }
 
 
-export function saveGladiatorsToDb(gladiators: Gladiator[]): Promise<void> {
+export function saveGladiatorsToDb(
+  gladiators: Gladiator[],
+  opts?: { skipRemoteMerge?: boolean },
+): Promise<void> {
   // AUDIT FIX T2.2: Mutex-protected read-merge-write to prevent gladiator data loss
   // PERF FIX 2026-04-18: Remote merge debounced to max once per 60s.
   // Was: full Supabase SELECT+merge on EVERY updateGladiatorStats → 50+ roundtrips/tick.
   // FAZA A FIX 2026-04-19: Return Promise so flushPendingSyncs can await in-flight writes
   // before draining syncTasks. Existing fire-and-forget callers unaffected (ignore Promise).
+  //
+  // BUTCHER-PURGE FIX 2026-04-20 (Pool-Butcher-Persist):
+  //   ROOT CAUSE: Remote merge-back re-introduces gladiators that were
+  //   just purged by Butcher. For a caller that has an explicit "alive set",
+  //   finding an ID "locally missing but remotely present" means "I deleted
+  //   it on purpose", not "I need to hydrate it". The merge loop did the
+  //   wrong thing for Butcher → PF<1.0 zombies resurrected every rotation.
+  //
+  //   FIX: Opt-in `skipRemoteMerge` flag. Butcher (and any future
+  //   authoritative-purge caller) passes true. Default stays false so
+  //   existing stat-update callers remain backward-compatible.
+  //
+  //   KILL-SWITCH: None (flag is caller-driven, not global env).
+  //   ASSUMPTION that, if broken, invalidates this fix:
+  //     - Butcher passes the FULL survivor set, not a partial update.
+  //       (It does — see butcher.ts executeWeaklings: survivors array
+  //        collects every non-killed gladiator including Omega.)
   const p = (async () => {
     const release = await gladiatorMutex.acquire();
     try {
       const now = Date.now();
+      const doMerge = !opts?.skipRemoteMerge
+        && supabaseUrl
+        && dbInitialized
+        && now - _lastGladiatorRemoteMerge > 300_000;
       // C7 FIX #6: Remote merge debounce 60s → 300s (same as decision merge).
-      if (supabaseUrl && dbInitialized && now - _lastGladiatorRemoteMerge > 300_000) {
+      if (doMerge) {
         _lastGladiatorRemoteMerge = now;
         try {
           const { data } = await supabase.from('json_store').select('data').eq('id', 'gladiators').single();
@@ -666,6 +695,11 @@ export function saveGladiatorsToDb(gladiators: Gladiator[]): Promise<void> {
         } catch (err) {
           log.warn('Could not sync gladiators for merge. Overwriting directly.', { err: String(err) });
         }
+      } else if (opts?.skipRemoteMerge) {
+        // Butcher-grade authoritative overwrite. Stamp the timer so a
+        // subsequent stat-update save within the 300s window doesn't
+        // immediately re-merge and resurrect what we just purged.
+        _lastGladiatorRemoteMerge = now;
       }
 
       cache.gladiators = gladiators;

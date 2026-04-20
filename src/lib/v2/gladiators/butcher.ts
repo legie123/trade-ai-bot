@@ -203,8 +203,14 @@ export class TheButcher {
         log.info(`[The Butcher] Graveyard recorded ${recorded}/${killedDetails.length} (mode=${gMode}).`);
       }
 
-      // Clean DB completely
-      saveGladiatorsToDb(survivors);
+      // Clean DB completely.
+      // BUTCHER-PURGE FIX 2026-04-20 (Pool-Butcher-Persist): pass
+      // skipRemoteMerge=true so saveGladiatorsToDb does NOT re-merge the
+      // remote snapshot (which still contains the IDs we just purged) back
+      // into `survivors`. Without this flag, every kill was silently reverted
+      // on the next remote merge window and PF<1.0 zombies resurrected.
+      // See db.ts saveGladiatorsToDb for the merge logic.
+      saveGladiatorsToDb(survivors, { skipRemoteMerge: true });
       // Re-hydrate the store
       gladiatorStore.hydrate(survivors);
       log.info(`[The Butcher] Arena cleansed. ${executions.length} weak strategies were permanently deleted.`);

@@ -354,7 +354,9 @@ export async function POST(request: Request): Promise<NextResponse<CommandResult
               && g.stats.profitFactor >= 1.3;
             g.isLive = g.rank <= 3 && meets;
           });
-          saveGladiatorsToDb(gladiatorStore.getGladiators());
+          // Store is authoritative after Butcher+Forge — skip remote merge
+          // (would re-introduce freshly-purged IDs if 300s debounce elapsed).
+          saveGladiatorsToDb(gladiatorStore.getGladiators(), { skipRemoteMerge: true });
 
           const leaderboard = gladiators.map(g => ({
             name: g.name, tt: g.stats.totalTrades, wr: g.stats.winRate, pf: g.stats.profitFactor, isLive: g.isLive,
