@@ -385,6 +385,37 @@ RULES = [
         ),
         runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
     ),
+    # --- Batch 3.22: LLM cost runaway guard -----------------------------------
+    # tradeai_llm_cost_dollars_total{provider,model} is a Counter (FAZA A Batch 4,
+    # callLLM.ts wrapper). rate([10m]) * 3600 converts to $/hr burn rate.
+    # sum() rolls up across provider/model so the alert fires on total spend.
+    # Bool conjunction keeps the DAG single-node: expression evaluates to 0/1.
+    # Threshold chosen generously ($1/hr ≈ $24/day) to catch runaway, not tune.
+    # False-positive protection: for=15m absorbs short bursts (e.g. a retry loop
+    # that self-heals via circuit breaker). When shadow-mode callers are off,
+    # metric has no samples → rate() returns empty vector → nodata → OK.
+    build_rule(
+        uid="tradeai-llm-cost-hourly-high",
+        title="TRADE AI — LLM hourly cost > $1/hr (runaway guard)",
+        expr='max(sum(rate(tradeai_llm_cost_dollars_total{service="trade-ai"}[10m])) * 3600 > bool 1)',
+        threshold=1,
+        for_duration="15m",
+        severity="warning",
+        summary="LLM spend rate > $1/hr sustained 15m — possible runaway",
+        description=(
+            "tradeai_llm_cost_dollars_total (provider×model) hourly burn rate has "
+            "exceeded $1/hr for 15m. Steady-state should be <$0.10/hr with multi-LLM "
+            "consensus OFF and only polySyndicate+karma active. Causes: "
+            "(1) MULTI_LLM_CONSENSUS_ENABLED flipped on without $/day cap enforcement; "
+            "(2) retry loop on 429 without circuit breaker; (3) Gemini-1.5-Pro miscast "
+            "to a premium model; (4) prompt size blew up (context bloat regression). "
+            "Immediate action: check /polymarket/audit/llm-cost for per-market split "
+            "(Batch 3.3), identify the model/caller, then flip the relevant domain "
+            "kill-switch (LLM_CONSENSUS_PERSIST_ENABLED=0, MULTI_LLM_CONSENSUS_ENABLED=off). "
+            "PRICING_USD_PER_MTOK lives in callLLM.ts — verify no mispricing."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
 ]
 
 
