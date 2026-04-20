@@ -49,8 +49,10 @@ export interface FeedHealthAggregate {
   staleFeeds: string[];
 }
 
-function statusFromAge(lagMs: number | null, freshMs: number, staleMs: number): FeedStatus {
-  if (lagMs == null || !Number.isFinite(lagMs)) return 'stale';
+// FAZA 3.17 — non-null contract. Null/missing lastTick is handled at call sites
+// (returns 'unconfigured' snapshot) so statusFromAge only classifies real ages.
+function statusFromAge(lagMs: number, freshMs: number, staleMs: number): FeedStatus {
+  if (!Number.isFinite(lagMs)) return 'stale';
   if (lagMs <= freshMs) return 'fresh';
   if (lagMs <= staleMs) return 'aging';
   return 'stale';
@@ -77,7 +79,24 @@ async function probeGoldsky(): Promise<FeedSnapshot> {
       };
     }
     const lastTick = health.lastEventAt ? new Date(health.lastEventAt).getTime() : null;
-    const lagMs = lastTick != null ? Date.now() - lastTick : null;
+    // FAZA 3.17 — Treat never-fired webhook (lastTick==null) as 'unconfigured', NOT 'stale'.
+    // Previously polluted brain-status=RED when Goldsky ingest never received any event
+    // (e.g. webhook secret pending, subgraph not yet wired). True staleness requires
+    // a prior successful tick that has since gone cold.
+    if (lastTick == null) {
+      return {
+        name,
+        status: 'unconfigured',
+        lastTick: null,
+        lagSeconds: null,
+        freshMs,
+        staleMs,
+        note: `No Goldsky events ever received${cfg.enabled ? '' : ' (subgraph disabled)'} — webhook secret + polymarket_events write-flag pending.`,
+        sourceHref: '/polymarket/audit/goldsky',
+        sourceQuery: 'polymarket_events (max received_at)',
+      };
+    }
+    const lagMs = Date.now() - lastTick;
     const status = statusFromAge(lagMs, freshMs, staleMs);
     return {
       name,
@@ -89,7 +108,7 @@ async function probeGoldsky(): Promise<FeedSnapshot> {
       note: status === 'fresh'
         ? `Ingest healthy — subgraph ${cfg.enabled ? 'enabled' : 'cache-only'}, ${health.eventsLast1h} events/h.`
         : status === 'aging'
-        ? `Ingest slowing — ${health.eventsLast1h} events/h, last ${Math.floor((lagMs ?? 0) / 60_000)}min ago.`
+        ? `Ingest slowing — ${health.eventsLast1h} events/h, last ${Math.floor(lagMs / 60_000)}min ago.`
         : 'Ingest stale — no events in 30min; check webhook secret + write-flag.',
       sourceHref: '/polymarket/audit/goldsky',
       sourceQuery: 'polymarket_events (max received_at)',
@@ -129,19 +148,34 @@ async function probeScanner(): Promise<FeedSnapshot> {
       };
     }
     const lastTick = last.started_at ? new Date(last.started_at).getTime() : null;
-    const lagMs = lastTick != null ? Date.now() - lastTick : null;
+    // FAZA 3.17 — Row present but started_at missing ⇒ unconfigured (migration drift),
+    // not stale. Stale requires a real clock to compare against.
+    if (lastTick == null) {
+      return {
+        name,
+        status: 'unconfigured',
+        lastTick: null,
+        lagSeconds: null,
+        freshMs,
+        staleMs,
+        note: 'Scan row missing started_at — schema drift; check polymarket_scan_history migration.',
+        sourceHref: '/polymarket/audit',
+        sourceQuery: 'polymarket_scan_history.started_at',
+      };
+    }
+    const lagMs = Date.now() - lastTick;
     const status = statusFromAge(lagMs, freshMs, staleMs);
     return {
       name,
       status,
       lastTick,
-      lagSeconds: lagMs != null ? Math.floor(lagMs / 1000) : null,
+      lagSeconds: Math.floor(lagMs / 1000),
       freshMs,
       staleMs,
       note: status === 'fresh'
         ? 'Scanner cron running on schedule.'
         : status === 'aging'
-        ? `Last scan ${Math.floor((lagMs ?? 0) / 60_000)}min ago — cron expected every 15min.`
+        ? `Last scan ${Math.floor(lagMs / 60_000)}min ago — cron expected every 15min.`
         : 'Scanner stale — cron likely down.',
       sourceHref: '/polymarket/audit',
       sourceQuery: 'polymarket_scan_history.started_at',
