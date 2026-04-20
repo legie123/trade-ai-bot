@@ -72,8 +72,31 @@ function isValidDirection(x: unknown): x is 'LONG' | 'SHORT' {
   return x === 'LONG' || x === 'SHORT';
 }
 
+// Lightweight operator-token check for POST. Kept here (not in middleware)
+// because /api/v2/diag/* is intentionally public for read-only GET telemetry
+// (Grafana scrapes, operator dashboards). POST is the ONLY diag surface that
+// triggers real LLM cost (3 providers × ~$0.00015), so we gate it at the
+// route level. Token source: OPS_DIAG_TOKEN (or CRON_SECRET as fallback for
+// operator parity). Missing env => 503 so we never silently accept.
+function checkOpsAuth(req: NextRequest): { ok: true } | { ok: false; status: number; body: unknown } {
+  const expected = process.env.OPS_DIAG_TOKEN || process.env.CRON_SECRET || '';
+  if (!expected) {
+    return { ok: false, status: 503, body: { success: false, error: 'ops_auth_not_configured' } };
+  }
+  const hdr = req.headers.get('authorization') || '';
+  const given = hdr.startsWith('Bearer ') ? hdr.slice(7) : hdr;
+  if (given !== expected) {
+    return { ok: false, status: 401, body: { success: false, error: 'unauthorized' } };
+  }
+  return { ok: true };
+}
+
 export async function POST(req: NextRequest) {
   try {
+    // AUDIT-R5 Pas 4: gate manual POST trigger behind Bearer (cost-side-effect).
+    const auth = checkOpsAuth(req);
+    if (!auth.ok) return NextResponse.json(auth.body, { status: auth.status });
+
     const body = (await req.json().catch(() => ({}))) as Partial<ConsensusInput>;
 
     // Minimal validation — tolerant, since this is a manual diag surface.
