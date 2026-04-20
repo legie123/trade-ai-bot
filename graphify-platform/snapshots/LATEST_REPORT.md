@@ -1,7 +1,7 @@
 # Graph Report - /home/runner/work/trade-ai-bot/trade-ai-bot/src  (2026-04-20)
 
 ## Corpus Check
-- 319 files · ~262,819 words
+- 319 files · ~262,863 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -623,11 +623,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `GET()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 24`, `Community 25`, `Community 30`?**
-  _High betweenness centrality (0.554) - this node is a cross-community bridge._
+  _High betweenness centrality (0.542) - this node is a cross-community bridge._
 - **Why does `POST()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 13`, `Community 14`, `Community 15`, `Community 17`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 24`, `Community 25`?**
-  _High betweenness centrality (0.137) - this node is a cross-community bridge._
-- **Why does `fetchWithRetry()` connect `Community 3` to `Community 0`, `Community 1`, `Community 12`, `Community 4`?**
-  _High betweenness centrality (0.057) - this node is a cross-community bridge._
+  _High betweenness centrality (0.158) - this node is a cross-community bridge._
+- **Why does `DELETE()` connect `Community 7` to `Community 0`, `Community 2`, `Community 5`, `Community 8`, `Community 10`, `Community 15`, `Community 18`, `Community 19`, `Community 23`?**
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **Are the 209 inferred relationships involving `GET()` (e.g. with `isAuthenticated()` and `runKarmaRead()`) actually correct?**
   _`GET()` has 209 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 83 inferred relationships involving `POST()` (e.g. with `.getCurrentSynthesis()` and `.getModifierForSymbol()`) actually correct?**
