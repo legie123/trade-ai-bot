@@ -14,7 +14,8 @@ const log = createLogger('ArenaSimulator');
 import { netPnlFromGross } from '@/lib/v2/fees/feeModel';
 
 // AUDIT-R2 FAZA B (2026-04-20) — direction-gate drop Counter for arena telemetry.
-import { metrics, safeInc } from '@/lib/observability/metrics';
+// AUDIT-R5 P0 (2026-04-20) — simulator close-outcome telemetry (SHADOW).
+import { metrics, safeInc, safeObserve } from '@/lib/observability/metrics';
 
 // Delegate to global price cache (MEXC → DexScreener → CoinGecko)
 async function getCachedPrice(symbol: string): Promise<number> {
@@ -280,6 +281,25 @@ export class ArenaSimulator {
       const NEUTRAL_ZONE = Math.abs(LOSS_THRESHOLD_SL) / 2; // 0.25%
       const isWin = hitTP || (isExpired && finalPnl >= WIN_THRESHOLD_TP / 2);
       const isNeutral = isExpired && !hitTP && !hitSL && Math.abs(finalPnl) < NEUTRAL_ZONE;
+
+      // AUDIT-R5 P0 (2026-04-20) — shadow telemetry for TP/SL retune analysis.
+      // Fires BEFORE `removePhantomTrade` so that all four outcomes (including
+      // the NEUTRAL `continue` path below) are counted. Wrapped in env guard;
+      // safeInc/safeObserve swallow errors so instrumentation cannot crash the
+      // close loop. Pure telemetry: no PnL path, no stats path affected.
+      if (process.env.SIMULATOR_TELEMETRY_ENABLED !== '0') {
+        const telDirection = isLongSignal ? 'LONG' : 'SHORT';
+        const telOutcome = hitTP
+          ? 'tp_hit'
+          : hitSL
+            ? 'sl_hit'
+            : isNeutral
+              ? 'neutral'
+              : 'max_hold_close';
+        safeInc(metrics.simulatorCloseOutcomes, { direction: telDirection, outcome: telOutcome });
+        safeObserve(metrics.simulatorHoldTime, elapsedSec, { direction: telDirection, outcome: telOutcome });
+        safeObserve(metrics.simulatorCloseFinalPnl, finalPnl, { direction: telDirection, outcome: telOutcome });
+      }
 
       // 1. Clean up phantom position (always — even neutrals must be removed)
       removePhantomTrade(trade.id);

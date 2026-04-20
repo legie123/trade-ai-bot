@@ -50,6 +50,10 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   polymarketDecisionBudgetCapUsd: client.Gauge<string>;
   polymarketDecisionBudgetVerdict: client.Gauge<string>;
   arenaGateDrops: client.Counter<string>;
+  // AUDIT-R5 P0 (2026-04-20) — simulator close-outcome telemetry (SHADOW).
+  simulatorCloseOutcomes: client.Counter<string>;
+  simulatorHoldTime: client.Histogram<string>;
+  simulatorCloseFinalPnl: client.Histogram<string>;
 } };
 
 function build() {
@@ -366,6 +370,35 @@ function build() {
     registers: [registry],
   });
 
+  // ─── AUDIT-R5 P0 (2026-04-20) ─────────────────────────────────────────────────
+  // Phantom-trade close-outcome telemetry. SHADOW — pure instrumentation fired at
+  // simulator close loop. Used to retune TP=1.0%/SL=-0.5% against empirical
+  // tp_hit_rate vs sl_hit_rate per direction and against break-even WR math
+  // (WR_BE = (SL + c) / (TP + SL) = 43.3% at c=0.15% round-trip cost).
+  //
+  // Kill-switch: SIMULATOR_TELEMETRY_ENABLED=0 skips the emission block entirely.
+  // Labels: direction = LONG | SHORT, outcome = tp_hit | sl_hit | max_hold_close | neutral.
+  const simulatorCloseOutcomes = new client.Counter({
+    name: 'tradeai_simulator_close_outcome_total',
+    help: 'Phantom-trade close outcomes by direction. outcome=tp_hit|sl_hit|max_hold_close|neutral. SHADOW — use for TP/SL retune (AUDIT-R5 P0).',
+    labelNames: ['direction', 'outcome'] as const,
+    registers: [registry],
+  });
+  const simulatorHoldTime = new client.Histogram({
+    name: 'tradeai_simulator_hold_time_seconds',
+    help: 'Hold time of phantom trade at close, by direction × outcome. Buckets aligned with MAX_HOLD_SEC=3600 upper bound.',
+    labelNames: ['direction', 'outcome'] as const,
+    buckets: [60, 300, 900, 1800, 3600, 5400, 7200],
+    registers: [registry],
+  });
+  const simulatorCloseFinalPnl = new client.Histogram({
+    name: 'tradeai_simulator_close_final_pnl_pct',
+    help: 'Final pnlPercent (gross, clamped to TP/SL on hit) at close, by direction × outcome. Use to verify TP/SL clamping and MAX_HOLD pnl distribution.',
+    labelNames: ['direction', 'outcome'] as const,
+    buckets: [-2, -1, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 2.0],
+    registers: [registry],
+  });
+
   return {
     registry,
     tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
@@ -385,6 +418,7 @@ function build() {
     polymarketDecisionBudgetUsedUsd, polymarketDecisionBudgetCapUsd,
     polymarketDecisionBudgetVerdict,
     arenaGateDrops,
+    simulatorCloseOutcomes, simulatorHoldTime, simulatorCloseFinalPnl,
   };
 }
 
