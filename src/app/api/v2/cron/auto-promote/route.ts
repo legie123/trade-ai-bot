@@ -168,7 +168,10 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
     // → these gladiators stay in PHANTOM until more data resolves ambiguity.
     // Kill-switch: env PROMOTE_USE_WILSON=0 reverts to raw WR gate.
     const useWilsonPromo = process.env.PROMOTE_USE_WILSON !== '0';
-    const WILSON_WR_FLOOR = 0.50;
+    // C14 (2026-04-20): 0.50→0.35 aligned with asymmetric TP=1.0%/SL=-0.5%.
+    // Break-even WR=33%. Floor 35% = statistical confidence above BE.
+    // Mirrors Butcher kill gate (Wilson lower < 0.35). PF≥1.3 remains primary gate.
+    const WILSON_WR_FLOOR = 0.35;
 
     // FAZA 3/5 BATCH 3/4 — Wash config evaluated ONCE outside the loop (not per-candidate).
     const washCfg = getWashConfig();
