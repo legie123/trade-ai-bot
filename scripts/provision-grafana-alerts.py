@@ -385,6 +385,39 @@ RULES = [
         ),
         runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
     ),
+    # --- Batch 3.24: Polymarket scan freshness watchdog ----------------------
+    # FAZA 4.2 emits tradeai_polymarket_lastscan_timestamp_seconds{division} at
+    # setLastScans. FAZA 4.3 rotation targets full refresh <=75min across 16
+    # divisions. `time() - gauge` = age per division; max = worst. 2h threshold
+    # leaves ~45min slack past normal rotation cadence. If ANY division stays
+    # stale > 2h for 15m, rotation bucketing is broken (poly cron stuck, env
+    # POLY_SCAN_ROTATION_COUNT=0, or instance multi-drift).
+    # Caveat: gauge is instance-local. With multi-instance Cloud Run, a single
+    # instance's gauge can be stale even if a sibling just scanned. Workaround:
+    # max() takes the worst across series — still fires when any instance's
+    # gauge goes stale. Acceptable for shadow observability; tune if noisy.
+    build_rule(
+        uid="tradeai-poly-scan-freshness-stale",
+        title="TRADE AI — Polymarket scan freshness STALE (>2h)",
+        expr='max(time() - tradeai_polymarket_lastscan_timestamp_seconds{service="trade-ai"}) > bool 7200',
+        threshold=1,
+        for_duration="15m",
+        severity="warning",
+        summary="At least one Polymarket division hasn't scanned in >2h",
+        description=(
+            "tradeai_polymarket_lastscan_timestamp_seconds oldest age > 2h for 15m. "
+            "FAZA 4.3 rotation aims for full 16-division refresh <=75min, so "
+            "2h+ means rotation is broken OR a specific instance is stuck. "
+            "Immediate action: (1) check /polymarket/audit for the division list "
+            "with stale timestamps; (2) verify POLY_SCAN_ROTATION_COUNT env is "
+            "non-zero (kill-switch is =0); (3) look at Cloud Run instance count "
+            "— if multi-drift, a frozen instance may be the issue; (4) as last "
+            "resort force POST /api/v2/admin {\"command\":\"poly:scan:full\"} to "
+            "bypass rotation. Cross-check with brain-signal-feed-red (feedHealth "
+            "scanner tick) for confirmation the feed is dead, not just the gauge."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
     # --- Batch 3.23: Cron duration p95 watchdog ------------------------------
     # FAZA A Batch 3 instrumented crons (positions/sentiment/auto-promote) with
     # histogram `tradeai_cron_duration_seconds{cron}`. p95 over 10m rolling window
