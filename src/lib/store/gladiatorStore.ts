@@ -575,12 +575,15 @@ class GladiatorStore {
       //   indepSampleCache populated by refreshIndependentSampleSizes(). Fail-closed if cache
       //   empty → treat as 0 samples → no LIVE promotion until refresh runs.
       // WF fail-closed (require explicit pass) blocks OVERFIT gladiators.
-      // C15 (2026-04-20): If indepSampleCache has NEVER been populated (cold start),
-      // preserve DB-persisted isLive state instead of fail-closing all to false.
-      // This prevents cold-start demotion of legitimately promoted gladiators.
-      // Once refreshIndependentSampleSizes() runs (via auto-promote cron), the
-      // cache is populated and the full QW-8 gate resumes normal fail-closed behavior.
-      const cacheHydrated = this.indepSampleCache.size > 0;
+      // C15 (2026-04-20): If EITHER indepSampleCache or wfCache has NEVER been
+      // populated (cold start / no auto-promote run yet), preserve DB-persisted
+      // isLive state instead of fail-closing all to false.
+      // Both caches must be populated for the full QW-8 gate to apply:
+      //   - indepSampleCache: populated by refreshIndependentSampleSizes()
+      //   - wfCache: populated by runWalkForwardGate()
+      // auto-promote cron populates indepSampleCache but NOT wfCache,
+      // so recalibrateRanks was resetting isLive via wfClean=false.
+      const cacheHydrated = this.indepSampleCache.size > 0 && this.wfCache.size > 0;
 
       scored.forEach((entry, index) => {
         entry.gladiator.rank = index + 1;

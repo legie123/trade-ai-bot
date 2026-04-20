@@ -149,6 +149,16 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
       console.warn(`[AUTO-PROMOTE] refreshIndependentSampleSizes failed: ${String(refreshErr)}`);
     }
 
+    // C15 (2026-04-20): Also refresh Walk-Forward cache so recalibrateRanks doesn't
+    // fail-close wfClean=false and demote a just-promoted gladiator.
+    // Without this, auto-promote populates indepSampleCache but leaves wfCache empty,
+    // causing recalibrateRanks to immediately reset isLive=false.
+    try {
+      await gladiatorStore.runWalkForwardGate();
+    } catch (wfErr) {
+      console.warn(`[AUTO-PROMOTE] runWalkForwardGate failed: ${String(wfErr)}`);
+    }
+
     // 3. Find promotion candidates (PHANTOM with enough INDEPENDENT samples).
     // FAZA 3/5 BATCH 2/4 — dedupe-aware: count unique (minute, symbol, direction) decisions.
     // Filtered in 2 steps: first by cheap WR/PF, then by expensive DB query on indep count.
