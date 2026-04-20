@@ -40,6 +40,8 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   polymarketSettlementSettled: client.Gauge<string>;
   polymarketSettlementPending: client.Gauge<string>;
   polymarketSettlementStatus: client.Gauge<string>;
+  livePositionOldestAgeSec: client.Gauge<string>;
+  livePositionOverMaxHold: client.Gauge<string>;
 } };
 
 function build() {
@@ -232,6 +234,26 @@ function build() {
     registers: [registry],
   });
 
+  // FAZA 3.12 (2026-04-20) — AUDIT-R4 shadow telemetry.
+  // MAX_HOLD_SEC (default 3600s) is enforced only in simulator.ts (PAPER path).
+  // The LIVE positionManager path (src/lib/v2/manager/positionManager.ts) has
+  // NO time-based expiry — only TP / trailing / SL. These gauges expose the
+  // gap empirically so operators can decide whether enforcement is warranted
+  // BEFORE any execution-path mutation.
+  //
+  // SHADOW ONLY: read-side telemetry. Emitted from the positions cron tail
+  // (1-minute cadence). No gladiator/position state is modified.
+  const livePositionOldestAgeSec = new client.Gauge({
+    name: 'tradeai_live_position_oldest_age_sec',
+    help: 'Max hold age (seconds) across OPEN live positions at cron tick. 0 when pool empty. Shadow for AUDIT-R4.',
+    registers: [registry],
+  });
+  const livePositionOverMaxHold = new client.Gauge({
+    name: 'tradeai_live_position_over_max_hold',
+    help: 'Count of OPEN live positions whose age >= MAX_HOLD_SEC (env; default 3600). Shadow for AUDIT-R4.',
+    registers: [registry],
+  });
+
   return {
     registry,
     tradeExecutions, tradePnlPositiveSum, tradePnlLossAbsSum, tradeDuration,
@@ -245,6 +267,7 @@ function build() {
     polymarketSettlementCoverage, polymarketSettlementActed,
     polymarketSettlementSettled, polymarketSettlementPending,
     polymarketSettlementStatus,
+    livePositionOldestAgeSec, livePositionOverMaxHold,
   };
 }
 
