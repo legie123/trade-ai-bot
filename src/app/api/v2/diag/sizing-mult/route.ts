@@ -24,6 +24,7 @@ import {
   AggregatorInput,
   KellyStats,
   EquitySnapshot,
+  PopulationGateStats,
 } from '@/lib/v2/risk/sizingMultiplierAggregator';
 import {
   RegimeKind,
@@ -33,6 +34,8 @@ import {
   DivergenceKind,
   SignalDir,
 } from '@/lib/v2/scouts/ta/sentimentDivergence';
+import { getPopulationStats } from '@/lib/v2/gladiators/graveyard';
+import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { createLogger } from '@/lib/core/logger';
 
 export const dynamic = 'force-dynamic';
@@ -81,6 +84,37 @@ export async function GET(req: NextRequest) {
       equity = { current: eCur, peak: ePeak };
     }
 
+    // Population gate stats. Three modes (priority order):
+    //   1. Caller passes popPF + popWR + popKilledTrades → use those literals.
+    //   2. Caller sets pop=live → fetch from graveyard.getPopulationStats().
+    //   3. None of the above → leave undefined; gate stays neutral.
+    let populationStats: PopulationGateStats | undefined;
+    const popPF = parseNum(q.get('popPF'));
+    const popWR = parseNum(q.get('popWR'));
+    const popKilled = parseNum(q.get('popKilledTrades'));
+    if (popPF !== undefined && popWR !== undefined && popKilled !== undefined) {
+      populationStats = {
+        popWeightedProfitFactor: popPF,
+        popWeightedWinRate: popWR,
+        killedTrades: popKilled,
+      };
+    } else if (q.get('pop') === 'live') {
+      try {
+        const alive = gladiatorStore.getGladiators();
+        const pop = await getPopulationStats(alive);
+        populationStats = {
+          popWeightedProfitFactor: pop.popWeightedProfitFactor,
+          popWeightedWinRate: pop.popWeightedWinRate,
+          killedTrades: pop.sampleTrades.killed,
+        };
+      } catch (err) {
+        // Soft-fail: graveyard not configured / migration missing → leave undefined.
+        log.warn('diag/sizing-mult: pop=live read failed', {
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     const input: AggregatorInput = {
       regime,
       signalKind,
@@ -88,6 +122,7 @@ export async function GET(req: NextRequest) {
       signalDir,
       kellyStats,
       equity,
+      populationStats,
     };
 
     const t0 = Date.now();
