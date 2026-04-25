@@ -23,6 +23,7 @@ import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { createLogger } from '@/lib/core/logger';
 import { recordProviderHealth } from '@/lib/core/heartbeat';
+import { metrics, safeInc } from '@/lib/observability/metrics';
 
 const log = createLogger('PolyWS');
 
@@ -109,7 +110,7 @@ export class PolyWsClient extends EventEmitter {
     } catch (err) {
       log.error('[PolyWS] WebSocket constructor threw', { error: (err as Error).message });
       recordProviderHealth('polymarket-ws', false, null);
-      this.scheduleReconnect();
+      this.scheduleReconnect('error');
       return;
     }
 
@@ -162,7 +163,8 @@ export class PolyWsClient extends EventEmitter {
       this.stopPing();
       this.stopStaleWatchdog();
       recordProviderHealth('polymarket-ws', false, null);
-      this.scheduleReconnect();
+      // P1-2: distinguish stale-watchdog forced-close vs voluntary close.
+      this.scheduleReconnect(this.isStale ? 'stale_watchdog' : 'close');
     });
 
     this.ws.on('error', (err) => {
@@ -313,10 +315,11 @@ export class PolyWsClient extends EventEmitter {
     }
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(reason: 'close' | 'stale_watchdog' | 'error' | 'unknown' = 'close'): void {
     if (this.reconnectTimer) return;
     this.reconnectAttempts++;
     this.totalReconnects++;
+    safeInc(metrics.wsReconnects, { provider: 'polymarket-ws', reason });
     const delay = Math.min(
       RECONNECT_BASE_MS * Math.pow(2, Math.min(this.reconnectAttempts - 1, 4)),
       RECONNECT_CAP_MS

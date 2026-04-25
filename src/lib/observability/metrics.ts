@@ -57,6 +57,9 @@ const g = globalThis as unknown as { __tradeAiMetrics?: {
   // FAZA 7c — SHORT LIVE conditional gate (SHADOW by default).
   shortLiveGateAdmitted: client.Counter<string>;
   shortLiveGateBlocked: client.Counter<string>;
+  // P1-2 (2026-04-25) — WebSocket reconnect telemetry. Diagnoses
+  // 12k+ reconnects observed over 5d uptime audit. Pure observability.
+  wsReconnects: client.Counter<string>;
 } };
 
 function build() {
@@ -436,6 +439,15 @@ function build() {
     labelNames: ['reason', 'session', 'symbol'] as const,
     registers: [registry],
   });
+  // P1-2 (2026-04-25) — WS reconnect counter. Diagnoses feed churn.
+  // provider: mexc-ws | polymarket-ws | other
+  // reason: close | error | stale_watchdog | ping_timeout | unknown
+  const wsReconnects = new client.Counter({
+    name: 'tradeai_ws_reconnects_total',
+    help: 'WebSocket reconnect attempts by provider and reason. High churn (>1/min sustained) indicates feed instability or pong timeout misconfiguration.',
+    labelNames: ['provider', 'reason'] as const,
+    registers: [registry],
+  });
 
   return {
     registry,
@@ -458,6 +470,7 @@ function build() {
     arenaGateDrops,
     simulatorCloseOutcomes, simulatorHoldTime, simulatorCloseFinalPnl,
     shortLiveGateAdmitted, shortLiveGateBlocked,
+    wsReconnects,
   };
 }
 

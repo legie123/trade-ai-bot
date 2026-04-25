@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { createLogger } from '@/lib/core/logger';
 import { recordProviderHealth } from '@/lib/core/heartbeat';
+import { metrics, safeInc } from '@/lib/observability/metrics';
 
 const log = createLogger('WS-Stream');
 
@@ -150,19 +151,24 @@ export class WsStreamManager extends EventEmitter {
       this.stopPing();
       this.stopStaleWatchdog();
       recordProviderHealth('mexc-ws', false, null);
-      this.scheduleReconnect();
+      // P1-2: stale-watchdog already set this.isStale=true before forcing close.
+      // Distinguish: stale_watchdog vs plain close.
+      this.scheduleReconnect(this.isStale ? 'stale_watchdog' : 'close');
     });
 
     this.ws.on('error', (err) => {
       log.error(`[WS] MEXC Error: ${err.message}`);
       recordProviderHealth('mexc-ws', false, null);
+      // 'close' event will fire after 'error' on most ws errors. Counter is
+      // bumped there with reason=close. We record error-only via log.
     });
   }
 
-  private scheduleReconnect() {
+  private scheduleReconnect(reason: 'close' | 'stale_watchdog' | 'error' | 'unknown' = 'close') {
     if (this.reconnectTimer) return;
     this.reconnectAttempts++;
     this.totalReconnects++;
+    safeInc(metrics.wsReconnects, { provider: 'mexc-ws', reason });
     if (this.reconnectAttempts > MAX_CONSECUTIVE_RECONNECTS) {
       log.error(`[WS] MEXC max consecutive reconnects (${MAX_CONSECUTIVE_RECONNECTS}) reached — continuing with capped backoff`);
     }
