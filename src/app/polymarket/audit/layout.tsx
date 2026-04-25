@@ -51,6 +51,8 @@ export default async function AuditLayout({ children }: { children: React.ReactN
         <Link href="/polymarket/audit/learning" style={{ color: C.text, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>Learning</Link>
         <Link href="/polymarket/audit/llm-cost" style={{ color: C.text, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>LLM $</Link>
         <Link href="/polymarket/audit/flags" style={{ color: C.text, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>Flags</Link>
+        <Link href="/polymarket/audit/brain-history" style={{ color: C.text, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>Brain Log</Link>
+        <Link href="/polymarket/audit/graveyard" style={{ color: C.text, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>Graveyard</Link>
         <div style={{ flex: 1 }} />
         <BrainStatusPill />
         <FeedHeartbeatStrip />
