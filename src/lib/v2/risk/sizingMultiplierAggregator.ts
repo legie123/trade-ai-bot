@@ -71,6 +71,31 @@ export interface EquitySnapshot {
   peak: number;             // peak equity (all-time or rolling)
 }
 
+/**
+ * Population-aware sizing gate (added 2026-04-25).
+ *
+ * Why: alive-only KellyStats systematically over-sizes when survivorship
+ * bias is present (popWeightedPF < 1.0 means the FULL pool — including
+ * killed gladiators — is net-negative on profit factor; survivors look
+ * better than the strategy actually is). Audit 2026-04-25 surfaced
+ * popWeightedPF=0.83 over 104k trades.
+ *
+ * Effect: when gate is engaged, Kelly multiplier upside is clamped to
+ * 1.0 (Kelly can still CUT below 1.0 — DD scaling style). Boost requires
+ * the population, not just the survivor cohort, to be earning.
+ *
+ * Sample floor protects against gating on tiny graveyards. Below
+ * popMinKilledTrades, gate stays neutral — no clamp, no effect.
+ */
+export interface PopulationGateStats {
+  /** Trade-weighted PF over alive ∪ killed. */
+  popWeightedProfitFactor: number;
+  /** Trade-weighted WR (0..1) over alive ∪ killed. */
+  popWeightedWinRate: number;
+  /** Sum of total trades across killed cohort (sample-floor input). */
+  killedTrades: number;
+}
+
 export interface AggregatorInput {
   // All optional — missing input → that factor = 1.0
   regime?: RegimeKind;
@@ -79,6 +104,11 @@ export interface AggregatorInput {
   signalDir?: SignalDir;
   kellyStats?: KellyStats;
   equity?: EquitySnapshot;
+  /**
+   * Population-level health snapshot from graveyard.getPopulationStats().
+   * When omitted, population gate is bypassed (neutral).
+   */
+  populationStats?: PopulationGateStats;
 }
 
 export interface AggregatorBreakdown {
@@ -105,6 +135,40 @@ const KELLY_MIN_SAMPLES = 20;    // Below this, Kelly is noise → return 1.0
 
 const GLOBAL_MIN_MULT = 0.30;
 const GLOBAL_MAX_MULT = 1.50;
+
+// ─── Population gate (added 2026-04-25 — anti-survivorship) ───
+// Defaults: population must show PF>=1.0 AND WR>=50% to allow Kelly
+// upside boost. Below the sample floor (killed_trades<min), gate is
+// inactive — too noisy to enforce.
+const POP_GATE_MIN_PF_DEFAULT = 1.0;
+const POP_GATE_MIN_WR_DEFAULT = 0.50;
+const POP_GATE_MIN_KILLED_TRADES_DEFAULT = 100;
+
+export type PopGateMode = 'shadow' | 'active' | 'off';
+
+export function getPopGateMode(): PopGateMode {
+  const v = (process.env.KELLY_POP_GATE_ENABLED || 'shadow').toLowerCase();
+  if (v === 'active' || v === 'on' || v === 'true') return 'active';
+  if (v === 'off' || v === 'false' || v === 'disabled') return 'off';
+  return 'shadow';
+}
+
+function getPopGateThresholds(): {
+  minPF: number;
+  minWR: number;
+  minKilledTrades: number;
+} {
+  const minPF = Number(process.env.KELLY_POP_GATE_MIN_PF);
+  const minWR = Number(process.env.KELLY_POP_GATE_MIN_WR);
+  const minKT = Number(process.env.KELLY_POP_GATE_MIN_KILLED_TRADES);
+  return {
+    minPF: Number.isFinite(minPF) && minPF > 0 ? minPF : POP_GATE_MIN_PF_DEFAULT,
+    minWR:
+      Number.isFinite(minWR) && minWR > 0 && minWR < 1 ? minWR : POP_GATE_MIN_WR_DEFAULT,
+    minKilledTrades:
+      Number.isFinite(minKT) && minKT >= 0 ? minKT : POP_GATE_MIN_KILLED_TRADES_DEFAULT,
+  };
+}
 
 // DD scaling tiers (piecewise linear). CUT ONLY — never boost.
 const DD_TIERS: Array<{ ddPct: number; mult: number }> = [
@@ -219,12 +283,51 @@ export function computeSizingMultiplier(input: AggregatorInput): AggregatorResul
   const kellyRes = computeKellyMultiplier(input.kellyStats);
   reasons.push(kellyRes.reason);
 
+  // 3b. Population gate (anti-survivorship). Clamps Kelly UPSIDE only
+  //     when the full population (alive ∪ killed) is net-negative.
+  //     Cuts (mult<1.0) pass through unchanged — gate never boosts.
+  const popGateMode = getPopGateMode();
+  const popThresh = getPopGateThresholds();
+  let kellyAfterGate = kellyRes.mult;
+  let popGateApplied = false;
+  if (popGateMode !== 'off' && input.populationStats) {
+    const ps = input.populationStats;
+    const sampleOk = ps.killedTrades >= popThresh.minKilledTrades;
+    const pfBad = Number.isFinite(ps.popWeightedProfitFactor)
+      ? ps.popWeightedProfitFactor < popThresh.minPF
+      : false;
+    const wrBad = Number.isFinite(ps.popWeightedWinRate)
+      ? ps.popWeightedWinRate < popThresh.minWR
+      : false;
+    if (sampleOk && (pfBad || wrBad) && kellyRes.mult > 1.0) {
+      const trigger = pfBad && wrBad ? 'pf+wr' : pfBad ? 'pf' : 'wr';
+      const note = `popGate: popPF=${ps.popWeightedProfitFactor.toFixed(2)} popWR=${(ps.popWeightedWinRate * 100).toFixed(1)}% killedTrades=${ps.killedTrades} → trigger=${trigger}`;
+      if (popGateMode === 'active') {
+        kellyAfterGate = 1.0;
+        popGateApplied = true;
+        reasons.push(`${note} → clamp kelly ${kellyRes.mult.toFixed(3)}→1.000 (active)`);
+      } else {
+        reasons.push(`${note} → would clamp ${kellyRes.mult.toFixed(3)}→1.000 (shadow)`);
+      }
+    } else if (!sampleOk) {
+      reasons.push(
+        `popGate: killedTrades=${ps.killedTrades} < ${popThresh.minKilledTrades} → neutral (sample floor)`,
+      );
+    } else {
+      reasons.push(
+        `popGate: popPF=${ps.popWeightedProfitFactor.toFixed(2)} popWR=${(ps.popWeightedWinRate * 100).toFixed(1)}% → pass`,
+      );
+    }
+  } else if (popGateMode !== 'off') {
+    reasons.push('popGate: no populationStats → neutral');
+  }
+
   // 4. DD
   const ddRes = computeDrawdownMultiplier(input.equity);
   reasons.push(ddRes.reason);
 
   // 5. Aggregate + clip
-  const raw = regimeM * sentimentM * kellyRes.mult * ddRes.mult;
+  const raw = regimeM * sentimentM * kellyAfterGate * ddRes.mult;
   let total = raw;
   let capped = false;
   if (total < GLOBAL_MIN_MULT) {
@@ -243,7 +346,7 @@ export function computeSizingMultiplier(input: AggregatorInput): AggregatorResul
     breakdown: {
       regime: regimeM,
       sentiment: sentimentM,
-      kelly: kellyRes.mult,
+      kelly: kellyAfterGate,
       drawdown: ddRes.mult,
     },
     reasons,
@@ -252,7 +355,9 @@ export function computeSizingMultiplier(input: AggregatorInput): AggregatorResul
   };
 
   if (Math.abs(total - 1.0) > 0.05) {
-    log.info(`[sizing] total=${result.total} regime=${regimeM} sent=${sentimentM} kelly=${kellyRes.mult} dd=${ddRes.mult}`);
+    log.info(
+      `[sizing] total=${result.total} regime=${regimeM} sent=${sentimentM} kelly=${kellyAfterGate}${popGateApplied ? '(popGated)' : ''} dd=${ddRes.mult}`,
+    );
   }
 
   return result;
@@ -266,7 +371,14 @@ export function getSizingAggregatorConfig(): {
   kellyFraction: number;
   kellyMinSamples: number;
   ddTiers: typeof DD_TIERS;
+  popGate: {
+    mode: PopGateMode;
+    minPF: number;
+    minWR: number;
+    minKilledTrades: number;
+  };
 } {
+  const pgT = getPopGateThresholds();
   return {
     mode: getSizingMode(),
     globalMin: GLOBAL_MIN_MULT,
@@ -274,5 +386,11 @@ export function getSizingAggregatorConfig(): {
     kellyFraction: KELLY_FRACTION,
     kellyMinSamples: KELLY_MIN_SAMPLES,
     ddTiers: DD_TIERS,
+    popGate: {
+      mode: getPopGateMode(),
+      minPF: pgT.minPF,
+      minWR: pgT.minWR,
+      minKilledTrades: pgT.minKilledTrades,
+    },
   };
 }
