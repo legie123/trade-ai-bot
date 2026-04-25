@@ -74,10 +74,10 @@ const CATALOG: FlagSpec[] = [
   {
     name: 'DIRECTION_SHORT_DISABLED',
     domain: 'trade',
-    description: 'Block SHORT entries pool-wide. Symmetric counterpart to LONG disable.',
-    defaultBehavior: 'disabled (SHORTs allowed)',
-    riskIfOff: 'kills currently-positive SHORT bucket.',
-    risk: 'high',
+    description: 'Block SHORT entries pool-wide. Asymmetric to LONG: SHORT is the empirically-positive bucket per AUDIT-R2 ledger (N=17772, SHORT WR=42.97% vs LONG WR=24.4%) — so DIRECTION_SHORT_DISABLED=off is the DESIRED steady-state, not a fault.',
+    defaultBehavior: 'off (SHORTs allowed — desired state; flipping ON would kill positive-EV bucket)',
+    riskIfOff: 'none — off is the canonical operating state. Flipping ON suppresses positive SHORT EV.',
+    risk: 'low',
   },
 
   // ——— SHADOW (not yet promoted) ———
