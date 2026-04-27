@@ -3,16 +3,10 @@
 // exposure limits, persisted to Supabase (Cloud Run safe)
 // AUDIT FIX T2.3: Replaced filesystem persistence with Supabase
 // ============================================================
-import { createClient } from '@supabase/supabase-js';
+import { supabase, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('KillSwitch');
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = supabaseUrl && supabaseKey
-  ? createClient(supabaseUrl, supabaseKey)
-  : null;
 
 export interface KillSwitchState {
   engaged: boolean;
@@ -67,7 +61,7 @@ function defaultState(): KillSwitchState {
 
 // AUDIT FIX T2.3: Hydrate from Supabase on first use (async, non-blocking init)
 async function hydrateFromSupabase(): Promise<void> {
-  if (g.__killSwitchHydrated || !supabase) return;
+  if (g.__killSwitchHydrated || !SUPABASE_CONFIGURED) return;
   g.__killSwitchHydrated = true;
   try {
     const { data } = await supabase
@@ -89,7 +83,7 @@ async function hydrateFromSupabase(): Promise<void> {
 hydrateFromSupabase().catch(() => {});
 
 async function persistState(): Promise<void> {
-  if (!supabase) {
+  if (!SUPABASE_CONFIGURED) {
     log.warn('Kill switch state NOT persisted — Supabase not configured');
     return;
   }

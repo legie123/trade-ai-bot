@@ -1776,4 +1776,4 @@ export async function loadPolyLastScansFromCloud(): Promise<Record<string, unkno
   }
 }
 
-export { supabase }; // Export for diagnostics endpoint
+export { supabase, SUPABASE_CONFIGURED }; // Export for diagnostics endpoint + singleton consumers
