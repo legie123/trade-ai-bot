@@ -449,17 +449,47 @@ class GladiatorStore {
     }> = [];
     let skipped = 0;
 
-    for (const g of this.gladiators) {
-      if (g.isOmega) { skipped++; continue; }
+    // C24 (2026-04-28): Two-phase reconciliation — parallel fetch, sync apply.
+    // PRIOR: sequential await getGladiatorBattles per gladiator → 50 × ~200ms = ~10s.
+    // NOW: Phase 1 fetches all battles in batches of 8 → ~1.2s.
+    //      Phase 2 replays equity curves synchronously (CPU-bound, ~50ms total).
+    // Safe: DB reads are independent; mutations happen in Phase 2 single-threaded.
+    const nonOmega = this.gladiators.filter(g => !g.isOmega);
+    skipped += this.gladiators.length - nonOmega.length; // Omega count
 
-      const battles = await getGladiatorBattles(g.id, 10000);
-      if (!battles || battles.length === 0) { skipped++; continue; }
+    // Phase 1: Parallel battle fetch
+    const BATCH = 8;
+    const battleMap = new Map<string, Record<string, unknown>[]>();
+    for (let i = 0; i < nonOmega.length; i += BATCH) {
+      const batch = nonOmega.slice(i, i + BATCH);
+      const results = await Promise.allSettled(
+        batch.map(async (g) => {
+          const battles = await getGladiatorBattles(g.id, 10000);
+          return { id: g.id, battles: battles || [] };
+        })
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.battles.length > 0) {
+          battleMap.set(r.value.id, r.value.battles as Record<string, unknown>[]);
+        }
+      }
+    }
+
+    // Phase 2: Sync replay + stat apply (CPU-bound, no I/O)
+    // C6 FIX: Clamp raw pnl_percent to TP/SL bandwidth before accumulating.
+    const RECONCILE_TP_CLAMP = 1.0;
+    const RECONCILE_SL_CLAMP = -0.5;
+    const MIN_LOSS_FLOOR = 0.5;
+    const PF_CAP = 10.0;
+
+    for (const g of nonOmega) {
+      const rawBattles = battleMap.get(g.id);
+      if (!rawBattles || rawBattles.length === 0) { skipped++; continue; }
 
       // Replay chronologically ascending — equity curve requires temporal order.
-      // getGladiatorBattles returns desc (newest first); we reverse.
-      const rows = [...battles].sort((a, b) => {
-        const ta = Number((a as Record<string, unknown>).timestamp) || 0;
-        const tb = Number((b as Record<string, unknown>).timestamp) || 0;
+      const rows = [...rawBattles].sort((a, b) => {
+        const ta = Number(a.timestamp || 0);
+        const tb = Number(b.timestamp || 0);
         return ta - tb;
       });
 
@@ -470,15 +500,7 @@ class GladiatorStore {
       let curEq = 100;
       let maxDd = 0;
 
-      // C6 FIX: Clamp raw pnl_percent to TP/SL bandwidth before accumulating.
-      // Old battles (pre-clamp era) store raw price-change pnl (e.g. +31%) that
-      // was never clamped. Without this, totalWinPnl is inflated 50×+ and PF
-      // saturates at cap (10.0) regardless of actual edge.
-      // Values match simulator.ts convention: TP=+1.0%, SL=-0.5%.
-      const RECONCILE_TP_CLAMP = 1.0;
-      const RECONCILE_SL_CLAMP = -0.5;
-
-      for (const r of rows as Record<string, unknown>[]) {
+      for (const r of rows) {
         const isWin = r.isWin === true;
         const rawPnl = Number(r.pnlPercent ?? 0);
         const pnl = Math.max(RECONCILE_SL_CLAMP, Math.min(RECONCILE_TP_CLAMP, rawPnl));
@@ -504,9 +526,6 @@ class GladiatorStore {
       g.stats.totalTrades = n;
       g.stats.winRate = n > 0 ? (wins / n) * 100 : 0;
 
-      // QW-10 guards preserved: MIN_LOSS_FLOOR=0.5 and PF_CAP=10.0
-      const MIN_LOSS_FLOOR = 0.5;
-      const PF_CAP = 10.0;
       if (totalLossPnl >= MIN_LOSS_FLOOR) {
         const rawPF = totalWinPnl / totalLossPnl;
         g.stats.profitFactor = parseFloat(Math.min(rawPF, PF_CAP).toFixed(2));
@@ -678,13 +697,22 @@ class GladiatorStore {
     const wf = WalkForwardEngine.getInstance();
     const candidates = this.gladiators.filter(g => !g.isOmega && g.stats.totalTrades >= 30);
 
-    for (const g of candidates) {
-      try {
-        const result = await wf.validate(g.id);
-        this.wfCache.set(g.id, result);
-      } catch {
-        // Fail-open: if WF errors, don't block the gladiator
-      }
+    // C24 (2026-04-28): Parallel with bounded concurrency.
+    // PRIOR: sequential await per gladiator → 50 × ~100ms = ~5s.
+    // NOW: Promise.all batches of 8 → ~625ms. Safe: each validate() is
+    // an independent DB read; results cached in wfCache (Map.set is sync).
+    const BATCH = 8;
+    for (let i = 0; i < candidates.length; i += BATCH) {
+      await Promise.allSettled(
+        candidates.slice(i, i + BATCH).map(async (g) => {
+          try {
+            const result = await wf.validate(g.id);
+            this.wfCache.set(g.id, result);
+          } catch {
+            // Fail-open: if WF errors, don't block the gladiator
+          }
+        })
+      );
     }
   }
 
@@ -692,7 +720,7 @@ class GladiatorStore {
    * FAZA 3/5 BATCH 2/4 — Refresh independent sample size cache for all non-Omega gladiators.
    * Call from cron/auto-promote tick (hourly, not every 5min — DB read cost).
    *
-   * ASUMPȚIE: indepSampleCache e single-writer (only this function). Dacă e accesat concurent
+   * ASSUMPȚIE: indepSampleCache e single-writer (only this function). Dacă e accesat concurent
    * din mai multe requests, ultimul scris câștigă — acceptabil (counts nu descresc brusc).
    *
    * Fail-closed: dacă funcția aruncă pre-populare, cache rămâne gol → gate QW-8 vede 0 samples
@@ -701,13 +729,22 @@ class GladiatorStore {
   public async refreshIndependentSampleSizes(): Promise<void> {
     this.ensureLoaded();
     const candidates = this.gladiators.filter(g => !g.isOmega);
-    for (const g of candidates) {
-      try {
-        const count = await getIndependentSampleSize(g.id);
-        this.indepSampleCache.set(g.id, count);
-      } catch {
-        // Fail-closed: do NOT populate cache on error → gate sees 0 → no promotion
-      }
+    // C24 (2026-04-28): Parallel with bounded concurrency.
+    // PRIOR: sequential await per gladiator → 50 × ~100ms = ~5s.
+    // NOW: batches of 8 → ~625ms. Safe: independent reads, Map.set is sync.
+    // Fail-closed preserved: errors leave cache unpopulated → QW-8 sees 0.
+    const BATCH = 8;
+    for (let i = 0; i < candidates.length; i += BATCH) {
+      await Promise.allSettled(
+        candidates.slice(i, i + BATCH).map(async (g) => {
+          try {
+            const count = await getIndependentSampleSize(g.id);
+            this.indepSampleCache.set(g.id, count);
+          } catch {
+            // Fail-closed: do NOT populate cache on error → gate sees 0 → no promotion
+          }
+        })
+      );
     }
   }
 
@@ -801,7 +838,9 @@ class GladiatorStore {
         omega.isLive = true;
       }
       omega.lastUpdated = Date.now();
-      saveGladiatorsToDb(this.gladiators);
+      // C24 (2026-04-28): use debounce instead of direct save.
+      // PRIOR: every omega progress tick did full array save → unnecessary writes.
+      this._markDirtyAndScheduleFlush();
     }
   }
   public hydrate(gladiators: Gladiator[]): void {

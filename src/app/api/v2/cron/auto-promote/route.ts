@@ -14,6 +14,9 @@ import { emitPromotion } from '@/lib/v2/alerts/eventHub';
 // AUDIT FIX C3 (2026-04-18): Walk-forward validation gate
 import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+// C24 (2026-04-28): structured logger replaces console.*
+import { createLogger } from '@/lib/core/logger';
+const log = createLogger('AutoPromote');
 // FAZA A BATCH 1: domain metrics hook
 import { metrics, safeInc, safeObserve } from '@/lib/observability/metrics';
 // FAZA A BATCH 3: cron run/duration instrumentation
@@ -142,7 +145,7 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
     try {
       await gladiatorStore.refreshIndependentSampleSizes();
     } catch (refreshErr) {
-      console.warn(`[AUTO-PROMOTE] refreshIndependentSampleSizes failed: ${String(refreshErr)}`);
+      log.warn(`refreshIndependentSampleSizes failed`, { error: String(refreshErr) });
     }
 
     // C15 (2026-04-20): Also refresh Walk-Forward cache so recalibrateRanks doesn't
@@ -150,7 +153,7 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
     try {
       await gladiatorStore.runWalkForwardGate();
     } catch (wfErr) {
-      console.warn(`[AUTO-PROMOTE] runWalkForwardGate failed: ${String(wfErr)}`);
+      log.warn(`runWalkForwardGate failed`, { error: String(wfErr) });
     }
 
     // Force recalibrateRanks NOW with hydrated caches — don't wait for next tick.
@@ -176,7 +179,7 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
     // 3. Find promotion candidates (PHANTOM with enough INDEPENDENT samples).
     // FAZA 3/5 BATCH 2/4 — dedupe-aware: count unique (minute, symbol, direction) decisions.
     // Filtered in 2 steps: first by cheap WR/PF, then by expensive DB query on indep count.
-    // ASUMPȚIE: dacă getIndependentSampleSize DB query fails → returnează 0 → gladiator exclus.
+    // ASSUMPȚIE: dacă getIndependentSampleSize DB query fails → returnează 0 → gladiator exclus.
     // Fail-closed: mai bine ratăm o promovare legitimă decât să promovăm pe wash.
     const preliminary = gladiators.filter(g =>
       !g.isLive &&
@@ -277,20 +280,15 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
               safeObserve(metrics.washOverlap, wash.maxOverlapRatio, { mode: washCfg.mode });
               safeObserve(metrics.washAbsCorr, absCorr, { mode: washCfg.mode });
             }
-            console.log(JSON.stringify({
-              tag: '[WASH-SHADOW]',
+            log.info(`[WASH] ${g.name}`, {
               mode: washCfg.mode,
               candidate: g.id,
-              candidateName: g.name,
               overlap: wash.maxOverlapRatio,
               corr: wash.washPeerPnlCorr,
               absCorr,
               peer: wash.washPeerId,
-              totalCandidateKeys: wash.totalCandidateKeys,
               wouldBlock,
-              reason: reasonText,
-              thresholds: { maxOverlap: washCfg.maxOverlap, corr: washCfg.pnlCorrThreshold },
-            }));
+            });
 
             if (wouldBlock && washCfg.mode === 'on') {
               results.push({
@@ -320,7 +318,7 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
               safeInc(metrics.gladiatorPromotions, { result: 'rejected_wash_cross' });
               continue;
             }
-            console.warn(`[WASH-SHADOW] ${g.name} wash guard threw (shadow swallow): ${(washErr as Error).message}`);
+            log.warn(`[WASH] ${g.name} wash guard threw (shadow swallow)`, { error: (washErr as Error).message });
           }
         }
 
@@ -343,9 +341,9 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
         const _recStart = Date.now();
         reconcileResult = await gladiatorStore.reconcileStatsFromBattles();
         const _recMs = Date.now() - _recStart;
-        console.log(`[AUTO-PROMOTE] reconcileStatsFromBattles: ${reconcileResult.reconciled} reconciled, ${reconcileResult.skipped} skipped in ${_recMs}ms`);
+        log.info(`reconcile: ${reconcileResult.reconciled} reconciled, ${reconcileResult.skipped} skipped in ${_recMs}ms`);
       } catch (recErr) {
-        console.error(`[AUTO-PROMOTE] reconcileStatsFromBattles failed: ${String(recErr)}`);
+        log.error(`reconcileStatsFromBattles failed`, { error: String(recErr) });
       }
     }
 
@@ -426,7 +424,7 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
         // by comparing in-sample vs out-of-sample performance across rolling
         // windows. Must pass BEFORE promotion to LIVE capital.
         //
-        // ASUMPȚIE: engineul are >= MIN_TRADES (100 post-C9) pentru rezultate
+        // ASSUMPȚIE: engineul are >= MIN_TRADES (100 post-C9) pentru rezultate
         // robuste. Dacă insufficient data, emptyResult returnează verdict='CLEAN'
         // — nu blocăm pe lack of data (bootstrap-friendly), doar pe OVERFIT explicit.
         //
@@ -451,7 +449,7 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
           }
           if (wfResult.verdict === 'SUSPECT') {
             // Log but don't block — suspect is a warning not a veto
-            console.warn(`[AUTO-PROMOTE] ${candidate.name} walk-forward SUSPECT (overfit=${(wfResult.overfitScore * 100).toFixed(0)}%) — proceeding with caution`);
+            log.warn(`${candidate.name} walk-forward SUSPECT (overfit=${(wfResult.overfitScore * 100).toFixed(0)}%) — proceeding with caution`);
           }
         } catch (wfErr) {
           // Walk-forward error → fail closed (block promotion): we cannot
