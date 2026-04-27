@@ -43,7 +43,7 @@ const SENTINEL = {
 
 function verifyToken(request: Request): boolean {
   const token = process.env.SWARM_TOKEN;
-  if (!token) { console.warn('[A2A] SWARM_TOKEN not set — allowing internal calls'); return true; }
+  if (!token) { log.warn('SWARM_TOKEN not set — allowing internal calls'); return true; }
   return request.headers.get('x-swarm-token') === token;
 }
 

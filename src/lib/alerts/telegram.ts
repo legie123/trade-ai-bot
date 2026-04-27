@@ -3,6 +3,9 @@
 // Uses Telegram Bot API (no external deps)
 // ============================================================
 
+import { createLogger } from '@/lib/core/logger';
+const log = createLogger('Telegram');
+
 const BOT_TOKEN = () => process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT_ID = () => process.env.TELEGRAM_CHAT_ID || '';
 const BASE_URL = () => `https://api.telegram.org/bot${BOT_TOKEN()}`;
@@ -28,7 +31,7 @@ export interface TelegramAlert {
 // ─── Send message with inline keyboard ─────────────
 export async function sendAlert(alert: TelegramAlert): Promise<boolean> {
   if (!BOT_TOKEN() || !CHAT_ID()) {
-    console.log('[Telegram] Bot token or chat ID not configured');
+    log.info('Bot token or chat ID not configured');
     return false;
   }
 
@@ -77,7 +80,7 @@ export async function sendAlert(alert: TelegramAlert): Promise<boolean> {
     const data = await res.json();
     return data.ok === true;
   } catch (err) {
-    console.warn('[Telegram] Send error:', err);
+    log.warn('Send error', { error: String(err) });
     return false;
   }
 }
@@ -101,7 +104,7 @@ export async function sendMessage(text: string): Promise<boolean> {
     return data.ok === true;
   } catch (err) {
     // AUDIT FIX BUG-10: Log Telegram failures instead of silently swallowing
-    console.error(`[Telegram] Failed to send message: ${(err as Error).message}`);
+    log.error(`Failed to send message: ${(err as Error).message}`);
     return false;
   }
 }

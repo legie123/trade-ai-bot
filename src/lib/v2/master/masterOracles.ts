@@ -1,6 +1,8 @@
 import { MasterConsensus, ArenaType } from '../../types/gladiator';
 import { getFundingRate } from '../scouts/ta/fundingRate';
 import { getOpenInterest } from '../scouts/ta/openInterest';
+import { createLogger } from '@/lib/core/logger';
+const log = createLogger('MasterOracles');
 
 /**
  * Master Oracles
@@ -54,7 +56,7 @@ export class MasterOracles {
         allowedArenas,
       };
     } catch (err) {
-      console.error('[MasterOracles] Failed to evaluate macro state, returning safe defaults.', err);
+      log.error('Failed to evaluate macro state, returning safe defaults', { error: String(err) });
       return {
         agreedDirection: 'FLAT',
         macroConfidence: 0,

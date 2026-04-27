@@ -17,7 +17,9 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createLogger } from '@/lib/core/logger';
 import { gladiatorStore } from '@/lib/store/gladiatorStore';
+const log = createLogger('Diag:Wash');
 import { getCrossGladiatorWashScore } from '@/lib/store/db';
 import { washShadowRingBuffer, washRingSnapshot, WASH_RING_SIZE } from '@/lib/v2/wash/washState';
 
@@ -114,7 +116,7 @@ export async function GET(request: NextRequest) {
       liveScan = out.sort((a, b) => (b.absCorr + b.overlap) - (a.absCorr + a.overlap));
     } catch (err) {
       liveScan = null;
-      console.warn(`[diag/wash] live scan failed: ${(err as Error).message}`);
+      log.warn('Live scan failed', { error: (err as Error).message });
     }
   }
 

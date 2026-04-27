@@ -34,7 +34,7 @@ function verifyToken(request: Request): boolean {
   const token = process.env.SWARM_TOKEN;
   // If SWARM_TOKEN not configured, allow self-to-self calls (same container)
   // Once SWARM_TOKEN is set in GCP secrets, enforce strictly
-  if (!token) { console.warn('[A2A] SWARM_TOKEN not set — allowing internal calls (set token for production hardening)'); return true; }
+  if (!token) { log.warn('SWARM_TOKEN not set — allowing internal calls'); return true; }
   const header = request.headers.get('x-swarm-token');
   return header === token;
 }
