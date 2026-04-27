@@ -367,7 +367,11 @@ export const GET = instrumentCron('auto-promote', async (request: Request) => {
     }
 
     // 4. Evaluate each candidate with Monte Carlo
-    const slotsAvailable = PROMO_CRITERIA.maxLiveGladiators - liveCount;
+    // C23 (2026-04-28): Use postRecalLiveCount, not stale liveCount.
+    // BUG: recalibrateRanks() may demote unqualified LIVE gladiators (opening slots),
+    // but slotsAvailable was computed from pre-recal count → blocked valid promotions
+    // when recalibration freed a slot (e.g., liveCount=3 → postRecal=2 → slotsAvailable=0).
+    const slotsAvailable = PROMO_CRITERIA.maxLiveGladiators - postRecalLiveCount;
     // C21: Rank promotion candidates by PF*WR (direct profitability metric).
     // Prior: used stale readinessScore from DB which ignored tier logic.
     candidates.sort((a, b) => {
