@@ -8,13 +8,13 @@
 // Kill-switch: DISABLE_AUDIT_LOG=true → all functions become no-ops
 // ============================================================
 
-import { createClient } from '@supabase/supabase-js';
+import { supabase, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import type { MarketRegime } from '@/lib/v2/intelligence/agents/marketRegime';
 
 const log = createLogger('DecisionAudit');
 
-// ─── Types ──────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────
 
 export interface AgentVote {
   direction: 'LONG' | 'SHORT' | 'FLAT';
@@ -75,22 +75,15 @@ export interface DecisionAuditEntry {
   experienceInsight: Record<string, unknown> | null;
 }
 
-// ─── Configuration ──────────────────────────────────────────
+// ─── Configuration ────────────────────────────────────────────────
 
 const DISABLED = process.env.DISABLE_AUDIT_LOG === 'true';
 const BUFFER_FLUSH_SIZE = 10;      // flush to Supabase every 10 entries
 const BUFFER_FLUSH_MS = 30_000;    // or every 30 seconds
 
-// ─── Supabase client (reuse project credentials) ────────────
+// ─── Supabase client — uses shared singleton from db.ts ─────
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-const supabase = (supabaseUrl && supabaseKey)
-  ? createClient(supabaseUrl, supabaseKey)
-  : null;
-
-// ─── In-Memory Buffer ───────────────────────────────────────
+// ─── In-Memory Buffer ───────────────────────────────────────────
 
 const buffer: DecisionAuditEntry[] = [];
 const recentDecisions: DecisionAuditEntry[] = []; // last 100 for fast queries
@@ -106,7 +99,7 @@ function startFlushTimer(): void {
 }
 
 async function flushBuffer(): Promise<void> {
-  if (!supabase || buffer.length === 0) return;
+  if (!SUPABASE_CONFIGURED || buffer.length === 0) return;
 
   const batch = buffer.splice(0, buffer.length);
 
@@ -159,7 +152,7 @@ async function flushBuffer(): Promise<void> {
   }
 }
 
-// ─── Public API ─────────────────────────────────────────────
+// ─── Public API ─────────────────────────────────────────────────
 
 /**
  * Generate a unique decision ID
@@ -215,7 +208,7 @@ export async function updatePostTrade(
   }
 
   // Update Supabase
-  if (supabase) {
+  if (SUPABASE_CONFIGURED) {
     try {
       const { error } = await supabase
         .from('decision_audit')
@@ -235,7 +228,7 @@ export async function updatePostTrade(
   }
 }
 
-// ─── Query API ──────────────────────────────────────────────
+// ─── Query API ──────────────────────────────────────────────────
 
 /**
  * Get recent decisions from in-memory buffer (fast, no DB call)
@@ -305,7 +298,7 @@ export async function queryDecisionsFromDb(opts: {
   toTimestamp?: number;
   limit?: number;
 }): Promise<DecisionAuditEntry[]> {
-  if (!supabase) return [];
+  if (!SUPABASE_CONFIGURED) return [];
 
   try {
     let query = supabase

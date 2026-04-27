@@ -41,7 +41,7 @@
 //     → behavior = pre-fix (seeds revive). Safe default.
 // ============================================================
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { supabase, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import { INITIAL_STRATEGIES } from './seedStrategies';
 
@@ -65,24 +65,6 @@ function getLookbackDays(): number {
 }
 
 const REFRESH_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-// ------------------------------------------------------------
-// Supabase client (reuse db.ts env convention, avoid circular dep)
-// ------------------------------------------------------------
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
-const CONFIGURED = !!(supabaseUrl && supabaseKey && !supabaseUrl.includes('placeholder'));
-
-let _client: SupabaseClient | null = null;
-function db(): SupabaseClient | null {
-  if (!CONFIGURED) return null;
-  if (!_client) _client = createClient(supabaseUrl, supabaseKey);
-  return _client;
-}
 
 // ------------------------------------------------------------
 // State
@@ -133,8 +115,7 @@ export async function refreshSeedBlacklist(force = false): Promise<void> {
 }
 
 async function doRefresh(): Promise<void> {
-  const client = db();
-  if (!client) {
+  if (!SUPABASE_CONFIGURED) {
     log.warn('[SeedBlacklist] supabase not configured — blacklist stays empty');
     lastRefreshOk = false;
     return;
@@ -154,7 +135,7 @@ async function doRefresh(): Promise<void> {
   try {
     // Read only ids killed within the window. We filter seed membership
     // in memory (cheaper than building an `in (...)` with N values).
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from('gladiators_graveyard')
       .select('gladiator_id')
       .gte('killed_at', sinceIso);

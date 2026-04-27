@@ -16,27 +16,19 @@
  */
 
 import { createLogger } from '@/lib/core/logger';
-import { createClient } from '@supabase/supabase-js';
+import { supabase, SUPABASE_CONFIGURED } from '@/lib/store/db';
 
 const log = createLogger('ExperienceMemory');
 
 const DISABLED = process.env.DISABLE_EXPERIENCE_MEMORY === 'true';
 
-// ─── Supabase client (reuse project credentials) ────────────
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = (supabaseUrl && supabaseKey)
-  ? createClient(supabaseUrl, supabaseKey)
-  : null;
-
-// ─── Configuration ──────────────────────────────────────────
+// ─── Configuration ────────────────────────────────────────────────
 
 const CACHE_SIZE = 500;
 const FLUSH_INTERVAL_MS = 30_000;  // Flush to Supabase every 30s
 const FLUSH_BATCH_SIZE = 20;       // Max entries per flush
 
-// ─── Types ──────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────
 
 export interface ExperienceEntry {
   id?: string;
@@ -97,7 +89,7 @@ export interface ExperienceInsight {
   summary: string;
 }
 
-// ─── In-Memory Cache ────────────────────────────────────────
+// ─── In-Memory Cache ────────────────────────────────────────────
 
 class ExperienceCache {
   private entries: ExperienceEntry[] = [];
@@ -151,7 +143,7 @@ class ExperienceCache {
   }
 }
 
-// ─── Insight Computation ────────────────────────────────────
+// ─── Insight Computation ──────────────────────────────────────────
 
 function computeInsight(entries: ExperienceEntry[]): ExperienceInsight {
   if (entries.length === 0) {
@@ -204,7 +196,7 @@ function computeInsight(entries: ExperienceEntry[]): ExperienceInsight {
   };
 }
 
-// ─── Main Store ─────────────────────────────────────────────
+// ─── Main Store ─────────────────────────────────────────────────
 
 export class ExperienceMemory {
   private static instance: ExperienceMemory;
@@ -310,7 +302,7 @@ export class ExperienceMemory {
     const batch = this.pendingFlush.splice(0, FLUSH_BATCH_SIZE);
 
     try {
-      if (!supabase) {
+      if (!SUPABASE_CONFIGURED) {
         log.warn('[XP] No Supabase client — entries stay in memory only');
         return;
       }
@@ -366,7 +358,7 @@ export class ExperienceMemory {
     if (DISABLED) return;
 
     try {
-      if (!supabase) return;
+      if (!SUPABASE_CONFIGURED) return;
 
       const { data, error } = await supabase
         .from('experience_memory')

@@ -37,7 +37,7 @@
 //   - Gladiator dna / stats shapes are stable (Gladiator interface).
 // ============================================================
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { supabase, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import type { Gladiator } from '@/lib/types/gladiator';
 
@@ -53,22 +53,6 @@ export function getGraveyardMode(): GraveyardMode {
   const raw = (process.env.BUTCHER_GRAVEYARD_ENABLED || 'shadow').toLowerCase();
   if (raw === 'off' || raw === 'active') return raw as GraveyardMode;
   return 'shadow';
-}
-
-// Reuse db.ts env convention. Intentionally NOT imported from db.ts
-// to avoid circular deps (db.ts is large + has side-effect init).
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
-const CONFIGURED = !!(supabaseUrl && supabaseKey && !supabaseUrl.includes('placeholder'));
-
-let _client: SupabaseClient | null = null;
-function db(): SupabaseClient | null {
-  if (!CONFIGURED) return null;
-  if (!_client) _client = createClient(supabaseUrl, supabaseKey);
-  return _client;
 }
 
 // ------------------------------------------------------------
@@ -127,8 +111,7 @@ export async function recordInGraveyard(
   const mode = getGraveyardMode();
   if (mode === 'off') return false;
 
-  const client = db();
-  if (!client) {
+  if (!SUPABASE_CONFIGURED) {
     log.warn(`[Graveyard] supabase not configured — skipping record for ${g.id}`);
     return false;
   }
@@ -143,7 +126,7 @@ export async function recordInGraveyard(
       final_stats: g.stats,
       kill_reason: killReason.slice(0, 500), // sane cap
     };
-    const { error } = await client.from('gladiators_graveyard').insert(row);
+    const { error } = await supabase.from('gladiators_graveyard').insert(row);
     if (error) {
       // Table missing → migration not applied yet. Log once, don't explode.
       log.warn(`[Graveyard] insert failed for ${g.id}: ${error.message}`);
@@ -163,10 +146,9 @@ export async function recordInGraveyard(
 // ------------------------------------------------------------
 
 export async function getGraveyardEntries(limit = 500): Promise<GraveyardEntry[]> {
-  const client = db();
-  if (!client) return [];
+  if (!SUPABASE_CONFIGURED) return [];
   try {
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from('gladiators_graveyard')
       .select('*')
       .order('killed_at', { ascending: false })
