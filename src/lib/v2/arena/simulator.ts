@@ -136,7 +136,26 @@ export class ArenaSimulator {
       openPhantomKeys.add(`${pt.gladiatorId}|${pt.symbol}|${pt.signal}`);
     }
 
+    // C22 (2026-04-27): Performance-based phantom distribution cutoff.
+    // Gladiators with PF<0.75 AND tt>200 are statistically confirmed losers —
+    // at n=200, PF<0.75 is 4+ sigma below break-even, beyond recovery.
+    // Distributing signals to them wastes eval compute and pollutes the DNA bank
+    // with losing trade patterns. Current pool: 37/50 LOSS tier, 58% of all
+    // trades come from gladiators with DD>50%.
+    // Kill-switch: PHANTOM_LOSERS_CUTOFF=0 → all gladiators receive signals.
+    // Env-tuneable: PHANTOM_MIN_PF (default 0.75), PHANTOM_MIN_TRADES (default 200).
+    const cutoffEnabled = process.env.PHANTOM_LOSERS_CUTOFF !== '0';
+    const cutoffMinPF = parseFloat(process.env.PHANTOM_MIN_PF || '0.75');
+    const cutoffMinTrades = parseInt(process.env.PHANTOM_MIN_TRADES || '200');
+    let loserSkipped = 0;
+
     allGladiators.forEach(g => {
+      // C22: Skip confirmed losers — save compute + prevent DNA pollution
+      if (cutoffEnabled && g.stats.totalTrades > cutoffMinTrades && g.stats.profitFactor < cutoffMinPF) {
+        loserSkipped++;
+        return;
+      }
+
       // DNA FILTER: each gladiator decides independently whether to accept this signal
       if (!this.shouldAcceptSignal(g, routedSignal)) {
         rejected++;
@@ -164,7 +183,7 @@ export class ArenaSimulator {
       accepted++;
     });
 
-    log.info(`[Combat Engine] Phantom Trades: ${accepted} accepted, ${rejected} DNA-filtered, ${dedupSkipped} dedup-skipped for ${routedSignal.symbol} @ $${currentPrice}`);
+    log.info(`[Combat Engine] Phantom Trades: ${accepted} accepted, ${rejected} DNA-filtered, ${dedupSkipped} dedup-skipped, ${loserSkipped} loser-cutoff for ${routedSignal.symbol} @ $${currentPrice}`);
   }
 
   /**
@@ -366,4 +385,3 @@ export class ArenaSimulator {
     }
   }
 }
-

@@ -20,7 +20,11 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 let cache: { data: Record<string, unknown>; expiresAt: number } | null = null;
-const CACHE_TTL_MS = 15_000;
+// C22 (2026-04-27): 15s→90s. Prior: every cron tick (60s) missed the route cache
+// and re-ran analyzeBTC (1.5s warm, 9s cold). 4h/1h candle data doesn't change in 90s.
+// Signals are deduped downstream — no risk of duplicate routing on cache hit.
+// Env override: BTC_ROUTE_CACHE_MS=15000 to revert.
+const CACHE_TTL_MS = parseInt(process.env.BTC_ROUTE_CACHE_MS || '90000');
 
 export async function GET() {
   try {
