@@ -12,16 +12,10 @@
  * Both halves are soft. If startScanRun fails, decisions for that run
  * simply have run_id=null — still visible via market/decision query.
  */
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PolyScanHistory');
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supa = (SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder'))
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-  : null;
 
 function uuid(): string {
   const r = () => Math.floor(Math.random() * 16).toString(16);
@@ -39,7 +33,7 @@ export interface StartScanRunResult {
 export async function startScanRun(envSnapshot?: Record<string, unknown>): Promise<StartScanRunResult> {
   const runId = uuid();
   const startedAt = new Date().toISOString();
-  if (!supa) return { runId, startedAt, persisted: false };
+  if (!SUPABASE_CONFIGURED) return { runId, startedAt, persisted: false };
   try {
     const { error } = await supa.from('polymarket_scan_history').insert({
       run_id: runId,
@@ -68,7 +62,7 @@ export interface FinishScanRunInput {
 }
 
 export async function finishScanRun(runId: string, startedAtIso: string, input: FinishScanRunInput): Promise<{ persisted: boolean }> {
-  if (!supa) return { persisted: false };
+  if (!SUPABASE_CONFIGURED) return { persisted: false };
   const finishedAtIso = new Date().toISOString();
   const duration = new Date(finishedAtIso).getTime() - new Date(startedAtIso).getTime();
   try {
@@ -94,7 +88,7 @@ export async function finishScanRun(runId: string, startedAtIso: string, input: 
 }
 
 export async function getScanRun(runId: string): Promise<{ run: unknown; decisions: unknown[] } | null> {
-  if (!supa) return null;
+  if (!SUPABASE_CONFIGURED) return null;
   try {
     const [runRes, decRes] = await Promise.all([
       supa.from('polymarket_scan_history').select('*').eq('run_id', runId).maybeSingle(),
@@ -109,7 +103,7 @@ export async function getScanRun(runId: string): Promise<{ run: unknown; decisio
 }
 
 export async function listRecentScans(limit = 50): Promise<unknown[]> {
-  if (!supa) return [];
+  if (!SUPABASE_CONFIGURED) return [];
   try {
     const { data, error } = await supa
       .from('polymarket_scan_history')

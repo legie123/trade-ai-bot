@@ -23,16 +23,10 @@
  *   produce near-zero pnl (exit=entry) but are still written so the
  *   learning loop can count them separately.
  */
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PolySettlementHook');
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supa = (SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder'))
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-  : null;
 
 export type SettlementOutcome = 'YES' | 'NO' | 'CANCEL';
 
@@ -61,7 +55,7 @@ function isEnabled(): boolean {
 
 export async function settleDecision(args: SettleArgs): Promise<SettleResult> {
   if (!isEnabled()) return { updated: false, reason: 'killed' };
-  if (!supa) return { updated: false, reason: 'supabase_unconfigured' };
+  if (!SUPABASE_CONFIGURED) return { updated: false, reason: 'supabase_unconfigured' };
   if (!args.decisionId) return { updated: false, reason: 'missing_decision_id' };
 
   // Guard against NaN/Infinity that would break numeric columns.

@@ -18,22 +18,11 @@
  *   BRAIN_STATUS_LOG_ENABLED=1  → persist (after migration applied)
  *   BRAIN_STATUS_LOG_ENABLED=0  → skip (default)
  */
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import type { BrainStatus, BrainSignal } from './brainStatus';
 
 const log = createLogger('BrainStatusLog');
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
-
-const supa =
-  SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder')
-    ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-    : null;
 
 function pickVerdict(signals: BrainSignal[], source: BrainSignal['source']): string {
   const s = signals.find((x) => x.source === source);
@@ -51,7 +40,7 @@ function randomSuffix(): string {
 export function logBrainStatusSnapshot(status: BrainStatus): void {
   // Kill-switch: default OFF until operator flips after migration apply.
   if ((process.env.BRAIN_STATUS_LOG_ENABLED ?? '0') === '0') return;
-  if (!supa) return;
+  if (!SUPABASE_CONFIGURED) return;
   if (!status.enabled) return;         // don't log disabled brain
   if (status.cacheHit) return;         // only fresh computes
 

@@ -32,7 +32,7 @@
 //      = update analytics SQL.
 // ============================================================
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { supabase, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import type { ConsensusInput, ConsensusResult } from './multiLlmConsensus';
 
@@ -48,22 +48,6 @@ export function getPersistMode(): PersistMode {
   // Default 'off' — operator must explicitly flip ON after validating schema.
   const raw = (process.env.LLM_CONSENSUS_PERSIST_ENABLED || 'off').toLowerCase();
   return raw === 'on' ? 'on' : 'off';
-}
-
-// Reuse db env convention (same as graveyard.ts). Intentionally NOT
-// importing from db.ts to avoid circular + side-effect init penalty.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
-const CONFIGURED = !!(supabaseUrl && supabaseKey && !supabaseUrl.includes('placeholder'));
-
-let _client: SupabaseClient | null = null;
-function db(): SupabaseClient | null {
-  if (!CONFIGURED) return null;
-  if (!_client) _client = createClient(supabaseUrl, supabaseKey);
-  return _client;
 }
 
 // Log the "missing table" warning AT MOST ONCE per cold start so
@@ -109,8 +93,7 @@ export async function persistConsensusAudit(
   // Filter: skip bypass rows where providers didn't run.
   if (!shouldPersist(result)) return;
 
-  const client = db();
-  if (!client) return;
+  if (!SUPABASE_CONFIGURED) return;
 
   const ts = Date.now();
   // Deterministic-ish id. Collision probability with 4-hex random + per-ms
@@ -139,7 +122,7 @@ export async function persistConsensusAudit(
   };
 
   try {
-    const { error } = await client.from('llm_consensus_audit').insert(row);
+    const { error } = await supabase.from('llm_consensus_audit').insert(row);
     if (error) {
       // 42P01 = undefined_table (Postgres). Log once and swallow after.
       const code = (error as { code?: string }).code;

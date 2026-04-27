@@ -7,7 +7,7 @@
  * Cron-auth only.
  */
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { requireCronAuth } from '@/lib/core/cronAuth';
 import { createLogger } from '@/lib/core/logger';
 
@@ -15,12 +15,6 @@ const log = createLogger('PolyMarketDecisions');
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supa = (SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder'))
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-  : null;
 
 export async function GET(
   request: Request,
@@ -34,7 +28,7 @@ export async function GET(
     return NextResponse.json({ ok: false, error: 'missing marketId' }, { status: 400 });
   }
 
-  if (!supa) {
+  if (!SUPABASE_CONFIGURED) {
     return NextResponse.json({ ok: false, error: 'supabase_unconfigured' }, { status: 503 });
   }
 

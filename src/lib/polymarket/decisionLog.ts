@@ -6,19 +6,13 @@
  * blocks the scanner. Migration 20260420_polymarket_decisions.sql must
  * be applied manually (Supabase SQL editor).
  */
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import type { PolyGladiator } from './polyGladiators';
 import type { PolyMarket, PolyOpportunity } from './polyTypes';
 import type { CorrelatedDecision } from './correlationLayer';
 
 const log = createLogger('PolyDecisionLog');
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supa = (SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder'))
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-  : null;
 
 function uuid(): string {
   // RFC 4122 v4; small inline to avoid pulling dep.
@@ -37,7 +31,7 @@ export async function logDecision(args: {
   runId?: string; // FAZA 3.4 — links decision to its scan run for drill-down
 }): Promise<{ inserted: boolean; decisionId: string; reason?: string }> {
   const decisionId = uuid();
-  if (!supa) return { inserted: false, decisionId, reason: 'supabase_unconfigured' };
+  if (!SUPABASE_CONFIGURED) return { inserted: false, decisionId, reason: 'supabase_unconfigured' };
 
   const row = {
     decision_id: decisionId,
