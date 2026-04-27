@@ -9,6 +9,7 @@
  */
 import { NextResponse } from 'next/server';
 import { createLogger } from '@/lib/core/logger';
+import { supabase as sharedDb, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { analyzeSentimentLLM } from '@/lib/v2/superai/llmSentiment';
 import { requireCronAuth } from '@/lib/core/cronAuth';
 import { instrumentCron } from '@/lib/observability/cronInstrument';
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic';
 
 const log = createLogger('Cron:Sentiment');
 
-// ── Simple keyword NLP scorer ─────────────────────────────────
+// ── Simple keyword NLP scorer ───────────────────────────────
 const BULLISH_KEYWORDS = [
   'moon', 'pump', 'bull', 'breakout', 'long', 'buy', 'accumulate',
   'reversal up', 'golden cross', 'higher high', 'support held',
@@ -147,14 +148,10 @@ export const GET = instrumentCron('sentiment', async (request: Request) => {
 
     // Store to Supabase if available
     try {
-      const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!sbUrl || !sbKey) throw new Error('Supabase credentials not configured');
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(sbUrl, sbKey);
+      if (!SUPABASE_CONFIGURED) throw new Error('Supabase credentials not configured');
 
       for (const score of symbolScores) {
-        await supabase.from('sentiment_heartbeat').upsert({
+        await sharedDb.from('sentiment_heartbeat').upsert({
           symbol: score.symbol,
           score: score.score,
           direction: score.direction,

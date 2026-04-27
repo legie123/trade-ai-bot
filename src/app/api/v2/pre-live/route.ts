@@ -8,13 +8,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireCronAuth } from '@/lib/core/cronAuth';
-import { createClient } from '@supabase/supabase-js';
+import { supabase as db } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PreLiveGate');
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 interface GateCheck {
   name: string;
@@ -28,8 +25,6 @@ export async function GET(request: NextRequest) {
   if (authError) return authError;
 
   const checks: GateCheck[] = [];
-  const db = createClient(supabaseUrl, supabaseKey);
-
   try {
     // ── Check 1: At least 1 gladiator with 20+ phantom trades & WR >= 45% ──
     const { data: gladiators } = await db
@@ -45,7 +40,7 @@ export async function GET(request: NextRequest) {
     }> : [];
 
     // QW-8 (C14, 2026-04-20): pre-live qualification sincronizat cu recalibrateRanks.
-    // WR 58→40 aligned with asymmetric TP=1.0%/SL=-0.5%. PF≥1.3 is primary gate.
+    // WR 58→40 aligned with asymmetric TP=1.0%/SL=-0.5%. PF>=1.3 is primary gate.
     const qualifiedGladiators = glads.filter(g =>
       g.stats
       && g.stats.totalTrades >= 50

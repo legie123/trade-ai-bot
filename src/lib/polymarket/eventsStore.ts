@@ -16,19 +16,10 @@
  *   POLYMARKET_INGEST_WRITE_ENABLED=0 → insertGoldskyEvent() no-op (return skipped).
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PolyEventsStore');
-
-// Separate thin client — db.ts is already huge and we don't want to import its mutexes.
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const CONFIGURED = !!(SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder'));
-
-const supa = CONFIGURED
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-  : null;
 
 export interface GoldskyEventRow {
   id?: number;
@@ -44,7 +35,7 @@ export interface GoldskyEventRow {
   processed_at?: string | null;
 }
 
-// ── Heuristic payload inspector ───────────────────────────────
+// ── Heuristic payload inspector ─────────────────────────────────
 // Goldsky mirror sink forwards the raw subgraph entity. We don't lock to a
 // specific schema — we extract what we can, store what's left as raw_payload.
 function extractFields(payload: unknown): {
@@ -109,7 +100,7 @@ function asNum(v: unknown): number | null {
   return null;
 }
 
-// ── Insert ────────────────────────────────────────────────────
+// ── Insert ────────────────────────────────────────────────
 export async function insertGoldskyEvent(
   pipelineName: string,
   payload: unknown,
@@ -117,7 +108,7 @@ export async function insertGoldskyEvent(
   if (process.env.POLYMARKET_INGEST_WRITE_ENABLED === '0') {
     return { inserted: 0, skipped: 1, reason: 'write_disabled' };
   }
-  if (!supa) {
+  if (!SUPABASE_CONFIGURED) {
     return { inserted: 0, skipped: 1, reason: 'supabase_unconfigured' };
   }
 
@@ -152,7 +143,7 @@ export async function insertGoldskyEvent(
   }
 }
 
-// ── Query (paginated) ─────────────────────────────────────────
+// ── Query (paginated) ─────────────────────────────────────
 export interface QueryFilter {
   pipeline?: string;
   conditionId?: string;
@@ -167,7 +158,7 @@ export async function queryEvents(filter: QueryFilter = {}): Promise<{
   nextCursor: number | null;
   error?: string;
 }> {
-  if (!supa) return { events: [], nextCursor: null, error: 'supabase_unconfigured' };
+  if (!SUPABASE_CONFIGURED) return { events: [], nextCursor: null, error: 'supabase_unconfigured' };
 
   const limit = Math.max(1, Math.min(filter.limit ?? 100, 500));
   let q = supa.from('polymarket_events').select('*').order('id', { ascending: false }).limit(limit);
@@ -186,7 +177,7 @@ export async function queryEvents(filter: QueryFilter = {}): Promise<{
   return { events, nextCursor };
 }
 
-// ── Health / freshness probe ──────────────────────────────────
+// ── Health / freshness probe ────────────────────────────────
 export async function getEventsHealth(): Promise<{
   ok: boolean;
   configured: boolean;
@@ -202,7 +193,7 @@ export async function getEventsHealth(): Promise<{
   const writeEnabled = process.env.POLYMARKET_INGEST_WRITE_ENABLED !== '0';
   const base = {
     ok: false,
-    configured: !!supa,
+    configured: SUPABASE_CONFIGURED,
     writeEnabled,
     lastEventAt: null,
     lagSeconds: null,
@@ -211,7 +202,7 @@ export async function getEventsHealth(): Promise<{
     eventsLast24h: 0,
     perPipeline: [] as Array<{ pipeline: string; eventsLast1h: number; lastEventAt: string | null }>,
   };
-  if (!supa) return { ...base, error: 'supabase_unconfigured' };
+  if (!SUPABASE_CONFIGURED) return { ...base, error: 'supabase_unconfigured' };
 
   const now = Date.now();
   const iso5 = new Date(now - 5 * 60_000).toISOString();

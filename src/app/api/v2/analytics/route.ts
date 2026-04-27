@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireCronAuth } from '@/lib/core/cronAuth';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/lib/store/db';
 import {
   computeSharpeRatio,
   computeExpectancy,
@@ -20,25 +20,20 @@ import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('Analytics');
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
 export async function GET(request: NextRequest) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
   try {
-    const db = createClient(supabaseUrl, supabaseKey);
-
     // Fetch equity curve
-    const { data: equityData } = await db
+    const { data: equityData } = await supabase
       .from('equity_history')
       .select('equity, timestamp')
       .order('timestamp', { ascending: true })
       .limit(1000);
 
     // Fetch gladiator battles (trade records)
-    const { data: battles } = await db
+    const { data: battles } = await supabase
       .from('gladiator_battles')
       .select('gladiator_id, symbol, direction, pnl_percent, is_win, created_at')
       .order('created_at', { ascending: true })

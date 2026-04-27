@@ -28,23 +28,12 @@
  * dynamics.
  */
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { requireCronAuth } from '@/lib/core/cronAuth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
-
-const supa =
-  SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder')
-    ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-    : null;
 
 const ALLOWED_VERDICTS = new Set(['GREEN', 'AMBER', 'RED', 'UNKNOWN']);
 const ALLOWED_SIGNAL_VERDICTS = new Set(['green', 'amber', 'red', 'unknown']);
@@ -124,7 +113,7 @@ export async function GET(request: Request) {
   const enabled = envEnabled();
 
   // Gated off or Supabase not configured — return empty, 200 OK.
-  if (!supa) {
+  if (!SUPABASE_CONFIGURED) {
     return NextResponse.json(
       {
         ok: true,

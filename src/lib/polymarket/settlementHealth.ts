@@ -27,7 +27,7 @@
  * lower-bound because Supabase fetch is capped at 10k rows (very large
  * operator but same cap as buildWeeklyReport for consistency).
  */
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import { metrics, safeSet } from '@/lib/observability/metrics';
 
@@ -63,11 +63,7 @@ function emitSettlementGauges(windows: SettlementWindow[], status: HealthStatus)
   safeSet(metrics.polymarketSettlementStatus, statusCode(status));
 }
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supa = (SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder'))
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-  : null;
+// Supabase client — shared singleton from db.ts
 
 const FETCH_LIMIT = 10_000;
 
@@ -243,7 +239,7 @@ export async function probeSettlementHealth(): Promise<SettlementHealth> {
     suspiciousHorizonMs: Number.parseInt(process.env.POLY_SETTLEMENT_HEALTH_FAST_MS ?? '60000', 10),
   };
 
-  if (!supa) {
+  if (!SUPABASE_CONFIGURED) {
     emitSettlementGauges([], 'unknown');
     return { status: 'unknown', reason: 'supabase_unconfigured', nowIso, windows: [], thresholds };
   }
