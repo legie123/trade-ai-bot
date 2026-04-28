@@ -58,10 +58,11 @@ export interface SentimentFlagResult {
   computedAt: number;
 }
 
-const PANIC_FNG = 25;         // ≤25 = Extreme Fear zone
-const EUPHORIA_FNG = 75;      // ≥75 = Extreme Greed zone
-const LOW_LEVERAGE = 0.005;   // |funding| < 0.005% = derivatives NOT flushed
-const HIGH_LEVERAGE = 0.03;   // funding ≥ 0.03% = long-side crowding
+// Override via env to tune sentiment gates without redeploy.
+const PANIC_FNG = Number(process.env.SENTIMENT_PANIC_FNG) || 25;         // ≤25 = Extreme Fear zone
+const EUPHORIA_FNG = Number(process.env.SENTIMENT_EUPHORIA_FNG) || 75;   // ≥75 = Extreme Greed zone
+const LOW_LEVERAGE = Number(process.env.SENTIMENT_LOW_LEVERAGE) || 0.005; // |funding| < 0.005% = derivatives NOT flushed
+const HIGH_LEVERAGE = Number(process.env.SENTIMENT_HIGH_LEVERAGE) || 0.03; // funding ≥ 0.03% = long-side crowding
 
 const FNG_CACHE_TTL_MS = 6 * 60 * 60_000; // 6h — F&G updates daily
 

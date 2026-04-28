@@ -26,10 +26,11 @@ if (!gfr.__fundingCache) gfr.__fundingCache = {};
 const CACHE_TTL = 30 * 60_000;
 
 // Funding rate thresholds (based on historical BTC data)
-const EXTREME_NEGATIVE = -0.01;   // -0.01% → short squeeze risk
-const NEGATIVE = -0.005;          // -0.005% → mild squeeze bias
-const EXTREME_POSITIVE = 0.05;    // +0.05% → longs over-leveraged
-const HIGH_POSITIVE = 0.03;       // +0.03% → caution zone
+// Override via env to tune without redeploy.
+const EXTREME_NEGATIVE = Number(process.env.FUNDING_EXTREME_NEG) || -0.01;   // -0.01% → short squeeze risk
+const NEGATIVE = Number(process.env.FUNDING_NEGATIVE) || -0.005;             // -0.005% → mild squeeze bias
+const EXTREME_POSITIVE = Number(process.env.FUNDING_EXTREME_POS) || 0.05;    // +0.05% → longs over-leveraged
+const HIGH_POSITIVE = Number(process.env.FUNDING_HIGH_POS) || 0.03;          // +0.03% → caution zone
 
 /**
  * Fetch funding rate from MEXC Futures

@@ -55,9 +55,9 @@ export interface OHLC {
   c: number;
 }
 
-const DEFAULT_PERIOD = 14;
-const TREND_THRESHOLD = 25;
-const MEAN_REV_THRESHOLD = 20;
+const DEFAULT_PERIOD = Number(process.env.ADX_PERIOD) || 14;
+const TREND_THRESHOLD = Number(process.env.ADX_TREND_THRESHOLD) || 25;
+const MEAN_REV_THRESHOLD = Number(process.env.ADX_MEAN_REV_THRESHOLD) || 20;
 
 // ─── Cache (symbol, lastCandleTs) → RegimeResult ───
 // Avoids recomputing ADX on every signal — only when a new candle closes.
