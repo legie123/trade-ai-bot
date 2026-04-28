@@ -14,7 +14,7 @@
  *
  * Layer: L4 AUDIT · grain=snapshot-per-cache-miss.
  */
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import Link from 'next/link';
 import { ExplainCard } from '@/components/explain/ExplainCard';
 
@@ -47,16 +47,7 @@ const VERDICT_COLOR: Record<string, string> = {
 const ALLOWED_VERDICTS = new Set(['GREEN', 'AMBER', 'RED', 'UNKNOWN']);
 const ALLOWED_LIMITS = [25, 50, 100, 250, 500, 1000] as const;
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
-
-const supa =
-  SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder')
-    ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-    : null;
+// Supabase client — shared singleton from db.ts
 
 const PG_UNDEFINED_TABLE = '42P01';
 const POSTGREST_TABLE_MISSING = 'PGRST205';
@@ -94,7 +85,7 @@ type LoadState =
   | { kind: 'error'; rows: []; error: string };
 
 async function load(verdict: string | null, limit: number): Promise<LoadState> {
-  if (!supa) return { kind: 'supabase-unconfigured', rows: [] };
+  if (!SUPABASE_CONFIGURED) return { kind: 'supabase-unconfigured', rows: [] };
 
   let q = supa
     .from('polymarket_brain_status_log')
