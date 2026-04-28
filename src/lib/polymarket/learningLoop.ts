@@ -39,16 +39,10 @@
  * - enough settled rows (>= 10) exist before WR is a meaningful signal.
  *   Below that, we show n but suppress warnings.
  */
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PolyLearning');
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supa = (SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder'))
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-  : null;
 
 const EMBARGO_HOURS = Number.parseFloat(process.env.POLY_LEARNING_EMBARGO_HOURS ?? '24');
 const WINDOW_DAYS = Number.parseFloat(process.env.POLY_LEARNING_WINDOW_DAYS ?? '7');
@@ -409,7 +403,7 @@ export async function buildWeeklyReport(): Promise<WeeklyLearningReport> {
   if (!isLearningEnabled()) {
     return { ...empty, warnings: ['POLY_LEARNING_ENABLED=0'] };
   }
-  if (!supa) {
+  if (!SUPABASE_CONFIGURED) {
     return { ...empty, enabled: true, warnings: ['supabase_unconfigured'] };
   }
 

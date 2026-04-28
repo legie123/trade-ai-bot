@@ -10,16 +10,10 @@
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supa, SUPABASE_CONFIGURED } from '@/lib/store/db';
 import { ExplainCard } from '@/components/explain/ExplainCard';
 
 export const dynamic = 'force-dynamic';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supa = (SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('placeholder'))
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
-  : null;
 
 interface RationaleEntry {
   factor: string;
@@ -66,7 +60,7 @@ function fmtNum(n: number | null | undefined, digits = 2): string {
 }
 
 async function fetchDecision(decisionId: string): Promise<DecisionRow | null> {
-  if (!supa) return null;
+  if (!SUPABASE_CONFIGURED) return null;
   try {
     const { data, error } = await supa
       .from('polymarket_decisions')
