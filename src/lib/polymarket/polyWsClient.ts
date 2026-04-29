@@ -27,12 +27,13 @@ import { metrics, safeInc } from '@/lib/observability/metrics';
 
 const log = createLogger('PolyWS');
 
-// Resilience constants (mirrors wsStreams for uniformity)
-const PING_INTERVAL_MS = 25_000;
-const STALE_THRESHOLD_MS = 60_000;
-const STALE_CHECK_INTERVAL_MS = 10_000;
-const RECONNECT_BASE_MS = 5_000;
-const RECONNECT_CAP_MS = 60_000;
+// Resilience constants — env-configurable for tuning WS reconnect behavior
+// without redeploy (12k+ reconnects observed, needs operational tuning).
+const PING_INTERVAL_MS = Number(process.env.POLY_WS_PING_INTERVAL_MS) || 25_000;
+const STALE_THRESHOLD_MS = Number(process.env.POLY_WS_STALE_THRESHOLD_MS) || 60_000;
+const STALE_CHECK_INTERVAL_MS = Number(process.env.POLY_WS_STALE_CHECK_MS) || 10_000;
+const RECONNECT_BASE_MS = Number(process.env.POLY_WS_RECONNECT_BASE_MS) || 5_000;
+const RECONNECT_CAP_MS = Number(process.env.POLY_WS_RECONNECT_CAP_MS) || 60_000;
 const MAX_CACHE_ENTRIES = 500;
 
 // Default endpoint. Override via POLYMARKET_WS_URL env.

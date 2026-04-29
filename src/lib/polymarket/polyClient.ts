@@ -23,7 +23,8 @@ import { createLogger } from '@/lib/core/logger';
 const log = createLogger('PolyClient');
 
 const CLOB_URL = () => process.env.POLYMARKET_CLOB_URL || 'https://clob.polymarket.com';
-const GAMMA_URL = () => process.env.POLYMARKET_GAMMA_URL || 'https://gamma-api.polymarket.com';
+// Exported for feedHealth.ts and other probes that need the same base URL.
+export const GAMMA_URL = () => process.env.POLYMARKET_GAMMA_URL || 'https://gamma-api.polymarket.com';
 // Rate limiter: 100ms between requests
 let lastRequestTime = 0;
 const RATE_LIMIT_MS = 100;

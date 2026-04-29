@@ -39,6 +39,7 @@
 // ============================================================
 
 import { createLogger } from '@/lib/core/logger';
+import { FEAR_GREED_API_URL } from '@/lib/core/fearGreed';
 import { getFundingRate } from './fundingRate';
 
 const log = createLogger('SentimentDivergence');
@@ -87,7 +88,7 @@ interface FngApiItem {
 
 async function fetchFearGreed(): Promise<{ value: number; classification: string; timestamp: number } | null> {
   try {
-    const res = await fetch('https://api.alternative.me/fng/?limit=1', {
+    const res = await fetch(FEAR_GREED_API_URL, {
       signal: AbortSignal.timeout(5000),
       headers: { 'User-Agent': 'TradeAI/1.0' },
     });

@@ -26,6 +26,7 @@
 import { getEventsHealth } from './eventsStore';
 import { getGoldskyStatus } from './goldskyClient';
 import { listRecentScans } from './scanHistory';
+import { GAMMA_URL } from './polyClient';
 
 export type FeedStatus = 'fresh' | 'aging' | 'stale' | 'unconfigured' | 'error';
 
@@ -199,7 +200,7 @@ async function probePolymarketApi(): Promise<FeedSnapshot> {
   const freshMs = 5 * 60_000;
   const staleMs = 30 * 60_000;
   // Cheap liveness: fetch Gamma markets index, head-only.
-  const url = 'https://gamma-api.polymarket.com/markets?limit=1&active=true';
+  const url = `${GAMMA_URL()}/markets?limit=1&active=true`;
   const started = Date.now();
   try {
     const ctrl = new AbortController();

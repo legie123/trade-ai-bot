@@ -114,10 +114,13 @@ export async function scanAllDivisions(limit = 10): Promise<PolyScanResult[]> {
 async function evaluateOpportunity(market: PolyMarket, division: PolyDivision): Promise<PolyOpportunity> {
   const mispricing = scoreMispricing(market);
   const volume = scoreVolumeAnomaly(market);
-  const momentum = await scoreMomentum(market);
+  // Independent external calls — parallelize for ~50% latency reduction per market.
+  const [momentum, spread] = await Promise.all([
+    scoreMomentum(market),
+    scoreOrderBookSpread(market),
+  ]);
   const liquidity = scoreLiquidity(market);
   const timeDecay = scoreTimeDecay(market);
-  const spread = await scoreOrderBookSpread(market);
 
   // Weighted composite: mispricing 30%, momentum 20%, volume 15%, liquidity 15%, spread 10%, timeDecay 10%
   const edgeScore = Math.round(

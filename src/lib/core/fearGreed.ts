@@ -19,6 +19,10 @@ const gfg = globalThis as unknown as {
 };
 const CACHE_TTL = 30 * 60_000;
 
+// Canonical URL — import from here to avoid duplication across modules.
+export const FEAR_GREED_API_URL =
+  process.env.FEAR_GREED_URL || 'https://api.alternative.me/fng/?limit=1';
+
 /**
  * Fetch live Fear & Greed Index from Alternative.me
  * Falls back to neutral (50) on error
@@ -33,7 +37,7 @@ export async function getFearGreedIndex(): Promise<FearGreedData> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
-    const res = await fetch('https://api.alternative.me/fng/?limit=1', {
+    const res = await fetch(FEAR_GREED_API_URL, {
       signal: controller.signal,
     });
     clearTimeout(timeout);
