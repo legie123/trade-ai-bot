@@ -1528,3 +1528,161 @@ input:focus-visible {
     font-size: 11px !important;
   }
 }
+
+/* ============================================================
+   INSTITUTIONAL THEME (FAZA FE-1)
+   Activated via <html data-ui="institutional"> at root layout.
+   Trigger env: NEXT_PUBLIC_INSTITUTIONAL_UI_ENABLED=1
+   Reversal: unset env -> auto fallback to Dragon palette above.
+
+   Design intent (vs Dragon):
+   - charcoal slate base (no dragon undertone, no gradient bg)
+   - sober blue accent (replaces gold-primary)
+   - graded numeric color scale (--num-up/down-strong/soft)
+   - density mode tokens (--row-h-compact/normal/spacious)
+   - tabular numerics (font-feature-settings tnum)
+   - section header tokens (uppercase tracking)
+
+   Strategy: ONLY override existing var names so 134 class roots
+   inherit institutional automatically. New tokens are additive.
+
+   Asumptie critica (din DESK_DESIGN_SPEC §1.6):
+   380 hex hardcoded in pages/components NU se schimba aici —
+   acelea sunt migrate chirurgical pe FAZA FE-3, hex -> var.
+   ============================================================ */
+
+:root[data-ui="institutional"] {
+  /* === Backgrounds — charcoal slate (no dragon red undertone) === */
+  --bg-primary:      #0a0d12;
+  --bg-secondary:    #11151c;
+  --bg-card:         #161b24;
+  --bg-card-hover:   #1d2330;
+  --bg-input:        #0f1319;
+
+  /* === Borders — slate-400 alpha (no gold tint) === */
+  --border:          rgba(148, 163, 184, 0.12);
+  --border-focus:    #3b82f6;
+
+  /* === Text — slate scale === */
+  --text-primary:    #e2e8f0;
+  --text-secondary:  #94a3b8;
+  --text-muted:      #64748b;
+
+  /* === Accent palette — sober (gold replaced with blue) ===
+     IMPORTANT: keep var NAMES identical with Dragon so existing
+     classes (.btn-primary, .badge-bullish, etc.) auto-adopt. */
+  --accent-gold:        #3b82f6;   /* gold -> blue-500 */
+  --accent-gold-bright: #60a5fa;
+  --accent-blue:        #3b82f6;
+  --accent-cyan:        #3b82f6;   /* primary nav accent */
+  --accent-green:       #22c55e;   /* slightly cooler green */
+  --accent-red:         #ef4444;
+  --accent-amber:       #f59e0b;
+  --accent-purple:      #a78bfa;
+  --accent-dragon:      #ef4444;   /* dragon-red -> standard red */
+
+  /* === Tinted backgrounds — institutional alpha (lower) === */
+  --green-bg:  rgba(34, 197, 94, 0.08);
+  --red-bg:    rgba(239, 68, 68, 0.08);
+  --amber-bg:  rgba(245, 158, 11, 0.08);
+  --blue-bg:   rgba(59, 130, 246, 0.08);
+  --purple-bg: rgba(167, 139, 250, 0.08);
+  --gold-bg:   rgba(59, 130, 246, 0.06);   /* alias gold->blue */
+
+  /* === Shadows — flatter, no dragon glow === */
+  --shadow:    0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+
+  /* === Glass — slate-tinted === */
+  --glass-bg:     rgba(17, 21, 28, 0.8);
+  --glass-border: rgba(148, 163, 184, 0.10);
+  --neon-cyan:    none;
+  --neon-green:   none;
+  --neon-gold:    none;
+
+  /* === NEW tokens (additive — do NOT exist in Dragon) === */
+
+  /* Numeric color scale — graded by magnitude */
+  --num-up-strong:   #16a34a;
+  --num-up-soft:     #4ade80;
+  --num-flat:        #94a3b8;
+  --num-down-soft:   #f87171;
+  --num-down-strong: #dc2626;
+
+  /* Density rows (institutional default = normal; toggle via class) */
+  --row-h-compact:   24px;
+  --row-h-normal:    32px;
+  --row-h-spacious:  40px;
+
+  /* Section header style */
+  --label-fs:        0.6875rem;     /* 11px */
+  --label-tracking:  0.08em;
+  --label-color:     var(--text-muted);
+  --label-transform: uppercase;
+  --label-weight:    600;
+
+  /* Status pills — semantic (use over generic accent vars) */
+  --pill-success-bg: rgba(34, 197, 94, 0.10);
+  --pill-success-fg: #4ade80;
+  --pill-warn-bg:    rgba(245, 158, 11, 0.10);
+  --pill-warn-fg:    #fbbf24;
+  --pill-danger-bg:  rgba(239, 68, 68, 0.10);
+  --pill-danger-fg:  #f87171;
+  --pill-info-bg:    rgba(59, 130, 246, 0.10);
+  --pill-info-fg:    #60a5fa;
+  --pill-neutral-bg: rgba(148, 163, 184, 0.10);
+  --pill-neutral-fg: #cbd5e1;
+}
+
+/* === Body bg — institutional FLAT (no radial gradients) === */
+:root[data-ui="institutional"] body {
+  background: var(--bg-primary);
+  background-image: none;
+  /* Tabular numerics global ON for institutional UI */
+  font-feature-settings: "tnum" 1, "ss01" 1, "cv11" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* === Mono numerics in cards/tables ALWAYS tabular === */
+:root[data-ui="institutional"] .stat-value,
+:root[data-ui="institutional"] .kpi-value,
+:root[data-ui="institutional"] .text-mono,
+:root[data-ui="institutional"] .table-wrap td,
+:root[data-ui="institutional"] .table-wrap th {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* === Section header utility (additive, not breaking) === */
+.section-label {
+  font-size: var(--label-fs, 0.6875rem);
+  letter-spacing: var(--label-tracking, 0.08em);
+  text-transform: var(--label-transform, uppercase);
+  color: var(--label-color, var(--text-muted));
+  font-weight: var(--label-weight, 600);
+  font-family: var(--font-sans);
+}
+
+/* === Density modifier classes (opt-in per container) === */
+.density-compact { --row-h: var(--row-h-compact, 24px); }
+.density-normal  { --row-h: var(--row-h-normal, 32px); }
+.density-spacious{ --row-h: var(--row-h-spacious, 40px); }
+
+/* === Status pill utility (additive) === */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.pill.pill-success { background: var(--pill-success-bg, var(--green-bg)); color: var(--pill-success-fg, var(--accent-green)); }
+.pill.pill-warn    { background: var(--pill-warn-bg,    var(--amber-bg)); color: var(--pill-warn-fg,    var(--accent-amber)); }
+.pill.pill-danger  { background: var(--pill-danger-bg,  var(--red-bg));   color: var(--pill-danger-fg,  var(--accent-red)); }
+.pill.pill-info    { background: var(--pill-info-bg,    var(--blue-bg));  color: var(--pill-info-fg,    var(--accent-blue)); }
+.pill.pill-neutral { background: var(--pill-neutral-bg, rgba(148,163,184,0.10)); color: var(--pill-neutral-fg, var(--text-secondary)); }
