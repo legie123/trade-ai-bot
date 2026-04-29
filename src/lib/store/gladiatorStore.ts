@@ -1,5 +1,5 @@
 import { INITIAL_STRATEGIES } from './seedStrategies';
-import { isSeedBlacklisted } from './seedBlacklist';
+import { isSeedBlacklisted, isBlacklistReady } from './seedBlacklist';
 import { Gladiator, ArenaType } from '../types/gladiator';
 import { getGladiatorsFromDb, saveGladiatorsToDb, getIndependentSampleSize, getGladiatorBattles } from '@/lib/store/db';
 import { WalkForwardEngine } from '@/lib/v2/validation/walkForwardEngine';
@@ -193,10 +193,25 @@ class GladiatorStore {
     // FAZA 4/4 2026-04-20 — seed-revive blacklist. Skip re-introducing seeds
     // that were killed within SEED_REVIVE_BLACKLIST_DAYS (default 30). Breaks
     // the kill→revive→kill loop documented in memory
-    // [project_zombie_purge_fix_2026_04_20]. Kill-switch:
-    // SEED_BLACKLIST_ENABLED=off → no filtering. Cold-start race: if the
-    // blacklist hasn't finished its first refresh, isSeedBlacklisted returns
-    // false and behavior matches pre-fix (safe default).
+    // [project_zombie_purge_fix_2026_04_20].
+    //
+    // 2026-04-29 ZOMBIE-RACE FIX: defer ENTIRE merge if blacklist hasn't
+    // completed its first refresh. Without this guard, an HTTP request that
+    // hits getGladiators() during the boot window between initDB step 1
+    // (cache.gladiators populated) and step 2 (refreshSeedBlacklist awaited)
+    // would run mergeSeedMissing with an empty blacklist Set → recently-
+    // killed seeds revive AND get persisted via saveGladiatorsToDb at the
+    // tail of this function → every subsequent cold-start instance loads
+    // those zombies from cache.gladiators. Symptom: zombieCount=55-69 on
+    // /api/v2/diag/graveyard with aliveTrades=0 (all 14 seeds resurrected
+    // with stats=0). The merge is idempotent: deferring once is safe;
+    // initDB's explicit reloadFromDb (after blacklist refresh) catches up
+    // on the next cycle. Kill-switch: SEED_BLACKLIST_ENABLED=off makes
+    // isBlacklistReady() return true unconditionally → behavior pre-fix.
+    if (missing.length > 0 && !isBlacklistReady()) {
+      storeLog.warn(`[MERGE-SEED] Blacklist not yet ready — deferring merge of ${missing.length} seed(s) to avoid zombie revive race.`);
+      return;
+    }
     const beforeFilter = missing.length;
     missing = missing.filter(s => !isSeedBlacklisted(s.id));
     const filtered = beforeFilter - missing.length;
