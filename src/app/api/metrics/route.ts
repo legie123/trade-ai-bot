@@ -31,19 +31,26 @@ export async function GET(req: NextRequest) {
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  // Refresh pool-state gauges before scrape (60s TTL inside, fail-soft).
-  await refreshPoolGauges();
-  // FAZA 3.15 — Brain Status composite gauge (30s aggregator cache, fail-soft).
-  await refreshBrainStatusGauges();
-  // FAZA 3.16 — Decision Budget Gate gauges (15s classifier cache, fail-soft).
-  await refreshDecisionBudgetGauges();
+  try {
+    // Refresh pool-state gauges before scrape (60s TTL inside, fail-soft).
+    await refreshPoolGauges();
+    // FAZA 3.15 — Brain Status composite gauge (30s aggregator cache, fail-soft).
+    await refreshBrainStatusGauges();
+    // FAZA 3.16 — Decision Budget Gate gauges (15s classifier cache, fail-soft).
+    await refreshDecisionBudgetGauges();
 
-  const body = await registry.metrics();
-  return new NextResponse(body, {
-    status: 200,
-    headers: {
-      'Content-Type': registry.contentType,
-      'Cache-Control': 'no-store',
-    },
-  });
+    const body = await registry.metrics();
+    return new NextResponse(body, {
+      status: 200,
+      headers: {
+        'Content-Type': registry.contentType,
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'metrics_scrape_failed', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }

@@ -12,9 +12,11 @@ const log = createLogger('MasterOracles');
 export class MasterOracles {
   public async evaluateMacroState(): Promise<MasterConsensus> {
     try {
-      // Fetch macro environment indicators
-      const funding = await getFundingRate('BTCUSDT');
-      const oi = await getOpenInterest('BTCUSDT');
+      // Fetch macro environment indicators — parallel (independent APIs)
+      const [funding, oi] = await Promise.all([
+        getFundingRate('BTCUSDT'),
+        getOpenInterest('BTCUSDT'),
+      ]);
 
       let direction: 'LONG' | 'SHORT' | 'FLAT' = 'FLAT';
       let confidence = 0.5;

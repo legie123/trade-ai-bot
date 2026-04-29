@@ -36,6 +36,9 @@
 
 import { getDecisionBudgetState, BudgetVerdict } from '@/lib/polymarket/decisionBudget';
 import { metrics, safeSet } from '@/lib/observability/metrics';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('DecisionBudgetGauges');
 
 function verdictToNumber(v: BudgetVerdict): number {
   switch (v) {
@@ -60,7 +63,6 @@ export async function refreshDecisionBudgetGauges(): Promise<void> {
     safeSet(metrics.polymarketDecisionBudgetCapUsd, Number(st.capUsd) || 0);
     safeSet(metrics.polymarketDecisionBudgetVerdict, verdictToNumber(st.verdict));
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('[decisionBudgetGauges] refresh failed', (e as Error).message);
+    log.warn('refresh failed', { error: (e as Error).message });
   }
 }

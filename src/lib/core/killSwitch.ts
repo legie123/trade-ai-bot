@@ -32,13 +32,14 @@ interface VelocityEntry {
 }
 const velocityWindow: VelocityEntry[] = [];
 
+// Override via env to tune velocity gates without redeploy.
 const VELOCITY_CONFIG = {
-  windowMinutes: 15,          // Look-back window
-  maxTradesInWindow: 8,       // Max trades allowed in window
-  maxSpendDeltaPercent: 5,    // Max cumulative spend in window
+  windowMinutes: Number(process.env.KS_VELOCITY_WINDOW_MIN) || 15,
+  maxTradesInWindow: Number(process.env.KS_VELOCITY_MAX_TRADES) || 8,
+  maxSpendDeltaPercent: Number(process.env.KS_VELOCITY_MAX_SPEND_PCT) || 5,
 } as const;
 
-// ─── Global singleton ───────────────────────────────
+// ─── Global singleton ─────────────────────────────
 const g = globalThis as unknown as { __killSwitch?: KillSwitchState; __killSwitchHydrated?: boolean };
 if (!g.__killSwitch) {
   g.__killSwitch = defaultState();
@@ -94,7 +95,7 @@ async function persistState(): Promise<void> {
   else log.debug('Kill switch state persisted to Supabase');
 }
 
-// ─── Engage kill switch ─────────────────────────────
+// ─── Engage kill switch ─────────────────────────
 export async function engageKillSwitch(reason: string, auto = false): Promise<void> {
   state.engaged = true;
   state.engagedAt = new Date().toISOString();
@@ -238,7 +239,7 @@ export async function engageKillSwitch(reason: string, auto = false): Promise<vo
   }
 }
 
-// ─── Disengage kill switch ──────────────────────────
+// ─── Disengage kill switch ──────────────────────
 export async function disengageKillSwitch(): Promise<void> {
   state.engaged = false;
   state.engagedAt = null;
@@ -253,12 +254,12 @@ export async function disengageKillSwitch(): Promise<void> {
   log.info('Kill switch disengaged');
 }
 
-// ─── Check if trading is allowed ────────────────────
+// ─── Check if trading is allowed ────────────────
 export function isKillSwitchEngaged(): boolean {
   return state.engaged;
 }
 
-// ─── Check daily loss limit ─────────────────────────
+// ─── Check daily loss limit ─────────────────────
 // AUDIT FIX T3.1: Made async to await engageKillSwitch (liquidation must complete)
 export async function checkDailyLossLimit(dailyLossPercent: number, limitPercent: number): Promise<boolean> {
   if (dailyLossPercent >= limitPercent && !state.dailyLossTriggered) {
@@ -272,12 +273,12 @@ export async function checkDailyLossLimit(dailyLossPercent: number, limitPercent
   return false;
 }
 
-// ─── Check total exposure limit ─────────────────────
+// ─── Check total exposure limit ─────────────────
 // AUDIT FIX T3.1: Made async to await engageKillSwitch
 export async function checkExposureLimit(
   totalExposure: number,
   accountBalance: number,
-  maxExposurePercent: number = 30
+  maxExposurePercent: number = Number(process.env.KS_MAX_EXPOSURE_PCT) || 30
 ): Promise<boolean> {
   const exposurePercent = (totalExposure / accountBalance) * 100;
   if (exposurePercent >= maxExposurePercent && !state.maxExposureTriggered) {
@@ -291,7 +292,7 @@ export async function checkExposureLimit(
   return false;
 }
 
-// ─── Velocity Kill Switch (Faza 9) ─────────────────
+// ─── Velocity Kill Switch (Faza 9) ─────────────
 /**
  * Track a new trade execution for velocity monitoring.
  * Call this AFTER every trade (live or phantom promoted to live).
@@ -337,7 +338,7 @@ export async function trackTradeVelocity(spendPercent: number): Promise<boolean>
   return false;
 }
 
-// ─── Get state ──────────────────────────────────────
+// ─── Get state ──────────────────────────────
 export function getKillSwitchState(): KillSwitchState {
   return { ...state };
 }

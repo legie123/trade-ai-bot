@@ -27,6 +27,9 @@
 
 import { getBrainStatus, BrainVerdict, BrainSignal } from '@/lib/polymarket/brainStatus';
 import { metrics, safeSet } from '@/lib/observability/metrics';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('BrainStatusGauges');
 
 function verdictToNumber(v: BrainVerdict | BrainSignal['verdict']): number {
   // Normalise case — BrainVerdict is upper, BrainSignal.verdict is lower.
@@ -56,7 +59,6 @@ export async function refreshBrainStatusGauges(): Promise<void> {
       });
     }
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('[brainStatusGauges] refresh failed', (e as Error).message);
+    log.warn('refresh failed', { error: (e as Error).message });
   }
 }

@@ -41,6 +41,9 @@ import { gladiatorStore } from '@/lib/store/gladiatorStore';
 import { metrics, safeSet } from '@/lib/observability/metrics';
 import { refreshGladiatorsFromCloud } from '@/lib/store/db';
 import { refreshSeedBlacklist } from '@/lib/store/seedBlacklist';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('PoolGauges');
 
 const CACHE_TTL_MS = 60_000;
 
@@ -56,8 +59,7 @@ async function compute(): Promise<void> {
       await refreshGladiatorsFromCloud();
       gladiatorStore.reloadFromDb();
     } catch (refreshErr) {
-      // eslint-disable-next-line no-console
-      console.warn('[poolGauges] cloud refresh failed (using stale cache)', (refreshErr as Error).message);
+      log.warn('cloud refresh failed (using stale cache)', { error: (refreshErr as Error).message });
     }
 
     // FAZA 4/4 2026-04-20 — piggy-back seed blacklist refresh on the 60s TTL.
@@ -85,8 +87,7 @@ async function compute(): Promise<void> {
     safeSet(metrics.popWeightedPF, stats.popWeightedProfitFactor);
     safeSet(metrics.popWeightedWR, stats.popWeightedWinRate);
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('[poolGauges] refresh failed', (e as Error).message);
+    log.warn('refresh failed', { error: (e as Error).message });
   }
 }
 

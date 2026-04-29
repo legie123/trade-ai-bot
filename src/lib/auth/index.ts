@@ -2,6 +2,9 @@
 // Auth Middleware — Simple JWT-based dashboard protection
 // ============================================================
 import crypto from 'crypto';
+import { createLogger } from '@/lib/core/logger';
+
+const log = createLogger('Auth');
 
 // AUDIT FIX: No fallback defaults — fail-closed if env vars missing
 const AUTH_SECRET = process.env.AUTH_SECRET || '';
@@ -20,13 +23,13 @@ const WEAK_PASSWORD =
 const WEAK_SECRET = !AUTH_SECRET || AUTH_SECRET === 'trading-ai-secret-2026' || AUTH_SECRET.length < 24;
 
 if (WEAK_PASSWORD) {
-  console.warn(
-    '[AUTH] DASHBOARD_PASSWORD is weak or default. Set a strong value (>= 12 chars, no "admin123").' +
+  log.warn(
+    'DASHBOARD_PASSWORD is weak or default. Set a strong value (>= 12 chars, no "admin123").' +
       (IS_PROD ? ' Production refuses auth with weak password.' : ' Development mode tolerates it.')
   );
 }
 if (WEAK_SECRET) {
-  console.warn('[AUTH] AUTH_SECRET is weak or default. Set a strong random value (>= 24 chars).');
+  log.warn('AUTH_SECRET is weak or default. Set a strong random value (>= 24 chars).');
 }
 
 function assertStrongCredentials(): void {
