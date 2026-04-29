@@ -89,7 +89,7 @@ export interface PopulationStats {
   // Raw (unweighted) to expose selection lift.
   aliveAvgWinRate: number; // 0..100 (matches Gladiator.stats units)
   killedAvgWinRate: number;
-  selectionLiftPct: number; // aliveAvgWinRate - popWeighted*100
+  selectionLiftPct: number; // (aliveWeightedWR - killedWeightedWR)*100 [default]; legacy via SELECTION_LIFT_MODE=legacy
   sampleTrades: {
     alive: number;
     killed: number;
@@ -175,10 +175,11 @@ export async function getGraveyardEntries(limit = 500): Promise<GraveyardEntry[]
  *   which Gladiator.stats optionally provides. Use those when present.
  *
  * SELECTION LIFT (the bias we're exposing):
- *   lift = aliveAvgWR - popWeightedWR*100
- * If this is large (>10pp), Kelly derived from alive-only set is
- * DEMONSTRABLY over-sized. That's the kill-switch trigger for Batch 4
- * going active.
+ *   default: lift = (aliveWeightedWR - killedWeightedWR) * 100
+ *   legacy : lift = aliveAvgWR - popWeightedWR*100  (set SELECTION_LIFT_MODE=legacy)
+ * Default is unit-consistent (weighted vs weighted). Positive lift = Butcher
+ * kills below survivors' avg (correct direction). Negative lift = actionable —
+ * either Butcher tuning is wrong OR seeds/zombies dilute aliveWeighted.
  */
 export async function getPopulationStats(
   aliveGladiators: Gladiator[],
@@ -255,7 +256,24 @@ export async function getPopulationStats(
 
   const aliveAvgWinRate = aliveWRCount > 0 ? aliveWRSum / aliveWRCount : 0;
   const killedAvgWinRate = killedWRCount > 0 ? killedWRSum / killedWRCount : 0;
-  const selectionLiftPct = aliveAvgWinRate - popWeightedWinRate * 100;
+
+  // 2026-04-29 RE-APPLY of commit 64be9d0 (regressed by parallel-agent push 18581ae).
+  // Unit-consistent selectionLift: weighted alive vs weighted killed.
+  // Legacy formula mixed simple-mean alive vs trade-weighted population →
+  // fresh forged gladiators (n=0) dilute aliveAvg toward 0 every Forge cycle,
+  // creating ghost negative lift independent of true alpha.
+  // Default: weighted-vs-weighted (units match: WR%×WR%).
+  // Kill-switch: SELECTION_LIFT_MODE=legacy restores the old formula.
+  // Assumption (if broken, revisit): aliveTrades + killedTrades > 0 in any
+  // pool with >0 graveyard entries — guaranteed by graveyard's append-only
+  // contract (kill events carry totalTrades>=MIN_N_FOR_KILL).
+  const aliveWeightedWR = aliveTrades > 0 ? aliveWinsWeighted / aliveTrades : 0;
+  const killedWeightedWR = killedTrades > 0 ? killedWinsWeighted / killedTrades : 0;
+  const liftMode = (process.env.SELECTION_LIFT_MODE || 'weighted').toLowerCase();
+  const selectionLiftPct =
+    liftMode === 'legacy'
+      ? aliveAvgWinRate - popWeightedWinRate * 100
+      : (aliveWeightedWR - killedWeightedWR) * 100;
 
   // Zombie detection (FAZA 3/4 2026-04-20): overlap between alive pool IDs
   // and graveyard IDs. Same single graveyard read we already paid for.
