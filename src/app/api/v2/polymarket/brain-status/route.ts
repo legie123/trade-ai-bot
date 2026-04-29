@@ -16,13 +16,20 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET() {
-  const status = await getBrainStatus();
-  return NextResponse.json(status, {
-    headers: {
-      'Cache-Control': 'no-store, max-age=0',
-      'X-Brain-Verdict': status.verdict,
-      'X-Brain-Enabled': status.enabled ? '1' : '0',
-      'X-Brain-Signals': status.signals.map((s) => `${s.source}=${s.verdict}`).join(','),
-    },
-  });
+  try {
+    const status = await getBrainStatus();
+    return NextResponse.json(status, {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+        'X-Brain-Verdict': status.verdict,
+        'X-Brain-Enabled': status.enabled ? '1' : '0',
+        'X-Brain-Signals': status.signals.map((s) => `${s.source}=${s.verdict}`).join(','),
+      },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'brain_status_failed', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }

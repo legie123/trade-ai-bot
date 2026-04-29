@@ -9,6 +9,21 @@ import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PolyGladiators');
 
+// ─── Env-configurable thresholds (tune via Cloud Run env, no redeploy) ───
+const POLY_CONFIG = {
+  minLiquidityScore: Number(process.env.POLY_MIN_LIQUIDITY_SCORE) || 20,
+  minLiquidityUsd: Number(process.env.POLY_MIN_LIQUIDITY_USD) || 1000,
+  minVolume24h: Number(process.env.POLY_MIN_VOLUME_24H) || 500,
+  minExpiryMs: Number(process.env.POLY_MIN_EXPIRY_MS) || 24 * 60 * 60 * 1000,
+  buyYesThreshold: Number(process.env.POLY_BUY_YES_THRESHOLD) || 0.35,
+  buyNoThreshold: Number(process.env.POLY_BUY_NO_THRESHOLD) || 0.65,
+  promotionReadinessMin: Number(process.env.POLY_PROMOTION_READINESS_MIN) || 60,
+  promotionMinTrades: Number(process.env.POLY_PROMOTION_MIN_TRADES) || 25,
+  retireReadinessMax: Number(process.env.POLY_RETIRE_READINESS_MAX) || 15,
+  retireMinTrades: Number(process.env.POLY_RETIRE_MIN_TRADES) || 20,
+  retireWrMax: Number(process.env.POLY_RETIRE_WR_MAX) || 0.3,
+} as const;
+
 export interface PolyGladiator extends Gladiator {
   division: PolyDivision;
   specialty: string;
@@ -34,7 +49,7 @@ export interface PolyBet {
   outcome?: 'WIN' | 'LOSS' | 'SKIP';
 }
 
-// ─── Spawn new gladiator ──────────────────────────────
+// ─── Spawn new gladiator ──────────────────────────────────
 export function spawnPolyGladiator(
   division: PolyDivision,
   specialty: string,
@@ -109,7 +124,7 @@ export function evaluateMarket(
     );
 
     // Break on liquidity or risk
-    if (opportunity.liquidityScore < 20 || opportunity.riskLevel === 'HIGH') {
+    if (opportunity.liquidityScore < POLY_CONFIG.minLiquidityScore || opportunity.riskLevel === 'HIGH') {
       return {
         direction: 'SKIP',
         confidence: baseConfidence * 0.5,
@@ -139,10 +154,10 @@ export function evaluateMarket(
   if (isBreaking && !market.category)
     confidenceBoost = 10; // Breaking news often uncategorized
 
-  const hasLiquidity = (market.liquidityUSD || 0) > 1000;
-  const hasVolume = (market.volume24h || 0) > 500;
+  const hasLiquidity = (market.liquidityUSD || 0) > POLY_CONFIG.minLiquidityUsd;
+  const hasVolume = (market.volume24h || 0) > POLY_CONFIG.minVolume24h;
   const timeToExpiry = new Date(market.endDate).getTime() - Date.now();
-  const isDecaying = timeToExpiry < 24 * 60 * 60 * 1000; // < 24h
+  const isDecaying = timeToExpiry < POLY_CONFIG.minExpiryMs;
 
   let confidence = 40 + gladiator.divisionExpertise * 0.3;
   if (hasLiquidity) confidence += 10;
@@ -168,10 +183,10 @@ function determineDirection(market: PolyMarket): 'BUY_YES' | 'BUY_NO' | 'SKIP' {
 
   if (!yesOutcome || !noOutcome) return 'SKIP';
 
-  // If YES is cheap (<0.4), buy YES. If expensive (>0.6), buy NO.
+  // If YES is cheap, buy YES. If expensive, buy NO.
   const yesPrice = yesOutcome.price;
-  if (yesPrice < 0.35) return 'BUY_YES';
-  if (yesPrice > 0.65) return 'BUY_NO';
+  if (yesPrice < POLY_CONFIG.buyYesThreshold) return 'BUY_YES';
+  if (yesPrice > POLY_CONFIG.buyNoThreshold) return 'BUY_NO';
 
   // Neutral: skip
   return 'SKIP';
@@ -252,7 +267,7 @@ export function recordPolyOutcome(
   });
 }
 
-// ─── Leaderboard by division ───────────────────────────
+// ─── Leaderboard by division ─────────────────────────
 export function getPolyLeaderboard(
   gladiators: PolyGladiator[],
   division?: PolyDivision,
@@ -272,7 +287,7 @@ export function getPolyLeaderboard(
 
 // ─── Promote top gladiator ────────────────────────────
 export function promoteToLive(gladiator: PolyGladiator): void {
-  if (gladiator.readinessScore >= 60 && gladiator.stats.totalTrades >= 25) {
+  if (gladiator.readinessScore >= POLY_CONFIG.promotionReadinessMin && gladiator.stats.totalTrades >= POLY_CONFIG.promotionMinTrades) {
     gladiator.isLive = true;
     gladiator.status = 'ACTIVE';
     gladiator.rank = Math.max(1, Math.floor(gladiator.readinessScore / 10));
@@ -286,9 +301,9 @@ export function promoteToLive(gladiator: PolyGladiator): void {
 // ─── Retire underperformer ────────────────────────────
 export function retireUnderperformer(gladiator: PolyGladiator): void {
   if (
-    gladiator.readinessScore < 15 &&
-    gladiator.stats.totalTrades >= 20 &&
-    gladiator.stats.winRate < 0.3
+    gladiator.readinessScore < POLY_CONFIG.retireReadinessMax &&
+    gladiator.stats.totalTrades >= POLY_CONFIG.retireMinTrades &&
+    gladiator.stats.winRate < POLY_CONFIG.retireWrMax
   ) {
     gladiator.status = 'RETIRED';
     gladiator.isLive = false;

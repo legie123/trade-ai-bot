@@ -47,85 +47,92 @@ function summarize(values: number[]): {
 }
 
 export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const live = url.searchParams.get('live') === '1';
-  const simulate = url.searchParams.get('simulate') === '1';
-  const overlapThr = parseFloat(url.searchParams.get('overlap') || '0.70');
-  const corrThr = parseFloat(url.searchParams.get('corr') || '0.85');
+  try {
+    const url = new URL(request.url);
+    const live = url.searchParams.get('live') === '1';
+    const simulate = url.searchParams.get('simulate') === '1';
+    const overlapThr = parseFloat(url.searchParams.get('overlap') || '0.70');
+    const corrThr = parseFloat(url.searchParams.get('corr') || '0.85');
 
-  const ring = washRingSnapshot();
-  const overlapVals = ring.map((r) => r.overlap);
-  const absCorrVals = ring.map((r) => Math.abs(r.corr));
-  const failClosedCount = ring.filter((r) => r.washPeerId === '__fetch_error__').length;
+    const ring = washRingSnapshot();
+    const overlapVals = ring.map((r) => r.overlap);
+    const absCorrVals = ring.map((r) => Math.abs(r.corr));
+    const failClosedCount = ring.filter((r) => r.washPeerId === '__fetch_error__').length;
 
-  const summary = {
-    ringSize: ring.length,
-    ringCapacity: WASH_RING_SIZE,
-    failClosedCount,
-    overlap: summarize(overlapVals),
-    absCorr: summarize(absCorrVals),
-    blockedInShadow: ring.filter((r) => r.blocked).length,
-  };
+    const summary = {
+      ringSize: ring.length,
+      ringCapacity: WASH_RING_SIZE,
+      failClosedCount,
+      overlap: summarize(overlapVals),
+      absCorr: summarize(absCorrVals),
+      blockedInShadow: ring.filter((r) => r.blocked).length,
+    };
 
-  const config = {
-    mode: process.env.WASH_CROSS_GLADIATOR_ENABLED || 'shadow',
-    maxOverlap: parseFloat(process.env.WASH_MAX_OVERLAP || '0.70'),
-    pnlCorrThreshold: parseFloat(process.env.WASH_CORR_THRESHOLD || '0.85'),
-    bucketMs: parseFloat(process.env.WASH_BUCKET_MS || '1800000'),
-    lookbackTrades: parseFloat(process.env.WASH_LOOKBACK_TRADES || '200'),
-    maxPeers: parseFloat(process.env.WASH_MAX_PEERS || '15'),
-    minSharedTrades: parseFloat(process.env.WASH_MIN_SHARED_TRADES || '30'),
-  };
+    const config = {
+      mode: process.env.WASH_CROSS_GLADIATOR_ENABLED || 'shadow',
+      maxOverlap: parseFloat(process.env.WASH_MAX_OVERLAP || '0.70'),
+      pnlCorrThreshold: parseFloat(process.env.WASH_CORR_THRESHOLD || '0.85'),
+      bucketMs: parseFloat(process.env.WASH_BUCKET_MS || '1800000'),
+      lookbackTrades: parseFloat(process.env.WASH_LOOKBACK_TRADES || '200'),
+      maxPeers: parseFloat(process.env.WASH_MAX_PEERS || '15'),
+      minSharedTrades: parseFloat(process.env.WASH_MIN_SHARED_TRADES || '30'),
+    };
 
-  let simulation: { wouldBlockCount: number; thresholds: { overlap: number; corr: number } } | null = null;
-  if (simulate && Number.isFinite(overlapThr) && Number.isFinite(corrThr)) {
-    const wouldBlock = ring.filter(
-      (r) => r.washPeerId === '__fetch_error__' || (r.overlap > overlapThr && Math.abs(r.corr) > corrThr)
-    ).length;
-    simulation = { wouldBlockCount: wouldBlock, thresholds: { overlap: overlapThr, corr: corrThr } };
-  }
-
-  type LiveScanRow = {
-    id: string; name: string; isLive: boolean;
-    overlap: number; corr: number; absCorr: number; peer: string | null; totalKeys: number;
-  };
-  let liveScan: LiveScanRow[] | null = null;
-  if (live) {
-    try {
-      const all = gladiatorStore.getGladiators();
-      const ids = all.map((g) => g.id);
-      const out: LiveScanRow[] = [];
-      for (const g of all) {
-        const peers = ids.filter((p) => p !== g.id).slice(0, config.maxPeers);
-        const w = await getCrossGladiatorWashScore(g.id, peers, {
-          bucketMs: config.bucketMs,
-          lookbackTrades: config.lookbackTrades,
-          minSharedTrades: config.minSharedTrades,
-        });
-        out.push({
-          id: g.id,
-          name: g.name,
-          isLive: !!g.isLive,
-          overlap: w.maxOverlapRatio,
-          corr: w.washPeerPnlCorr,
-          absCorr: Math.abs(w.washPeerPnlCorr),
-          peer: w.washPeerId,
-          totalKeys: w.totalCandidateKeys,
-        });
-      }
-      liveScan = out.sort((a, b) => (b.absCorr + b.overlap) - (a.absCorr + a.overlap));
-    } catch (err) {
-      liveScan = null;
-      log.warn('Live scan failed', { error: (err as Error).message });
+    let simulation: { wouldBlockCount: number; thresholds: { overlap: number; corr: number } } | null = null;
+    if (simulate && Number.isFinite(overlapThr) && Number.isFinite(corrThr)) {
+      const wouldBlock = ring.filter(
+        (r) => r.washPeerId === '__fetch_error__' || (r.overlap > overlapThr && Math.abs(r.corr) > corrThr)
+      ).length;
+      simulation = { wouldBlockCount: wouldBlock, thresholds: { overlap: overlapThr, corr: corrThr } };
     }
-  }
 
-  return NextResponse.json({
-    timestamp: new Date().toISOString(),
-    config,
-    summary,
-    simulation,
-    liveScan,
-    ring: ring.slice().reverse(), // newest first
-  });
+    type LiveScanRow = {
+      id: string; name: string; isLive: boolean;
+      overlap: number; corr: number; absCorr: number; peer: string | null; totalKeys: number;
+    };
+    let liveScan: LiveScanRow[] | null = null;
+    if (live) {
+      try {
+        const all = gladiatorStore.getGladiators();
+        const ids = all.map((g) => g.id);
+        const out: LiveScanRow[] = [];
+        for (const g of all) {
+          const peers = ids.filter((p) => p !== g.id).slice(0, config.maxPeers);
+          const w = await getCrossGladiatorWashScore(g.id, peers, {
+            bucketMs: config.bucketMs,
+            lookbackTrades: config.lookbackTrades,
+            minSharedTrades: config.minSharedTrades,
+          });
+          out.push({
+            id: g.id,
+            name: g.name,
+            isLive: !!g.isLive,
+            overlap: w.maxOverlapRatio,
+            corr: w.washPeerPnlCorr,
+            absCorr: Math.abs(w.washPeerPnlCorr),
+            peer: w.washPeerId,
+            totalKeys: w.totalCandidateKeys,
+          });
+        }
+        liveScan = out.sort((a, b) => (b.absCorr + b.overlap) - (a.absCorr + a.overlap));
+      } catch (err) {
+        liveScan = null;
+        log.warn('Live scan failed', { error: (err as Error).message });
+      }
+    }
+
+    return NextResponse.json({
+      timestamp: new Date().toISOString(),
+      config,
+      summary,
+      simulation,
+      liveScan,
+      ring: ring.slice().reverse(), // newest first
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'wash_diag_failed', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }

@@ -25,9 +25,11 @@ export interface PumpToken {
  */
 export async function getPumpTokens(): Promise<ProviderResponse<PumpToken[]>> {
   try {
-    // Fetch from DEX Screener pairs that originate from Pump.fun DEX
-    const dexRes = await searchPairs('pumpfun');
-    const newTokensRes = await getNewTokens();
+    // Independent external calls — parallelize for ~50% latency reduction.
+    const [dexRes, newTokensRes] = await Promise.all([
+      searchPairs('pumpfun'),
+      getNewTokens(),
+    ]);
 
     const newTokenMints = new Set(
       (newTokensRes.data ?? []).map((t: RugcheckNewToken) => t.mint)

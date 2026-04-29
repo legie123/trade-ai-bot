@@ -19,21 +19,28 @@ export async function GET(
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
-  const { runId } = await ctx.params;
-  if (!runId) {
-    return NextResponse.json({ ok: false, error: 'missing runId' }, { status: 400 });
-  }
+  try {
+    const { runId } = await ctx.params;
+    if (!runId) {
+      return NextResponse.json({ ok: false, error: 'missing runId' }, { status: 400 });
+    }
 
-  const result = await getScanRun(runId);
-  if (!result) {
-    return NextResponse.json({ ok: false, error: 'not_found_or_unconfigured', runId }, { status: 404 });
-  }
+    const result = await getScanRun(runId);
+    if (!result) {
+      return NextResponse.json({ ok: false, error: 'not_found_or_unconfigured', runId }, { status: 404 });
+    }
 
-  return NextResponse.json({
-    ok: true,
-    runId,
-    run: result.run,
-    decisions: result.decisions,
-    decisionCount: result.decisions.length,
-  });
+    return NextResponse.json({
+      ok: true,
+      runId,
+      run: result.run,
+      decisions: result.decisions,
+      decisionCount: result.decisions.length,
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'scan_run_failed', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }

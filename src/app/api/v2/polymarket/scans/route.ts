@@ -16,9 +16,16 @@ export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
 
-  const url = new URL(request.url);
-  const limit = Math.min(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 200);
+  try {
+    const url = new URL(request.url);
+    const limit = Math.min(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 200);
 
-  const scans = await listRecentScans(limit);
-  return NextResponse.json({ ok: true, count: scans.length, scans });
+    const scans = await listRecentScans(limit);
+    return NextResponse.json({ ok: true, count: scans.length, scans });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'scans_list_failed', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }

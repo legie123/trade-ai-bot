@@ -14,14 +14,21 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET() {
-  const state = await getDecisionBudgetState();
-  return NextResponse.json(state, {
-    headers: {
-      'Cache-Control': 'no-store, max-age=0',
-      'X-Budget-Verdict': state.verdict,
-      'X-Budget-Enabled': state.enabled ? '1' : '0',
-      'X-Budget-Used-Usd': state.usedUsd.toFixed(4),
-      'X-Budget-Cap-Usd': state.capUsd.toFixed(4),
-    },
-  });
+  try {
+    const state = await getDecisionBudgetState();
+    return NextResponse.json(state, {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+        'X-Budget-Verdict': state.verdict,
+        'X-Budget-Enabled': state.enabled ? '1' : '0',
+        'X-Budget-Used-Usd': state.usedUsd.toFixed(4),
+        'X-Budget-Cap-Usd': state.capUsd.toFixed(4),
+      },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'budget_status_failed', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }

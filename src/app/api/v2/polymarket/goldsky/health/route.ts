@@ -18,12 +18,19 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const health = await getEventsHealth();
-  return NextResponse.json({
-    ...health,
-    service: 'polymarket-goldsky',
-    ingestEnabled: process.env.POLYMARKET_INGEST_ENABLED !== '0',
-    authConfigured: !!process.env.POLYMARKET_WEBHOOK_SECRET,
-    ts: new Date().toISOString(),
-  });
+  try {
+    const health = await getEventsHealth();
+    return NextResponse.json({
+      ...health,
+      service: 'polymarket-goldsky',
+      ingestEnabled: process.env.POLYMARKET_INGEST_ENABLED !== '0',
+      authConfigured: !!process.env.POLYMARKET_WEBHOOK_SECRET,
+      ts: new Date().toISOString(),
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'goldsky_health_failed', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }

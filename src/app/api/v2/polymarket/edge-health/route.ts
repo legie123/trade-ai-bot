@@ -15,14 +15,21 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET() {
-  const state = await getEdgeWatchdogState();
-  return NextResponse.json(state, {
-    headers: {
-      'Cache-Control': 'no-store, max-age=0',
-      'X-Edge-Verdict': state.verdict,
-      'X-Edge-Enforce': state.enforce ? '1' : '0',
-      'X-Edge-Enabled': state.enabled ? '1' : '0',
-      'X-Edge-Shadow-Blocks': String(state.shadowBlockCount),
-    },
-  });
+  try {
+    const state = await getEdgeWatchdogState();
+    return NextResponse.json(state, {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+        'X-Edge-Verdict': state.verdict,
+        'X-Edge-Enforce': state.enforce ? '1' : '0',
+        'X-Edge-Enabled': state.enabled ? '1' : '0',
+        'X-Edge-Shadow-Blocks': String(state.shadowBlockCount),
+      },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'edge_health_failed', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }
