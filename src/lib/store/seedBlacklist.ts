@@ -93,6 +93,26 @@ export function isSeedBlacklisted(id: string): boolean {
 }
 
 /**
+ * 2026-04-29 ZOMBIE-RACE FIX (closes the cold-start window).
+ * Returns true once the blacklist has completed at least one successful
+ * refresh from the graveyard. gladiatorStore.mergeSeedMissing uses this
+ * to DEFER seed-revive merges during the boot window where
+ * cache.gladiators is populated (initDB step 1) but blacklist refresh
+ * has not yet awaited (initDB step 2 sits behind ~3 Supabase round-trips).
+ * Without this gate, an HTTP request hitting getGladiators() during that
+ * window triggers ensureLoaded → mergeSeedMissing with empty blacklist →
+ * seeds revive + saveGladiatorsToDb persists the poisoned state →
+ * every subsequent instance loads zombies from cache.
+ *
+ * If feature flag SEED_BLACKLIST_ENABLED=off, returns true so behavior
+ * matches pre-fix (no gating, seeds revive freely).
+ */
+export function isBlacklistReady(): boolean {
+  if (!isEnabled()) return true;
+  return lastRefreshOk;
+}
+
+/**
  * Rebuild the in-memory blacklist from the graveyard. Uses a 5-minute TTL
  * so repeated calls within one request cycle hit the cache. Returns without
  * error on any failure.
