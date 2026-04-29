@@ -26,8 +26,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // FAZA FE-1 (2026-04-26): theme switch via env.
+  // Default = "dragon" (zero regression). Set NEXT_PUBLIC_INSTITUTIONAL_UI_ENABLED=1
+  // in Cloud Run env to swap to institutional palette.
+  // Reversal: unset env -> auto fallback to Dragon (no code revert needed).
+  // Asumptie: Next.js 16 exposes NEXT_PUBLIC_* la build-time -> SSR-safe.
+  const uiMode =
+    process.env.NEXT_PUBLIC_INSTITUTIONAL_UI_ENABLED === '1' ? 'institutional' : 'dragon';
+
   return (
-    <html lang="en">
+    <html lang="en" data-ui={uiMode}>
       <body className="antialiased dark">
         <AppShell>{children}</AppShell>
       </body>
