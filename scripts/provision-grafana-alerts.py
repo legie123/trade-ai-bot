@@ -144,6 +144,37 @@ RULES = [
         ),
         runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
     ),
+    # 2026-04-29 — ops-AMBER persistence alert. Catches the FE-1 env-wipe
+    # incident class: when a Cloud Build deploy creates a revision missing
+    # critical kill-switch env vars (DIRECTION_LONG_DISABLED, etc.), ops
+    # signal sits at AMBER permanently while the COMPOSITE brain stays at
+    # AMBER (not RED) — so tradeai-brain-red threshold=3 NEVER fires. This
+    # rule explicitly catches a single-signal AMBER+ persistence at 30m,
+    # giving ops 30 minutes to detect a silent kill-switch bypass before
+    # negative-EV LONG bucket damages capital.
+    #
+    # Threshold=2 also fires on RED (3) — that's correct, RED ops is at
+    # least as bad as AMBER ops. Severity=warning to avoid double-paging
+    # alongside tradeai-brain-red when both fire on RED scenarios.
+    build_rule(
+        uid="tradeai-brain-signal-ops-amber-persist",
+        title="TRADE AI — Brain signal OPS AMBER+ (env-wipe watchdog)",
+        expr='max(tradeai_polymarket_brain_signal_status{service="trade-ai",source="ops"})',
+        threshold=2,
+        for_duration="30m",
+        severity="warning",
+        summary="Polymarket brain ops signal at AMBER+ for 30+ minutes — possible env-wipe regression",
+        description=(
+            "tradeai_polymarket_brain_signal_status{source=\"ops\"} >= 2 (AMBER or RED) for 30m. "
+            "Most common cause: a Cloud Build deploy created a revision MISSING critical kill-switch "
+            "env vars (DIRECTION_LONG_DISABLED, KELLY_POP_GATE_ENABLED, etc.) — see project_buttons_audit_env_wipe_2026_04_29 memory. "
+            "Drill: probe /api/v2/polymarket/ops-flags; verify rawValue for DIRECTION_LONG_DISABLED is '1'. "
+            "If null or undefined, re-apply env: gcloud run services update trade-ai --update-env-vars "
+            "\"DIRECTION_LONG_DISABLED=1,...\". Defaults to 'disabled (LONGs allowed)' which silently "
+            "re-opens the negative-EV LONG bucket from AUDIT-R2."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
     # FAZA 3/4 2026-04-20 — zombie survey alert. gauge = |alive ∩ graveyard|.
     # Steady-state 0. Non-zero > 15 for 2h indicates either a persistence race
     # (saveGladiatorsToDb write swallowed post-response) or a false-positive
