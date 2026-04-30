@@ -1,7 +1,7 @@
 # Graph Report - /home/runner/work/trade-ai-bot/trade-ai-bot/src  (2026-04-30)
 
 ## Corpus Check
-- 325 files · ~268,293 words
+- 325 files · ~268,609 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -615,11 +615,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `GET()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 28`?**
-  _High betweenness centrality (0.556) - this node is a cross-community bridge._
+  _High betweenness centrality (0.582) - this node is a cross-community bridge._
 - **Why does `POST()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 13`, `Community 14`, `Community 15`, `Community 20`, `Community 23`?**
-  _High betweenness centrality (0.164) - this node is a cross-community bridge._
-- **Why does `fetchWithRetry()` connect `Community 4` to `Community 3`, `Community 0`, `Community 11`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+  _High betweenness centrality (0.136) - this node is a cross-community bridge._
+- **Why does `getAggregatedTokens()` connect `Community 11` to `Community 0`, `Community 1`, `Community 6`?**
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Are the 211 inferred relationships involving `GET()` (e.g. with `isAuthenticated()` and `runKarmaRead()`) actually correct?**
   _`GET()` has 211 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 83 inferred relationships involving `POST()` (e.g. with `.getCurrentSynthesis()` and `.getModifierForSymbol()`) actually correct?**
