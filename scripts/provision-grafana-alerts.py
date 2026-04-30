@@ -14,6 +14,12 @@ Reversibility: DELETE /api/v1/provisioning/alert-rules/<uid>
 import os, json, urllib.request, urllib.error
 
 GRAFANA_URL = os.environ.get("GRAFANA_STACK_URL", "https://legie123.grafana.net")
+# 2026-04-30 — APP_URL added for per-alert drill-down runbook routing.
+# Each alert now points runbook_url at the most-relevant audit page on the
+# running Cloud Run service, instead of a generic Grafana dashboard.
+APP_URL = os.environ.get(
+    "TRADE_AI_APP_URL", "https://trade-ai-657910053930.europe-west1.run.app"
+)
 TOKEN = os.environ.get("GRAFANA_DASHBOARD_TOKEN")
 if not TOKEN:
     raise SystemExit("Set GRAFANA_DASHBOARD_TOKEN env var (see .env)")
@@ -142,7 +148,7 @@ RULES = [
             "Check /polymarket/audit/flags and /polymarket/audit/feed-health to isolate which signal pulled to red. "
             "After Batch 3.17, unconfigured feeds no longer trip this; any RED is a real degradation."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit",
     ),
     # 2026-04-29 — ops-AMBER persistence alert. Catches the FE-1 env-wipe
     # incident class: when a Cloud Build deploy creates a revision missing
@@ -173,7 +179,7 @@ RULES = [
             "\"DIRECTION_LONG_DISABLED=1,...\". Defaults to 'disabled (LONGs allowed)' which silently "
             "re-opens the negative-EV LONG bucket from AUDIT-R2."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit/flags",
     ),
     # FAZA 3/4 2026-04-20 — zombie survey alert. gauge = |alive ∩ graveyard|.
     # Steady-state 0. Non-zero > 15 for 2h indicates either a persistence race
@@ -198,7 +204,7 @@ RULES = [
             "`[MERGE-SEED] Blacklist blocked` frequency, then audit executeWeaklings call-sites "
             "for any new fire-and-forget invoker lacking `flushPendingSyncs` at tail."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit/graveyard",
     ),
     # Batch 3.19 2026-04-20 — per-signal attribution. Composite rule above
     # pages first at 5m; these four fire at 10m ONLY if a single source has
@@ -224,7 +230,7 @@ RULES = [
             "(see batch 3.13 — EDGE_WATCHDOG_ENABLED). Check /polymarket/audit (scorecard + edge panel). "
             "If UNHEALTHY persists 30m+ consider flipping EDGE_WATCHDOG_ENFORCE=1 (blocks new bets) until recovery."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit",
     ),
     build_rule(
         uid="tradeai-brain-signal-settlement-red",
@@ -241,7 +247,7 @@ RULES = [
             "resolve endpoint is dead. Check /polymarket/audit (settlement stats) and the cron "
             "that calls settlePolymarketPositions. Kill-switch: POLYMARKET_SETTLE_ENABLED."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit",
     ),
     build_rule(
         uid="tradeai-brain-signal-feed-red",
@@ -259,7 +265,7 @@ RULES = [
             "to isolate which feed is stale. Typical cause: Goldsky pipeline stopped or Polymarket "
             "scanner cron failed."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit",
     ),
     build_rule(
         uid="tradeai-brain-signal-ops-red",
@@ -277,7 +283,7 @@ RULES = [
             "because DIRECTION_LONG_DISABLED is active (HIGH risk); RED means someone flipped a "
             "CRITICAL protection off."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit/flags",
     ),
     # Probe watchdog — detects when the brain-status gauge stops emitting at all.
     # Uses absent() so it only fires when the series is truly missing (scrape
@@ -304,7 +310,7 @@ RULES = [
             "to check revision health, then `curl -H \"Authorization: Bearer $METRICS_TOKEN\" "
             "https://trade-ai-3rzn6ry36q-ew.a.run.app/api/metrics | grep polymarket_brain`."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit/brain-history",
     ),
     # Batch 3.20 2026-04-20 — data-quality sentinel. Fires when settlement
     # coverage drops below 50% BUT we also have material acted volume (>50
@@ -343,7 +349,7 @@ RULES = [
             "and grep Cloud Run logs for `[settlement-writeback]` + `[probeSettle]`. "
             "Kill-switches: POLYMARKET_SETTLE_ENABLED, SETTLEMENT_WRITEBACK_ENABLED."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit",
     ),
     # Batch 3.20 2026-04-20 — pool-state sentinel. Fires when arena_pool_size
     # > 50 for 30m. Current steady-state is 14-37 gladiators (validated
@@ -393,7 +399,7 @@ RULES = [
             "LIVE_MAX_HOLD_ENFORCE=1 (if implemented). Cross-check with "
             "tradeai_live_position_oldest_age_sec for exact stall duration."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/dashboard",
     ),
     # 2026-04-29 — WS reconnect churn watchdog (P1-2 follow-up).
     # Counter wired in commit aad80f9 (mexc-ws + polymarket-ws onClose handlers).
@@ -428,7 +434,7 @@ RULES = [
             "server pong intervals likely changed; if reason=close dominates, upstream is "
             "force-closing connections (rate-limit or IP block)."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/api/v2/health",
     ),
     build_rule(
         uid="tradeai-arena-pool-oversized",
@@ -449,7 +455,7 @@ RULES = [
             "to force a Butcher pass (see memory `Zombie Purge fix 2026-04-20`). "
             "If pool stays high, check ARENA_ROTATION_FLUSH_MS and FORGE_DEDUP_ENABLED."
         ),
-        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+        runbook_url=f"{APP_URL}/polymarket/audit/graveyard",
     ),
 ]
 
