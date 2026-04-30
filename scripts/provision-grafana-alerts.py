@@ -395,6 +395,41 @@ RULES = [
         ),
         runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
     ),
+    # 2026-04-29 — WS reconnect churn watchdog (P1-2 follow-up).
+    # Counter wired in commit aad80f9 (mexc-ws + polymarket-ws onClose handlers).
+    # Memory `project_ws_reconnect_counter_2026_04_25` confirmed baseline ~1.5/min
+    # over 5d uptime (mexc=9906, polymarket=12792 reconnects). Threshold of 5/min
+    # gives ~3x headroom: catches IP-throttle / rate-limit / network outage spikes
+    # while staying quiet at steady-state. Per-provider grouping via `max by`
+    # surfaces which feed is misbehaving.
+    #
+    # Why 15m for: short bursts during exchange maintenance windows are normal
+    # (sub-15min). A 15min sustained burst = real persistent churn worth paging.
+    # Severity=warning because reconnect churn does NOT halt trading (feeds reconnect
+    # automatically); it just degrades tick freshness.
+    build_rule(
+        uid="tradeai-ws-churn-high",
+        title="TRADE AI — WebSocket reconnect churn HIGH",
+        expr='max by (provider) (rate(tradeai_ws_reconnects_total{service="trade-ai"}[5m])) * 60',
+        threshold=5,
+        for_duration="15m",
+        severity="warning",
+        summary="WebSocket reconnect rate >5/min for 15+ minutes — feed instability",
+        description=(
+            "tradeai_ws_reconnects_total rate (per provider) > 5/min for 15m. "
+            "Baseline is ~1.5/min steady-state (per memory `project_ws_reconnect_counter_2026_04_25`); "
+            "5/min indicates persistent feed churn — likely cause: (1) IP rate-limit "
+            "(memory `project_dedicated_ip` — 149.174.89.163 monthly renewal); "
+            "(2) exchange-side throttle / maintenance; (3) network egress flap; "
+            "(4) ping/pong timeout misconfigured. "
+            "Drill: GET /api/v2/health → inspect feeds.{mexcWs,polymarketWs}.totalReconnects "
+            "and compare reasons via PromQL: sum by (provider, reason) "
+            "(rate(tradeai_ws_reconnects_total[1h])). If reason=stale_watchdog dominates, "
+            "server pong intervals likely changed; if reason=close dominates, upstream is "
+            "force-closing connections (rate-limit or IP block)."
+        ),
+        runbook_url=f"{GRAFANA_URL}/d/tradeai-premium",
+    ),
     build_rule(
         uid="tradeai-arena-pool-oversized",
         title="TRADE AI — Arena pool size OVERSIZED (rotation imbalance)",
