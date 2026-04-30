@@ -170,17 +170,6 @@ export async function placeBybitOrder(
   return bybitRequest('POST', '/v5/order/create', params);
 }
 
-export async function cancelBybitOrder(symbol: string, orderId: string): Promise<Record<string, unknown>> {
-  assertLiveTradingAllowed(`cancelBybitOrder(${symbol},${orderId})`);
-  return bybitRequest('POST', '/v5/order/cancel', { category: 'spot', symbol, orderId });
-}
-
-export async function getBybitOpenOrders(symbol?: string): Promise<Record<string, unknown>> {
-  const params: Record<string, string | number> = { category: 'spot' };
-  if (symbol) params.symbol = symbol;
-  return bybitRequest('GET', '/v5/order/realtime', params);
-}
-
 // ─── Connection test ───────────────────────────
 export async function testBybitConnection(): Promise<{ ok: boolean; mode: string; error?: string }> {
   try {

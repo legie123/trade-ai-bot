@@ -102,7 +102,8 @@ async function okxRequest(
 }
 
 // ─── Public endpoints ────────────────────────────
-export async function getOkxServerTime(): Promise<string> {
+// Internal only — used by testOkxConnection. No external importers.
+async function getOkxServerTime(): Promise<string> {
   const data = await okxRequest('GET', '/api/v5/public/time', {}, false);
   const arr = data.data as { ts: string }[];
   return arr?.[0]?.ts || '';

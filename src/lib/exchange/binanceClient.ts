@@ -134,25 +134,6 @@ export async function getBinanceBalances(): Promise<BinanceBalance[]> {
   }));
 }
 
-// ─── Limit Order ───────────────────────────
-export async function placeBinanceLimitOrder(
-  symbol: string,
-  side: 'BUY' | 'SELL',
-  quantity: number,
-  price: number
-): Promise<Record<string, unknown>> {
-  assertLiveTradingAllowed(`placeBinanceLimitOrder(${symbol},${side},${quantity}@${price})`);
-  const tickerSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
-  return binanceRequest('POST', '/api/v3/order', {
-    symbol: tickerSymbol,
-    side,
-    type: 'LIMIT',
-    timeInForce: 'GTC',
-    quantity: quantity.toString(),
-    price: price.toString(),
-  }, true);
-}
-
 // ─── Market Order ──────────────────────────
 export async function placeBinanceMarketOrder(
   symbol: string,
@@ -167,42 +148,6 @@ export async function placeBinanceMarketOrder(
     type: 'MARKET',
     quantity: quantity.toString(),
   }, true);
-}
-
-// ─── Stop Loss Order ────────────────────────
-export async function placeBinanceStopLossOrder(
-  symbol: string,
-  side: 'BUY' | 'SELL',
-  quantity: number,
-  stopPrice: number
-): Promise<Record<string, unknown>> {
-  assertLiveTradingAllowed(`placeBinanceStopLossOrder(${symbol},${side},${quantity}@${stopPrice})`);
-  const tickerSymbol = symbol.includes('USDT') ? symbol : `${symbol}USDT`;
-  return binanceRequest('POST', '/api/v3/order', {
-    symbol: tickerSymbol,
-    side,
-    type: 'STOP_LOSS_LIMIT',
-    timeInForce: 'GTC',
-    quantity: quantity.toString(),
-    price: stopPrice.toString(),
-    stopPrice: stopPrice.toString(),
-  }, true);
-}
-
-// ─── Open Positions ────────────────────────
-export async function getBinanceOpenPositions(): Promise<Record<string, unknown>[]> {
-  try {
-    const data = await binanceRequest('GET', '/api/v3/openOrders', {}, true);
-    return (data as unknown as Record<string, unknown>[]) || [];
-  } catch (err) {
-    log.warn(`[BINANCE] Failed to fetch open positions: ${(err as Error).message}`);
-    return [];
-  }
-}
-
-// ─── Exchange Info (for filters) ──────────
-export async function getBinanceExchangeInfo(): Promise<Record<string, unknown>> {
-  return binanceRequest('GET', '/api/v3/exchangeInfo', {}, false);
 }
 
 // ─── Test Connection ───────────────────────
