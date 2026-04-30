@@ -20,12 +20,22 @@ export default function CommandPalette() {
   const router = useRouter();
 
   const commands: CommandItem[] = [
-    // Navigation
+    // Navigation — top-level routes
     { id: 'nav-radar', icon: '🛰️', label: 'Go to Radar', description: 'Crypto Radar discovery', category: 'nav', action: () => router.push('/crypto-radar') },
     { id: 'nav-polymarket', icon: '🎯', label: 'Go to Polymarket', description: 'Prediction market trading', category: 'nav', action: () => router.push('/polymarket') },
     { id: 'nav-arena', icon: '🏆', label: 'Go to Arena', description: 'Gladiator battle arena', category: 'nav', action: () => router.push('/arena') },
     { id: 'nav-cockpit', icon: '🚀', label: 'Go to Cockpit', description: 'Orbital command dashboard', category: 'nav', action: () => router.push('/cockpit') },
     { id: 'nav-status', icon: '📊', label: 'Go to Status', description: 'System health dashboard', category: 'nav', action: () => router.push('/dashboard') },
+    // Navigation — Polymarket audit suite (FAZA FE-2 extension)
+    { id: 'nav-audit-overview', icon: '🧠', label: 'Audit Overview', description: 'Brain Scorecard + watchdog', category: 'nav', action: () => router.push('/polymarket/audit') },
+    { id: 'nav-audit-flags', icon: '🚦', label: 'Audit · Flags', description: 'Ops kill-switches catalog (22 envs)', category: 'nav', action: () => router.push('/polymarket/audit/flags') },
+    { id: 'nav-audit-graveyard', icon: '⚰️', label: 'Audit · Graveyard', description: 'Killed gladiators + popPF', category: 'nav', action: () => router.push('/polymarket/audit/graveyard') },
+    { id: 'nav-audit-brain-history', icon: '📜', label: 'Audit · Brain History', description: 'GREEN/AMBER/RED transitions', category: 'nav', action: () => router.push('/polymarket/audit/brain-history') },
+    { id: 'nav-audit-decisions', icon: '⚖️', label: 'Audit · Decisions', description: 'Decision drill-down list', category: 'nav', action: () => router.push('/polymarket/audit') },
+    { id: 'nav-audit-scans', icon: '🔍', label: 'Audit · Scans', description: 'Scan run history', category: 'nav', action: () => router.push('/polymarket/audit') },
+    { id: 'nav-audit-llm-cost', icon: '💸', label: 'Audit · LLM Cost', description: 'Per-market LLM spend drill-down', category: 'nav', action: () => router.push('/polymarket/audit/llm-cost') },
+    { id: 'nav-audit-learning', icon: '🧬', label: 'Audit · Learning', description: 'Adaptation loop telemetry', category: 'nav', action: () => router.push('/polymarket/audit/learning') },
+    { id: 'nav-audit-goldsky', icon: '🌐', label: 'Audit · Goldsky', description: 'On-chain pipeline health', category: 'nav', action: () => router.push('/polymarket/audit/goldsky') },
     // Actions
     { id: 'act-evaluate', icon: '▶', label: 'Evaluate Arena', description: 'Run trade evaluator', category: 'action', action: () => { fetch('/api/bot', { method: 'POST', body: JSON.stringify({ action: 'evaluate' }), headers: { 'Content-Type': 'application/json' } }); } },
     { id: 'act-sync', icon: '↻', label: 'Refresh', description: 'Refresh all data feeds', category: 'action', action: () => window.location.reload() },

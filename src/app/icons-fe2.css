@@ -1,0 +1,30 @@
+/* ============================================================
+   FAZA FE-2 (2026-04-26) — Icon visibility toggle
+   Sidebar / CommandPalette / nav items render BOTH:
+     <span class="icon-emoji">🛰️</span>
+     <span class="icon-lucide"><Radar /></span>
+   CSS shows ONE based on `<html data-ui>` attr.
+   Zero JS-side theme branching.
+
+   Imported from layout.tsx alongside globals.css so it ships in
+   the same bundle. Separate file = clean per-phase rollback
+   (delete this file + revert layout.tsx import = full FE-2 revert).
+   ============================================================ */
+
+.icon-emoji,
+.icon-lucide {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.icon-lucide { color: currentColor; }
+
+/* Dragon (default) → emoji visible, Lucide hidden */
+:root[data-ui="dragon"] .icon-lucide { display: none; }
+
+/* Institutional → Lucide visible, emoji hidden */
+:root[data-ui="institutional"] .icon-emoji { display: none; }
+
+/* Fallback when data-ui missing (defensive SSR window) — keep emoji */
+html:not([data-ui]) .icon-lucide { display: none; }

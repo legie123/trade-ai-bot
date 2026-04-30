@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./icons-fe2.css"; // FE-2 icon visibility toggle (data-ui-aware)
 import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
