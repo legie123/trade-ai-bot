@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
         note:
           popStats.killed === 0
             ? 'Graveyard empty: either no kills yet, mode=off, or migration not applied. Selection lift is undefined.'
-            : 'selectionLiftPp = aliveAvgWR - popWeightedWR*100. Large positive lift = alive stats are survivorship-biased upward.',
+            : 'selectionLiftPp default formula: (aliveWeightedWR - killedWeightedWR)*100. Positive lift = Butcher kills below survivors avg (correct direction). Negative lift = Butcher killed gladiators outperforming the survivors (actionable). Set SELECTION_LIFT_MODE=legacy to revert to old formula (aliveAvgWR - popWeightedWR*100).',
       },
       ...(includeEntries ? { entries } : {}),
     });

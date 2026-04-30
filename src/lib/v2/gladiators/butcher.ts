@@ -152,7 +152,17 @@ export class TheButcher {
         failsWinRate = g.stats.winRate < 40;
         failsProfitFactor = g.stats.profitFactor < 1.0;
       }
-      const failsPnL = (g.stats as Record<string, unknown>).totalPnlPercent !== undefined && ((g.stats as Record<string, unknown>).totalPnlPercent as number) < -5;
+      // 2026-04-29 N-GATE FIX: failsPnL was n-blind — a fresh gladiator with 3
+      // unlucky trades summing to -6% would get executed. Align with WR/PF
+      // gates: require totalTrades>=MIN_N_FOR_KILL before considering PnL%
+      // a kill condition. Kill-switch via BUTCHER_USE_WILSON=0 (pre-fix path
+      // unchanged below — legacy thresholds run un-n-gated as before).
+      const failsPnL = useWilson
+        ? (g.stats.totalTrades >= MIN_N_FOR_KILL
+            && (g.stats as Record<string, unknown>).totalPnlPercent !== undefined
+            && ((g.stats as Record<string, unknown>).totalPnlPercent as number) < -5)
+        : ((g.stats as Record<string, unknown>).totalPnlPercent !== undefined
+            && ((g.stats as Record<string, unknown>).totalPnlPercent as number) < -5);
 
       // R4b: anti-memorization
       const memo = await this.isMemorized(g.id);
