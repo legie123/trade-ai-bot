@@ -3,6 +3,10 @@ import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('MoltbookDiscovery');
 
+// Consolidated OpenRouter endpoint — env-configurable for staging/proxy without redeploy.
+// Previously hardcoded 3× across extractInsightsWithLLM, solveMathChallenge, generateSmartReplyLLM.
+const OPENROUTER_URL = process.env.OPENROUTER_URL || 'https://openrouter.ai/api/v1/chat/completions';
+
 /**
  * Analyzes the latest Moltbook discussions to extract valuable trading or coding insights,
  * and actively posts to multiple communities while solving Captcha networks.
@@ -17,7 +21,7 @@ interface MoltbookPost {
 }
 
 // FIX 2026-04-18: Graceful disable când MOLTBOOK_API_KEY lipsește.
-// Anterior: fiecare cron tick (every 30 min) arunca excepție, spamming logs cu acelaşi mesaj.
+// Anterior: fiecare cron tick (every 30 min) arunca excepție, spamming logs cu același mesaj.
 // Acum: short-circuit early, log o singură dată per process lifecycle, return clean skip status.
 // Reactivare: setezi MOLTBOOK_API_KEY în Cloud Run env → next tick reia activitatea fără re-deploy.
 let _moltbookSkipNotified = false;
@@ -86,7 +90,7 @@ ${rawText.substring(0, 3000)}
 
 YOUR INSIGHT:`;
 
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const res = await fetch(OPENROUTER_URL, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -126,7 +130,7 @@ RESTRICTION: Output ONLY the final numeric answer formatted to exactly 2 decimal
 PROBLEM:
 ${challengeText}`;
 
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const res = await fetch(OPENROUTER_URL, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -228,7 +232,7 @@ Maximum 2 sentences. No hashtags. Be respectful but direct.
 
 YOUR REPLY:`;
 
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const res = await fetch(OPENROUTER_URL, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -250,4 +254,3 @@ YOUR REPLY:`;
     }
     return '';
 }
-
