@@ -33,16 +33,20 @@ import { ExplainCard } from '@/components/explain/ExplainCard';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+// FAZA FE-4 batch 2 (2026-04-26): C constant maps semantic roles to CSS vars
+// from globals.css. Both Dragon and Institutional themes inherit automatically.
+// Asumptie: --text-primary, --text-secondary, --text-muted, --accent-{blue,green,red,amber},
+// --border, --bg-card-hover all defined in globals.css FE-1 commit 6c03e93.
 const C = {
-  text: '#f3f0e8',
-  muted: '#6a5f52',
-  mutedLight: '#a89a8a',
-  blue: '#DAA520',
-  green: '#4ade80',
-  red: '#ef4444',
-  orange: '#fb923c',
-  border: 'rgba(218,165,32,0.15)',
-  headerBg: 'rgba(218,165,32,0.05)',
+  text: 'var(--text-primary)',
+  muted: 'var(--text-muted)',
+  mutedLight: 'var(--text-secondary)',
+  blue: 'var(--accent-blue)',
+  green: 'var(--accent-green)',
+  red: 'var(--accent-red)',
+  orange: 'var(--accent-amber)',
+  border: 'var(--border)',
+  headerBg: 'var(--bg-card-hover)',
 };
 
 const ALLOWED_LIMITS = [25, 50, 100, 250, 500, 1000] as const;
@@ -276,7 +280,7 @@ export default async function GraveyardPage({
             placeholder="(any)"
             maxLength={64}
             style={{
-              background: '#1a1a1a',
+              background: 'var(--bg-input)',
               color: C.text,
               border: `1px solid ${C.border}`,
               padding: '4px 8px',
@@ -293,7 +297,7 @@ export default async function GraveyardPage({
             name="limit"
             defaultValue={String(limit)}
             style={{
-              background: '#1a1a1a',
+              background: 'var(--bg-input)',
               color: C.text,
               border: `1px solid ${C.border}`,
               padding: '4px 8px',
@@ -313,7 +317,7 @@ export default async function GraveyardPage({
           type="submit"
           style={{
             background: C.blue,
-            color: '#0a0a0a',
+            color: 'var(--bg-primary)',
             border: 'none',
             padding: '4px 12px',
             fontWeight: 700,
@@ -464,7 +468,7 @@ export default async function GraveyardPage({
         <div
           style={{
             border: `1px solid ${C.border}`,
-            background: '#0a0a0a',
+            background: 'var(--bg-primary)',
             overflowX: 'auto',
             marginBottom: 24,
           }}
