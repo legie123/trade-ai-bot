@@ -457,6 +457,84 @@ RULES = [
         ),
         runbook_url=f"{APP_URL}/polymarket/audit/graveyard",
     ),
+    # 2026-04-30 — imported from external provisioning into RULES list so all
+    # 15 alerts share one source of truth + share APP_URL drill-down routing.
+    # Counter source: /api/metrics tradeai_llm_cost_dollars_total (provider×model
+    # labels). Tracks all paid LLM calls (deepseek, gemini, openai, etc).
+    # Threshold $1/hr is 10x steady-state floor (~$0.10/hr w/ consensus OFF).
+    # Routes to /polymarket/audit/llm-cost (Batch 3.3 per-market attribution UI).
+    build_rule(
+        uid="tradeai-llm-cost-hourly-high",
+        title="TRADE AI — LLM hourly cost > $1/hr (runaway guard)",
+        expr='max(sum(rate(tradeai_llm_cost_dollars_total{service="trade-ai"}[10m])) * 3600 > bool 1)',
+        threshold=1,
+        for_duration="15m",
+        severity="warning",
+        summary="LLM spend rate > $1/hr sustained 15m — possible runaway",
+        description=(
+            "tradeai_llm_cost_dollars_total (provider×model) hourly burn rate has exceeded $1/hr for 15m. "
+            "Steady-state should be <$0.10/hr with multi-LLM consensus OFF and only polySyndicate+karma active. "
+            "Causes: (1) MULTI_LLM_CONSENSUS_ENABLED flipped on without $/day cap enforcement; "
+            "(2) retry loop on 429 without circuit breaker; (3) Gemini-1.5-Pro miscast to a premium model; "
+            "(4) prompt size blew up (context bloat regression). "
+            "Immediate action: check /polymarket/audit/llm-cost for per-market split (Batch 3.3), identify "
+            "the model/caller, then flip the relevant domain kill-switch (LLM_CONSENSUS_PERSIST_ENABLED=0, "
+            "MULTI_LLM_CONSENSUS_ENABLED=off). PRICING_USD_PER_MTOK lives in callLLM.ts — verify no mispricing."
+        ),
+        runbook_url=f"{APP_URL}/polymarket/audit/llm-cost",
+    ),
+    # 2026-04-30 — imported. histogram_quantile p95 > 60s on instrumented crons.
+    # Steady-state <5s (memory `FAZA A Batch 3 cronDuration histogram`). Catches:
+    # supabase latency spikes, write amplification, pool exhaustion, provider
+    # timeouts. Routes to brain-history (cron run timestamps logged there) +
+    # users can cross-ref with brain ops signal.
+    build_rule(
+        uid="tradeai-cron-duration-p95-high",
+        title="TRADE AI — Cron duration p95 > 60s (latency/starvation)",
+        expr=(
+            'max(histogram_quantile(0.95, sum by (le,cron) '
+            '(rate(tradeai_cron_duration_seconds_bucket{service="trade-ai"}[10m]))) > bool 60)'
+        ),
+        threshold=1,
+        for_duration="15m",
+        severity="warning",
+        summary="Any instrumented cron's p95 runtime > 60s sustained 15m",
+        description=(
+            "One or more of the instrumented crons (positions / sentiment / auto-promote) has a 95th-percentile "
+            "runtime > 60s over the last 10m, sustained for 15m. Steady-state is <5s. Common causes: "
+            "(1) Supabase request latency spike (see memory `Flush-timeout fix 2026-04-20` — 2.6x latency "
+            "triggered flushPendingSyncs WARN); (2) json_store updated_at write-amplification; "
+            "(3) Connection pool exhausted (high concurrency + no throttle); "
+            "(4) External provider timeout (MEXC/Polymarket/Goldsky) blocking the cron. "
+            "Immediate action: inspect Cloud Run logs for cron name in alert labels, check "
+            "`tradeai_cron_duration_seconds_count` vs `sum` ratio to get mean, verify Supabase status page, "
+            "consider flipping FLUSH_TIMEOUT_MS env."
+        ),
+        runbook_url=f"{APP_URL}/polymarket/audit/brain-history",
+    ),
+    # 2026-04-30 — imported. Polymarket scan rotation watchdog (FAZA 4.3 rotation
+    # 16-division refresh ~75min). >2h on lastScan timestamp = rotation broken or
+    # specific instance frozen. Routes to /polymarket/audit (scan freshness panel).
+    build_rule(
+        uid="tradeai-poly-scan-freshness-stale",
+        title="TRADE AI — Polymarket scan freshness STALE (>2h)",
+        expr='max(time() - tradeai_polymarket_lastscan_timestamp_seconds{service="trade-ai"}) > bool 7200',
+        threshold=1,
+        for_duration="15m",
+        severity="warning",
+        summary="At least one Polymarket division hasn't scanned in >2h",
+        description=(
+            "tradeai_polymarket_lastscan_timestamp_seconds oldest age > 2h for 15m. FAZA 4.3 rotation aims "
+            "for full 16-division refresh <=75min, so 2h+ means rotation is broken OR a specific instance "
+            "is stuck. Immediate action: (1) check /polymarket/audit for the division list with stale "
+            "timestamps; (2) verify POLY_SCAN_ROTATION_COUNT env is non-zero (kill-switch is =0); "
+            "(3) look at Cloud Run instance count — if multi-drift, a frozen instance may be the issue; "
+            "(4) as last resort force POST /api/v2/admin {\"command\":\"poly:scan:full\"} to bypass rotation. "
+            "Cross-check with brain-signal-feed-red (feedHealth scanner tick) for confirmation the feed "
+            "is dead, not just the gauge."
+        ),
+        runbook_url=f"{APP_URL}/polymarket/audit",
+    ),
 ]
 
 
