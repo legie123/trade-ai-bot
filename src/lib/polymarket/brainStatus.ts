@@ -36,6 +36,7 @@ import { getEdgeWatchdogState, EdgeVerdict } from './edgeWatchdog';
 import { probeSettlementHealth, HealthStatus as SettlementStatus } from './settlementHealth';
 import { getFeedHealth, FeedStatus } from './feedHealth';
 import { getOpsFlagsSnapshot, Risk } from './opsFlags';
+import { logBrainStatusSnapshot } from './brainStatusLog';
 
 export type BrainVerdict = 'GREEN' | 'AMBER' | 'RED' | 'UNKNOWN';
 
@@ -271,6 +272,11 @@ export async function getBrainStatus(): Promise<BrainStatus> {
     cacheHit: false,
   };
   cache = { status, expiresAt: now + envInt('BRAIN_STATUS_CACHE_MS', 30_000) };
+  // Batch 3.18 — fire-and-forget snapshot persister. Wired here at the
+  // tail of the cache-miss compute path: every fresh rollup gets logged
+  // to polymarket_brain_status_log. Self-gated by BRAIN_STATUS_LOG_ENABLED;
+  // never throws. cache-hit path skips it (writer also re-checks).
+  logBrainStatusSnapshot(status);
   return status;
 }
 
