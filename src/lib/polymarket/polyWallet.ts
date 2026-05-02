@@ -1,6 +1,5 @@
 // ============================================================
 // Polymarket Paper Wallet — Position management & Kelly criterion
-// Balance per division, fee model, position constraints
 // ============================================================
 
 import { PolyDivision } from './polyTypes';
@@ -8,19 +7,11 @@ import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('PolyWallet');
 
-// FAZA 4.1 (2026-04-20) — Capital reduction per operator directive.
-// Was 1000/division → 16 × 1000 = 16,000 total (user observed in UI).
-// Now 100/division → 16 × 100 = 1,600 total. Env override lets operator
-// retune without redeploy. Note: a change here is a NO-OP on wallets
-// already hydrated from Supabase — a POST /api/v2/polymarket action=reset_wallet
-// call is required to rebuild state with the new INITIAL_BALANCE.
 export const INITIAL_BALANCE = Number.parseInt(process.env.POLY_INITIAL_BALANCE_PER_DIVISION ?? '100', 10);
-const POLYMARKET_FEE = 0.02; // 2% on winning bets
+const POLYMARKET_FEE = 0.02;
 const MAX_POSITIONS_PER_DIVISION = 5;
 
-// AUTO-TRADE 2026-05-02 — Bet-sizing knobs env-tunable to unblock paper-mode
-// position open when Kelly is small. Defaults match historical hardcoded values
-// for full back-compat. POLY_MAX_BET_PCT also caps Kelly inside calculateKellyBetSize.
+// AUTO-TRADE 2026-05-02 — env-tunable knobs.
 function getMaxBetPct(): number {
   const v = Number(process.env.POLY_MAX_BET_PCT);
   return Number.isFinite(v) && v > 0 && v <= 1 ? v : 0.1;
@@ -34,8 +25,17 @@ function getMinBetUsd(): number {
   return Number.isFinite(v) && v >= 0 ? v : 10;
 }
 
-const DAILY_LOSS_LIMIT = -50; // Stop trading if down $50/day
-const POSITION_LOSS_LIMIT = -25; // Stop trading if open positions down $25
+// Flat bet mode: when >0, bypass Kelly entirely and use flat bet sizing.
+// Required because momentum on efficient markets has no real edge — Kelly
+// correctly refuses (returns 0). Flat bet allows visual proof of auto-flow.
+// Capped at MAX_BET_PCT × division balance for safety.
+function getFlatBetUsd(): number {
+  const v = Number(process.env.POLY_FLAT_BET_USD);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+const DAILY_LOSS_LIMIT = -50;
+const POSITION_LOSS_LIMIT = -25;
 
 export interface DivisionBalance {
   division: PolyDivision;
@@ -53,38 +53,38 @@ export interface PolyPosition {
   division: PolyDivision;
   outcomeId: string;
   direction: 'BUY_YES' | 'BUY_NO';
-  entryPrice: number; // Entry probability (0-1)
-  currentPrice: number; // Current probability
+  entryPrice: number;       // YES price snapshot (kept for compat / display)
+  buyPrice?: number;        // ACTUAL buy price (= yesPrice for BUY_YES, 1-yesPrice for BUY_NO). Optional for back-compat with existing positions.
+  currentPrice: number;
   shares: number;
   capitalAllocated: number;
   enteredAt: string;
   currentValue?: number;
   unrealizedPnL?: number;
-  roi?: number; // Return on invested capital
-  decisionId?: string; // FAZA 3.7 — links wallet position to polymarket_decisions row for settlement writeback
+  roi?: number;
+  decisionId?: string;
 }
 
 export interface PolyWallet {
   id: string;
   createdAt: string;
-  type: 'PAPER' | 'LIVE'; // CRITICAL: Paper trading only, no live execution
+  type: 'PAPER' | 'LIVE';
   totalBalance: number;
   totalInvested: number;
   totalRealizedPnL: number;
   divisionBalances: Map<PolyDivision, DivisionBalance>;
   allPositions: PolyPosition[];
-  dailyLossTrackingDate?: string; // Date of last reset (YYYY-MM-DD)
-  dailyRealizedPnL?: number; // Today's realized P&L (resets at midnight UTC)
-  tradingDisabledReason?: string; // If set, reason why trading is paused
+  dailyLossTrackingDate?: string;
+  dailyRealizedPnL?: number;
+  tradingDisabledReason?: string;
 }
 
-// ─── Create wallet ───────────────────────────────────
 export function createPolyWallet(type: 'PAPER' | 'LIVE' = 'PAPER'): PolyWallet {
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0];
   const wallet: PolyWallet = {
     id: `wallet-${Date.now()}`,
     createdAt: new Date().toISOString(),
-    type, // Default to PAPER
+    type,
     totalBalance: Object.keys(PolyDivision).length * INITIAL_BALANCE,
     totalInvested: 0,
     totalRealizedPnL: 0,
@@ -94,8 +94,6 @@ export function createPolyWallet(type: 'PAPER' | 'LIVE' = 'PAPER'): PolyWallet {
     dailyRealizedPnL: 0,
     tradingDisabledReason: undefined,
   };
-
-  // Initialize each division
   Object.values(PolyDivision).forEach(division => {
     wallet.divisionBalances.set(division, {
       division,
@@ -108,21 +106,17 @@ export function createPolyWallet(type: 'PAPER' | 'LIVE' = 'PAPER'): PolyWallet {
       peakBalance: INITIAL_BALANCE,
     });
   });
-
   return wallet;
 }
 
-// ─── Validate paper trading only ──────────────────────
 export function validatePaperTrading(wallet: PolyWallet): void {
   if (wallet.type !== 'PAPER') {
-    const error = 'FATAL: Attempted to trade against NON-PAPER wallet. ' +
-      'This system is PAPER TRADING ONLY. No real money trades allowed.';
+    const error = 'FATAL: Attempted to trade against NON-PAPER wallet.';
     log.error(error, { walletId: wallet.id, type: wallet.type });
     throw new Error(error);
   }
 }
 
-// ─── Check daily loss limits ──────────────────────────
 export function checkAndResetDailyLimits(wallet: PolyWallet): void {
   const today = new Date().toISOString().split('T')[0];
   if (wallet.dailyLossTrackingDate !== today) {
@@ -134,56 +128,42 @@ export function checkAndResetDailyLimits(wallet: PolyWallet): void {
 }
 
 export function checkLossLimits(wallet: PolyWallet): { canTrade: boolean; reason?: string } {
-  if (wallet.tradingDisabledReason) {
-    return { canTrade: false, reason: wallet.tradingDisabledReason };
-  }
+  if (wallet.tradingDisabledReason) return { canTrade: false, reason: wallet.tradingDisabledReason };
   const dailyPnL = wallet.dailyRealizedPnL || 0;
   if (dailyPnL < DAILY_LOSS_LIMIT) {
     const reason = `Daily loss limit breached: $${dailyPnL.toFixed(2)} (limit: $${DAILY_LOSS_LIMIT})`;
     wallet.tradingDisabledReason = reason;
-    log.warn('Trading disabled due to daily loss limit', { dailyPnL });
     return { canTrade: false, reason };
   }
   const totalUnrealized = calculateUnrealizedPnL(wallet);
   if (totalUnrealized < POSITION_LOSS_LIMIT) {
     const reason = `Position loss limit breached: $${totalUnrealized.toFixed(2)} (limit: $${POSITION_LOSS_LIMIT})`;
     wallet.tradingDisabledReason = reason;
-    log.warn('Trading disabled due to position loss limit', { totalUnrealized });
     return { canTrade: false, reason };
   }
   return { canTrade: true };
 }
 
-// ─── Calculate Kelly criterion bet size ────────────────────
 export function calculateKellyBetSize(
-  bankroll: number,
-  winProbability: number,
-  oddsImplied: number,
-  confidence: number,
+  bankroll: number, winProbability: number, oddsImplied: number, confidence: number,
 ): number {
   if (winProbability <= oddsImplied || winProbability < 0.51) return 0;
-
   const b = (1 / oddsImplied) - 1;
   const q = 1 - winProbability;
   const fullKelly = Math.max(0, (winProbability * b - q) / b);
-
   const confidenceScalar = confidence / 100;
-  const kellyFraction = getKellyFraction();
-  const betSize = fullKelly * kellyFraction * confidenceScalar;
-
-  // Kelly hard cap = MAX_BET_PCT (env-tunable, was hardcoded 0.1).
+  const betSize = fullKelly * getKellyFraction() * confidenceScalar;
   const maxPct = getMaxBetPct();
   return Math.round(bankroll * Math.max(0, Math.min(maxPct, betSize)));
 }
 
-// ─── Open position ────────────────────────────────
 export function openPosition(
   wallet: PolyWallet,
   marketId: string,
   division: PolyDivision,
   outcomeId: string,
   direction: 'BUY_YES' | 'BUY_NO',
-  entryPrice: number,
+  entryPrice: number,    // yesPrice snapshot (per Gamma outcomes[0].price)
   confidence: number,
   edgeScore: number,
   decisionId?: string,
@@ -202,26 +182,36 @@ export function openPosition(
     log.warn('Division not found', { division });
     return null;
   }
-
   if (divBalance.positions.length >= MAX_POSITIONS_PER_DIVISION) {
-    log.warn('Max positions reached for division', {
-      division,
-      current: divBalance.positions.length,
-    });
+    log.warn('Max positions reached for division', { division, current: divBalance.positions.length });
     return null;
   }
 
-  // Calculate bet size using Kelly + env-tunable caps
-  const maxBet = divBalance.balance * getMaxBetPct();
-  const impliedProb = direction === 'BUY_YES' ? entryPrice : 1 - entryPrice;
-  const edgeFraction = (edgeScore / 100) * 0.15;
-  const myProb = Math.min(0.95, impliedProb + edgeFraction);
-  const kellyBet = calculateKellyBetSize(divBalance.balance, myProb, impliedProb, confidence);
-  const betSize = Math.min(maxBet, kellyBet);
+  // ACTUAL buy price (FIX 2026-05-02): BUY_NO buys NO shares at (1-yesPrice),
+  // not at yesPrice. Previously shares calc used entryPrice=yesPrice for both,
+  // overstating BUY_NO win payoffs by factor 1/(1-yesPrice). Now correct.
+  const buyPrice = direction === 'BUY_YES' ? entryPrice : Math.max(0.0001, 1 - entryPrice);
+
+  // Bet sizing: flat-bet mode (env override) OR Kelly-driven (legacy default).
+  const flatBet = getFlatBetUsd();
+  let betSize: number;
+  if (flatBet > 0) {
+    // Flat bet mode: capped at MAX_BET_PCT × balance for safety.
+    const maxBet = divBalance.balance * getMaxBetPct();
+    betSize = Math.min(flatBet, maxBet);
+  } else {
+    // Kelly mode (legacy default).
+    const maxBet = divBalance.balance * getMaxBetPct();
+    const impliedProb = direction === 'BUY_YES' ? entryPrice : 1 - entryPrice;
+    const edgeFraction = (edgeScore / 100) * 0.15;
+    const myProb = Math.min(0.95, impliedProb + edgeFraction);
+    const kellyBet = calculateKellyBetSize(divBalance.balance, myProb, impliedProb, confidence);
+    betSize = Math.min(maxBet, kellyBet);
+  }
 
   const minBet = getMinBetUsd();
   if (betSize < minBet) {
-    log.info('Bet size too small, skipping', { betSize, maxBet, minBet });
+    log.info('Bet size too small, skipping', { betSize, minBet, mode: flatBet > 0 ? 'flat' : 'kelly' });
     return null;
   }
 
@@ -230,9 +220,10 @@ export function openPosition(
     division,
     outcomeId,
     direction,
-    entryPrice,
+    entryPrice,                                 // YES price snapshot (compat)
+    buyPrice,                                   // actual buy price
     currentPrice: entryPrice,
-    shares: Math.round(betSize / entryPrice),
+    shares: Math.round(betSize / buyPrice),     // FIX: shares from buyPrice not yesPrice
     capitalAllocated: betSize,
     enteredAt: new Date().toISOString(),
     currentValue: betSize,
@@ -244,38 +235,31 @@ export function openPosition(
   divBalance.positions.push(position);
   divBalance.investedCapital += betSize;
   divBalance.balance -= betSize;
-
   wallet.allPositions.push(position);
   wallet.totalBalance = calculateTotalBalance(wallet);
   wallet.totalInvested = calculateTotalInvested(wallet);
 
   log.info('Opened position', {
-    marketId,
-    division,
-    shares: position.shares,
-    capital: betSize,
+    marketId, division, direction,
+    shares: position.shares, capital: betSize, buyPrice,
+    mode: flatBet > 0 ? 'flat' : 'kelly',
   });
-
   return position;
 }
 
-// ─── Update position mark-to-market ─────────────────────
-export function updatePositionPrice(
-  position: PolyPosition,
-  currentPrice: number,
-): void {
+export function updatePositionPrice(position: PolyPosition, currentPrice: number): void {
   position.currentPrice = Math.max(0, Math.min(1, currentPrice));
   position.currentValue = position.shares * position.currentPrice;
-  const originalValue = position.shares * position.entryPrice;
+  // For BUY_NO, current YES price reflects market belief; equivalent NO price = 1-currentPrice.
+  // Use stored buyPrice if available (back-compat: fall back to entryPrice).
+  const refBuyPrice = position.buyPrice ?? position.entryPrice;
+  const originalValue = position.shares * refBuyPrice;
   position.unrealizedPnL = position.currentValue - originalValue;
   position.roi = originalValue > 0 ? position.unrealizedPnL / originalValue : 0;
 }
 
-// ─── Close position ────────────────────────────────
 export function closePosition(
-  wallet: PolyWallet,
-  position: PolyPosition,
-  exitPrice: number,
+  wallet: PolyWallet, position: PolyPosition, exitPrice: number,
 ): number {
   const exitValue = position.shares * exitPrice;
   const originalCost = position.capitalAllocated;
@@ -289,17 +273,12 @@ export function closePosition(
     divBalance.balance += proceeds;
     divBalance.investedCapital -= position.capitalAllocated;
     divBalance.realizedPnL += netPnL;
-
     if (divBalance.balance < divBalance.peakBalance * 0.5) {
-      divBalance.maxDrawdown = Math.max(
-        divBalance.maxDrawdown,
-        1 - divBalance.balance / divBalance.peakBalance,
-      );
+      divBalance.maxDrawdown = Math.max(divBalance.maxDrawdown, 1 - divBalance.balance / divBalance.peakBalance);
     }
     divBalance.peakBalance = Math.max(divBalance.peakBalance, divBalance.balance);
     divBalance.positions = divBalance.positions.filter(p => p.marketId !== position.marketId);
   }
-
   wallet.allPositions = wallet.allPositions.filter(p => p.marketId !== position.marketId);
   wallet.totalBalance = calculateTotalBalance(wallet);
   wallet.totalInvested = calculateTotalInvested(wallet);
@@ -307,64 +286,47 @@ export function closePosition(
   wallet.dailyRealizedPnL = (wallet.dailyRealizedPnL || 0) + netPnL;
 
   log.info('Closed position', {
-    marketId: position.marketId,
-    division: position.division,
-    pnl: netPnL.toFixed(2),
-    fee: fee.toFixed(2),
-    proceeds: proceeds.toFixed(2),
-    dailyPnL: wallet.dailyRealizedPnL?.toFixed(2),
+    marketId: position.marketId, division: position.division,
+    pnl: netPnL.toFixed(2), fee: fee.toFixed(2), proceeds: proceeds.toFixed(2),
   });
-
   return netPnL;
 }
 
-// ─── Force liquidation (division down 20%) ────────────────
 export function emergencyLiquidate(
-  wallet: PolyWallet,
-  division: PolyDivision,
-  exitPrices: Map<string, number>,
+  wallet: PolyWallet, division: PolyDivision, exitPrices: Map<string, number>,
 ): void {
   const divBalance = wallet.divisionBalances.get(division);
   if (!divBalance) return;
-
   const positions = [...divBalance.positions];
   for (const position of positions) {
     const exitPrice = exitPrices.get(position.marketId) || position.currentPrice;
     closePosition(wallet, position, exitPrice);
   }
-  log.warn('Emergency liquidation triggered', {
-    division,
-    remainingBalance: divBalance.balance,
-  });
+  log.warn('Emergency liquidation triggered', { division, remainingBalance: divBalance.balance });
 }
 
-// ─── Rebalance across divisions ─────────────────────────
 export function rebalancePortfolio(wallet: PolyWallet): void {
   const divCount = Object.keys(PolyDivision).length;
   if (divCount === 0) return;
   const targetPerDiv = wallet.totalBalance / divCount;
-
   let availablePool = 0;
-  for (const [division, divBalance] of wallet.divisionBalances.entries()) {
+  for (const [, divBalance] of wallet.divisionBalances.entries()) {
     if (divBalance.balance > targetPerDiv * 1.2) {
       const excess = divBalance.balance - targetPerDiv;
       divBalance.balance -= excess;
       availablePool += excess;
-      log.debug('Rebalance: Collected excess', { division, excess: excess.toFixed(2) });
     }
   }
-  for (const [division, divBalance] of wallet.divisionBalances.entries()) {
+  for (const [, divBalance] of wallet.divisionBalances.entries()) {
     if (divBalance.balance < targetPerDiv * 0.8 && availablePool > 0) {
       const needed = Math.min(targetPerDiv - divBalance.balance, availablePool);
       divBalance.balance += needed;
       availablePool -= needed;
-      log.debug('Rebalance: Distributed from pool', { division, added: needed.toFixed(2), remainingPool: availablePool.toFixed(2) });
     }
   }
   wallet.totalBalance = calculateTotalBalance(wallet);
 }
 
-// ─── Get division stats ───────────────────────────────
 export function getDivisionStats(divBalance: DivisionBalance) {
   const totalInvested = divBalance.investedCapital;
   const realizedReturn = totalInvested > 0 ? divBalance.realizedPnL / totalInvested : 0;
@@ -383,19 +345,13 @@ export function getDivisionStats(divBalance: DivisionBalance) {
   };
 }
 
-// ─── Get wallet summary ────────────────────────────────
 export function getWalletSummary(wallet: PolyWallet) {
   const divisionStats = Array.from(wallet.divisionBalances.values()).map(getDivisionStats);
-  const totalInvested = Array.from(wallet.divisionBalances.values()).reduce(
-    (sum, db) => sum + db.investedCapital, 0);
-  const totalUnrealizedPnL = Array.from(wallet.divisionBalances.values()).reduce(
-    (sum, db) => sum + db.unrealizedPnL, 0);
-  const roi = totalInvested > 0
-    ? ((wallet.totalRealizedPnL + totalUnrealizedPnL) / totalInvested) * 100
-    : 0;
+  const totalInvested = Array.from(wallet.divisionBalances.values()).reduce((sum, db) => sum + db.investedCapital, 0);
+  const totalUnrealizedPnL = Array.from(wallet.divisionBalances.values()).reduce((sum, db) => sum + db.unrealizedPnL, 0);
+  const roi = totalInvested > 0 ? ((wallet.totalRealizedPnL + totalUnrealizedPnL) / totalInvested) * 100 : 0;
   return {
-    walletId: wallet.id,
-    createdAt: wallet.createdAt,
+    walletId: wallet.id, createdAt: wallet.createdAt,
     totalBalance: Math.round(wallet.totalBalance),
     totalInvested: Math.round(totalInvested),
     realizedPnL: Math.round(wallet.totalRealizedPnL),
@@ -407,36 +363,25 @@ export function getWalletSummary(wallet: PolyWallet) {
   };
 }
 
-// ─── Helper: Calculate total wallet balance ────────────────────
 function calculateTotalBalance(wallet: PolyWallet): number {
   let total = 0;
-  const divBalances = Array.from(wallet.divisionBalances.values());
-  for (const divBalance of divBalances) {
+  for (const divBalance of wallet.divisionBalances.values()) {
     total += divBalance.balance;
-    for (const position of divBalance.positions) {
-      total += position.currentValue || 0;
-    }
+    for (const position of divBalance.positions) total += position.currentValue || 0;
   }
   return total;
 }
 
-// ─── Helper: Calculate total invested capital ───────────────────
 function calculateTotalInvested(wallet: PolyWallet): number {
   let total = 0;
-  const divBalances = Array.from(wallet.divisionBalances.values());
-  for (const divBalance of divBalances) {
-    total += divBalance.investedCapital;
-  }
+  for (const divBalance of wallet.divisionBalances.values()) total += divBalance.investedCapital;
   return total;
 }
 
-// ─── Helper: Calculate unrealized PnL ──────────────────────────
 export function calculateUnrealizedPnL(wallet: PolyWallet): number {
   let total = 0;
   for (const divBalance of wallet.divisionBalances.values()) {
-    for (const position of divBalance.positions) {
-      total += (position.unrealizedPnL || 0);
-    }
+    for (const position of divBalance.positions) total += (position.unrealizedPnL || 0);
   }
   return total;
 }
