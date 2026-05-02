@@ -183,12 +183,30 @@ function determineDirection(market: PolyMarket): 'BUY_YES' | 'BUY_NO' | 'SKIP' {
 
   if (!yesOutcome || !noOutcome) return 'SKIP';
 
-  // If YES is cheap, buy YES. If expensive, buy NO.
-  const yesPrice = yesOutcome.price;
-  if (yesPrice < POLY_CONFIG.buyYesThreshold) return 'BUY_YES';
-  if (yesPrice > POLY_CONFIG.buyNoThreshold) return 'BUY_NO';
+  // STRATEGY FLIP 2026-05-02 — synced with marketScanner.determineRecommendation.
+  // Fallback path (used when no opportunity is provided to evaluateMarket).
+  // See marketScanner.ts:determineRecommendation for full rationale + assumptions.
+  // KILL-SWITCH: POLY_STRATEGY_MODE=contrarian|skip-all|momentum (sync'd both files).
+  const mode = (process.env.POLY_STRATEGY_MODE || 'momentum').toLowerCase();
+  if (mode === 'skip-all') return 'SKIP';
 
-  // Neutral: skip
+  const yesPrice = yesOutcome.price;
+
+  if (mode === 'contrarian') {
+    // Legacy contrarian — env-tuneable thresholds (default 0.35/0.65).
+    if (yesPrice < POLY_CONFIG.buyYesThreshold) return 'BUY_YES';
+    if (yesPrice > POLY_CONFIG.buyNoThreshold) return 'BUY_NO';
+    return 'SKIP';
+  }
+
+  // Momentum (default): follow consensus on decisive markets.
+  // Threshold semantics inverted vs contrarian:
+  //   yesPrice >= 0.65 (buyNoThreshold) → BUY_YES (high YES probability — ride it)
+  //   yesPrice <= 0.35 (buyYesThreshold) → BUY_NO  (low YES probability ⇒ NO probable)
+  if (yesPrice >= POLY_CONFIG.buyNoThreshold) return 'BUY_YES';
+  if (yesPrice <= POLY_CONFIG.buyYesThreshold) return 'BUY_NO';
+
+  // Neutral middle band: skip
   return 'SKIP';
 }
 

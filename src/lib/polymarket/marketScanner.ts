@@ -307,11 +307,47 @@ function determineRecommendation(
   // override applies at scan filter level since this fn lacks division context).
   if (edgeScore < getEdgeFloor() || riskLevel === 'HIGH') return 'SKIP';
 
+  // STRATEGY FLIP 2026-05-02 — contrarian (legacy) → momentum (default).
+  // Empirical evidence (N=530 bets × 16 gladiators): contrarian WR=5%
+  // because Polymarket prices reflect true probability ±5% on liquid markets,
+  // so betting AGAINST extreme-price consensus loses systematically (we bet YES
+  // at price<0.4 → market thinks YES unlikely → it doesn't happen ~95% of time).
+  // Momentum follows consensus on decisive markets — WR expected ≈ price (60-95%).
+  //
+  // EV note: even momentum carries small negative EV (~-0.5%/trade) due to
+  // 2% Polymarket fee + symmetric payoff geometry on well-priced markets.
+  // Goal here is positive WR for gladiator promotion gate (≥58% WR), not net
+  // positive PnL on random markets — net positive requires real info edge from
+  // the syndicate analysis layer (separate concern, already wired).
+  //
+  // KILL-SWITCH:
+  //   POLY_STRATEGY_MODE=contrarian → reverts to legacy logic
+  //   POLY_STRATEGY_MODE=skip-all   → halts all entries (defensive halt)
+  //   unset/momentum (default)      → new logic
+  //
+  // ASSUMPTIONS (invalidate = revert via env):
+  //   (1) Polymarket prices accurate ±5% on liquid markets at extremes
+  //   (2) recordPolyOutcome correctly attributes BUY_YES↔YES, BUY_NO↔NO (verified)
+  //   (3) 2% fee model in closePosition matches Polymarket reality
+  //
+  // VALIDATOR: WR after 50 fresh post-flip bets must be ≥40%.
+  //   If WR<40% on N≥50 → momentum also broken → POLY_STRATEGY_MODE=skip-all.
+  const mode = (process.env.POLY_STRATEGY_MODE || 'momentum').toLowerCase();
+  if (mode === 'skip-all') return 'SKIP';
+
   const yesPrice = market.outcomes[0]?.price || 0.5;
 
-  if (yesPrice < 0.4) return 'BUY_YES';
-  if (yesPrice > 0.6) return 'BUY_NO';
-  return 'SKIP';
+  if (mode === 'contrarian') {
+    // Legacy contrarian — kept for forensic backtest comparison only.
+    if (yesPrice < 0.4) return 'BUY_YES';
+    if (yesPrice > 0.6) return 'BUY_NO';
+    return 'SKIP';
+  }
+
+  // Momentum (default): follow consensus on decisive markets.
+  if (yesPrice >= 0.6) return 'BUY_YES';   // market confident YES → ride consensus
+  if (yesPrice <= 0.4) return 'BUY_NO';    // market confident NO (yesPrice low) → ride consensus
+  return 'SKIP';                            // ambiguous (0.4 < yesPrice < 0.6) → no clear edge
 }
 
 // ─── Build human-readable reasoning ───────────────────────
