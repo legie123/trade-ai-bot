@@ -9,7 +9,11 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+# HOTFIX 2026-05-02 — npm ci → npm install. Lockfile out of sync since
+# 2026-04-30 (lucide-react added to package.json without lock regen).
+# npm install auto-resolves missing entries; npm ci would fail strict.
+# Revert to `npm ci` after lock is properly regenerated.
+RUN npm install --no-audit --no-fund
 
 # Build
 FROM base AS builder
