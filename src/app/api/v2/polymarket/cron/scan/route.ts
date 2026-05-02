@@ -18,6 +18,7 @@ import {
   persistGladiators,
   waitForInit,
 } from '@/lib/polymarket/polyState';
+import { supabase } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import { requireCronAuth } from '@/lib/core/cronAuth';
 
@@ -33,7 +34,7 @@ export const dynamic = 'force-dynamic';
 const EDGE_MIN = Number.parseInt(process.env.POLY_EDGE_MIN ?? '50', 10);
 const CONF_MIN = Number.parseInt(process.env.POLY_CONF_MIN ?? '50', 10);
 
-// ── FAZA 4.3 — scan rotation knobs ────────────────────────────────────
+// ── FAZA 4.3 — scan rotation knobs ────────────────────────────────────────
 // Original code hardcoded 3 priority divisions (TRENDING, CRYPTO, POLITICS)
 // and the "rotating through others" comment was never implemented. Production
 // gauge data (FAZA 4.2) showed 13/16 divisions stale 10-13h+ because the cron
@@ -56,6 +57,63 @@ const ROT_COUNT = Math.max(0, Number.parseInt(process.env.POLY_SCAN_ROTATION_COU
 const ROT_PERIOD_MS =
   Math.max(1, Number.parseInt(process.env.POLY_SCAN_ROTATION_PERIOD_MIN ?? '15', 10) || 15) * 60_000;
 
+// ─── ADMIN: One-shot gladiator reset (added 2026-05-02) ─────────────────────
+// Triggered by env POLY_RESET_GLADIATORS_TOKEN. Compares against last-applied
+// token persisted in json_store. Mismatch => reset all 16 gladiators (zero stats,
+// clear phantomBets, un-retire, readinessScore=30) and persist new token.
+//
+// Idempotent: once a token is applied, subsequent scans no-op until token rotates.
+// Self-healing: any DB failure logs + continues (never blocks scan).
+//
+// Kill: unset POLY_RESET_GLADIATORS_TOKEN. To re-trigger: rotate token value.
+async function maybeResetGladiators(
+  gladiators: ReturnType<typeof getGladiators>,
+): Promise<{ applied: boolean; token?: string; reason?: string }> {
+  const token = process.env.POLY_RESET_GLADIATORS_TOKEN;
+  if (!token) return { applied: false, reason: 'no_token' };
+
+  const STORE_KEY = 'poly_reset_gladiators_token';
+  try {
+    const { data } = await supabase
+      .from('json_store')
+      .select('value')
+      .eq('key', STORE_KEY)
+      .single();
+    const lastApplied = (data?.value as string) || null;
+    if (lastApplied === token) {
+      return { applied: false, reason: 'token_already_applied' };
+    }
+
+    log.warn('[ADMIN] Applying gladiator reset', { token, lastApplied, glads: gladiators.length });
+
+    for (const g of gladiators) {
+      g.stats = { winRate: 0, profitFactor: 1.0, maxDrawdown: 0, sharpeRatio: 0, totalTrades: 0 };
+      g.phantomBets = [];
+      g.cumulativeEdge = 0;
+      // Mid-tier readiness: above retire floor (0 with new env), well below promotion gate (12).
+      // Each fresh win adds ~5 → promotion after ~1-2 wins.
+      g.readinessScore = 30;
+      g.status = 'IN_TRAINING';
+      g.isLive = false;
+      g.lastUpdated = Date.now();
+      // Clear PF accumulators (defensively — grossWins/Losses optional fields)
+      delete (g.stats as { grossWins?: number }).grossWins;
+      delete (g.stats as { grossLosses?: number }).grossLosses;
+    }
+
+    await persistGladiators();
+    await supabase
+      .from('json_store')
+      .upsert({ key: STORE_KEY, value: token }, { onConflict: 'key' });
+
+    log.warn('[ADMIN] Gladiator reset complete', { token, glads: gladiators.length });
+    return { applied: true, token };
+  } catch (e) {
+    log.warn('[ADMIN] Reset attempt failed (non-blocking)', { error: String(e) });
+    return { applied: false, reason: 'error' };
+  }
+}
+
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
@@ -67,6 +125,9 @@ export async function GET(request: Request) {
     const wallet = getWallet();
     const gladiators = getGladiators();
     const lastScans = getLastScans();
+
+    // ADMIN: one-shot reset trigger (token-gated, idempotent)
+    const resetResult = await maybeResetGladiators(gladiators);
 
     // Priority divisions — always scanned every tick (highest liquidity / volume).
     const priorityDivisions = [PolyDivision.TRENDING, PolyDivision.CRYPTO, PolyDivision.POLITICS];
@@ -255,6 +316,7 @@ export async function GET(request: Request) {
       decisionsLogged,
       gladiatorsActive: gladiators.filter(g => g.isLive).length,
       walletBalance: wallet.totalBalance,
+      resetGladiators: resetResult,
       timestamp: Date.now(),
     });
   } catch (err) {

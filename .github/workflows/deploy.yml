@@ -58,7 +58,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true" \
+            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true,POLYMARKET_INGEST_ENABLED=1,DIRECTION_LONG_DISABLED=1,POLY_STRATEGY_MODE=momentum,POLY_PROMOTION_READINESS_MIN=12,POLY_PROMOTION_MIN_TRADES=5,POLY_RETIRE_READINESS_MAX=0,POLY_RESET_GLADIATORS_TOKEN=2026-05-02-reset-momentum-flip" \
             --set-secrets="\
               NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,\
               NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest,\
@@ -99,7 +99,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true" \
+            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true,POLYMARKET_INGEST_ENABLED=1,DIRECTION_LONG_DISABLED=1,POLY_STRATEGY_MODE=momentum,POLY_PROMOTION_READINESS_MIN=12,POLY_PROMOTION_MIN_TRADES=5,POLY_RETIRE_READINESS_MAX=0,POLY_RESET_GLADIATORS_TOKEN=2026-05-02-reset-momentum-flip" \
             --set-secrets="\
               NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,\
               NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest,\
