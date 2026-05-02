@@ -8,12 +8,6 @@ env:
   PROJECT_ID: evident-trees-453923-f9
   REGION: europe-west1
   SERVICE: trade-ai
-  # FAZA B.2 (2026-04-18) — Dual-service deploy to unify code across both
-  # Cloud Run services that share the same Supabase. Both cron schedulers
-  # were writing to gladiator_battles; only trade-ai had the fee model,
-  # causing antigravity-trade rows to miss pnlPercentNet fields.
-  # Consolidation to single service is deferred; in the meantime, ship
-  # identical image to both.
   SECONDARY_SERVICE: antigravity-trade
 
 jobs:
@@ -58,7 +52,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true,POLYMARKET_INGEST_ENABLED=1,DIRECTION_LONG_DISABLED=1,POLY_STRATEGY_MODE=momentum,POLY_PROMOTION_READINESS_MIN=12,POLY_PROMOTION_MIN_TRADES=5,POLY_RETIRE_READINESS_MAX=0,POLY_RESET_GLADIATORS_TOKEN=2026-05-02-reset-momentum-flip,POLY_AUTO_TRADE_TOP_N=5" \
+            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true,POLYMARKET_INGEST_ENABLED=1,DIRECTION_LONG_DISABLED=1,POLY_STRATEGY_MODE=momentum,POLY_PROMOTION_READINESS_MIN=12,POLY_PROMOTION_MIN_TRADES=5,POLY_RETIRE_READINESS_MAX=0,POLY_RESET_GLADIATORS_TOKEN=2026-05-02-reset-momentum-flip,POLY_AUTO_TRADE_TOP_N=5,POLY_MIN_BET_USD=1,POLY_MAX_BET_PCT=0.5,POLY_KELLY_FRACTION=0.5" \
             --set-secrets="\
               NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,\
               NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest,\
@@ -81,11 +75,6 @@ jobs:
               METRICS_TOKEN=METRICS_TOKEN:latest"
 
       - name: Deploy to Cloud Run (secondary - antigravity-trade)
-        # FAZA B.2 — ships same image+config to the secondary service so both
-        # cron schedulers run identical code. --image reuse avoids second docker
-        # build. If secondary deploy fails, primary remains deployed (non-fatal).
-        # Continues on error so that primary-only rollouts are still possible
-        # if antigravity-trade is ever decommissioned.
         continue-on-error: true
         run: |
           IMAGE="gcr.io/$PROJECT_ID/$SERVICE:$GITHUB_SHA"
@@ -99,7 +88,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true,POLYMARKET_INGEST_ENABLED=1,DIRECTION_LONG_DISABLED=1,POLY_STRATEGY_MODE=momentum,POLY_PROMOTION_READINESS_MIN=12,POLY_PROMOTION_MIN_TRADES=5,POLY_RETIRE_READINESS_MAX=0,POLY_RESET_GLADIATORS_TOKEN=2026-05-02-reset-momentum-flip,POLY_AUTO_TRADE_TOP_N=5" \
+            --set-env-vars="NODE_ENV=production,MOLTBOOK_ENGINE=karma,MOLTBOOK_ACTIVE_MODE=karma,POLYMARKET_WS_AUTOSTART=true,POLYMARKET_INGEST_ENABLED=1,DIRECTION_LONG_DISABLED=1,POLY_STRATEGY_MODE=momentum,POLY_PROMOTION_READINESS_MIN=12,POLY_PROMOTION_MIN_TRADES=5,POLY_RETIRE_READINESS_MAX=0,POLY_RESET_GLADIATORS_TOKEN=2026-05-02-reset-momentum-flip,POLY_AUTO_TRADE_TOP_N=5,POLY_MIN_BET_USD=1,POLY_MAX_BET_PCT=0.5,POLY_KELLY_FRACTION=0.5" \
             --set-secrets="\
               NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,\
               NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest,\
