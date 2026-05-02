@@ -1,8 +1,9 @@
 // GET /api/v2/polymarket/cron/scan — Auto scan + evaluate + phantom bet placement
+//                                  + AUTO-TRADE top-N by conviction (2026-05-02)
 import { NextResponse } from 'next/server';
 import { PolyDivision } from '@/lib/polymarket/polyTypes';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
-import { evaluateMarket } from '@/lib/polymarket/polyGladiators';
+import { evaluateMarket, PolyGladiator } from '@/lib/polymarket/polyGladiators';
 import { openPosition } from '@/lib/polymarket/polyWallet';
 import { correlateDecision } from '@/lib/polymarket/correlationLayer';
 import { logDecision } from '@/lib/polymarket/decisionLog';
@@ -27,45 +28,43 @@ const log = createLogger('PolymarketCronScan');
 export const dynamic = 'force-dynamic';
 
 // ── Threshold knobs (env-configurable; safe restore via env change) ──
-// Rationale: with defaults 50/50 and current markets, 12 scans in 45min produced 0 phantom bets.
-// Lowering lets training loop start. Risk bounded: PAPER wallet + phantomBets don't touch capital
-// unless gladiator.isLive === true, which requires WR>55 + readiness>70 + ≥20 bets.
-// Kill/restore: unset POLY_EDGE_MIN / POLY_CONF_MIN → defaults to historical 50/50.
 const EDGE_MIN = Number.parseInt(process.env.POLY_EDGE_MIN ?? '50', 10);
 const CONF_MIN = Number.parseInt(process.env.POLY_CONF_MIN ?? '50', 10);
 
-// ── FAZA 4.3 — scan rotation knobs ────────────────────────────────────────
-// Original code hardcoded 3 priority divisions (TRENDING, CRYPTO, POLITICS)
-// and the "rotating through others" comment was never implemented. Production
-// gauge data (FAZA 4.2) showed 13/16 divisions stale 10-13h+ because the cron
-// only ever refreshed the priority 3. This rotation layer picks ROT_COUNT
-// non-priority divisions per tick, cycling deterministically by wall-clock
-// bucket so every Cloud Run instance agrees on which extras to scan.
-//
-// Kill-switch: POLY_SCAN_ROTATION_COUNT=0 reverts to priority-only (old behavior).
-// Tuning: POLY_SCAN_ROTATION_COUNT=3 + 15-min cadence → full 16-division
-// coverage in ≤5 ticks (~75 min worst case). Cost scales linearly with
-// rotation count (doubles API calls at default 3).
-//
-// ASUMPȚII (rup → rotation wrong, NOT financial):
-//   - Cloud Scheduler cadence ≈ POLY_SCAN_ROTATION_PERIOD_MIN (default 15).
-//     If cadence drifts ±1 min, adjacent buckets may overlap by 1 division —
-//     negligible cost, no correctness impact.
-//   - All instances share wall-clock to ≤ tick precision (Cloud Run guarantees).
-//   - Priority divisions array length stays at 3 (assertion below).
+// ── FAZA 4.3 — scan rotation knobs ───────────────────────────────────
 const ROT_COUNT = Math.max(0, Number.parseInt(process.env.POLY_SCAN_ROTATION_COUNT ?? '3', 10) || 0);
 const ROT_PERIOD_MS =
   Math.max(1, Number.parseInt(process.env.POLY_SCAN_ROTATION_PERIOD_MIN ?? '15', 10) || 15) * 60_000;
 
+// ── AUTO-TRADE top-N by conviction (2026-05-02) ──────────────────────
+// When >0, scan cron collects ALL qualifying opportunities, sorts by conviction
+// (correlated.finalScore DESC), takes top N, and opens positions BYPASSING the
+// gladiator.isLive promotion gate. Force-promotes selected gladiators so the
+// resolve cron closes their positions on market resolution.
+//
+// Kill: POLY_AUTO_TRADE_TOP_N=0 → reverts to legacy isLive-gated path.
+// Safety net (existing in polyWallet, unchanged):
+//   - daily loss limit: -$50 → tradingDisabledReason set, openPosition returns null
+//   - per-position loss: -$25 → same
+//   - MAX_POSITIONS_PER_DIVISION=5 → openPosition returns null when full
+//   - MAX_BET_PCT_OF_DIVISION_BALANCE=10% → caps bet size
+const AUTO_TRADE_TOP_N = Math.max(0, Number.parseInt(process.env.POLY_AUTO_TRADE_TOP_N ?? '0', 10) || 0);
+
+// Type for the candidate queue used in AUTO-TRADE mode.
+interface AutoTradeCandidate {
+  gladiator: PolyGladiator;
+  marketId: string;
+  division: PolyDivision;
+  outcomeId: string;
+  direction: 'BUY_YES' | 'BUY_NO';
+  entryPrice: number;
+  confidence: number;
+  edgeScore: number;
+  conviction: number; // ranking key (correlated.finalScore)
+  decisionId?: string;
+}
+
 // ─── ADMIN: One-shot gladiator reset (added 2026-05-02) ─────────────────────
-// Triggered by env POLY_RESET_GLADIATORS_TOKEN. Compares against last-applied
-// token persisted in json_store. Mismatch => reset all 16 gladiators (zero stats,
-// clear phantomBets, un-retire, readinessScore=30) and persist new token.
-//
-// Idempotent: once a token is applied, subsequent scans no-op until token rotates.
-// Self-healing: any DB failure logs + continues (never blocks scan).
-//
-// Kill: unset POLY_RESET_GLADIATORS_TOKEN. To re-trigger: rotate token value.
 async function maybeResetGladiators(
   gladiators: ReturnType<typeof getGladiators>,
 ): Promise<{ applied: boolean; token?: string; reason?: string }> {
@@ -90,13 +89,10 @@ async function maybeResetGladiators(
       g.stats = { winRate: 0, profitFactor: 1.0, maxDrawdown: 0, sharpeRatio: 0, totalTrades: 0 };
       g.phantomBets = [];
       g.cumulativeEdge = 0;
-      // Mid-tier readiness: above retire floor (0 with new env), well below promotion gate (12).
-      // Each fresh win adds ~5 → promotion after ~1-2 wins.
       g.readinessScore = 30;
       g.status = 'IN_TRAINING';
       g.isLive = false;
       g.lastUpdated = Date.now();
-      // Clear PF accumulators (defensively — grossWins/Losses optional fields)
       delete (g.stats as { grossWins?: number }).grossWins;
       delete (g.stats as { grossLosses?: number }).grossLosses;
     }
@@ -133,9 +129,6 @@ export async function GET(request: Request) {
     const priorityDivisions = [PolyDivision.TRENDING, PolyDivision.CRYPTO, PolyDivision.POLITICS];
 
     // FAZA 4.3 — deterministic time-bucket rotation across remaining divisions.
-    // Each tick picks ROT_COUNT extras so the full 16-division set rolls over
-    // in ~ceil(13/ROT_COUNT) ticks. Bucket = wall-clock cadence index; same
-    // across instances → consistent coverage with zero coordination.
     const allDivisions = Object.values(PolyDivision);
     const nonPriority = allDivisions.filter(d => !priorityDivisions.includes(d));
     let rotated: PolyDivision[] = [];
@@ -155,10 +148,14 @@ export async function GET(request: Request) {
     const scannedDivisions: string[] = [];
     const scanErrors: Array<{ division: string; error: string }> = [];
 
+    // AUTO-TRADE: candidate queue, populated during loop, processed after.
+    const autoTradeCandidates: AutoTradeCandidate[] = [];
+
     // FAZA 3.4 — open scan-history run for audit trail + drill-down
     const envSnapshot = {
       EDGE_MIN,
       CONF_MIN,
+      AUTO_TRADE_TOP_N,
       ACT_THRESHOLD: process.env.POLY_FINAL_ACT_THRESHOLD ?? '45',
       CORRELATION_ENABLED: process.env.POLYMARKET_CORRELATION_ENABLED !== '0',
       GOLDSKY_CORRELATION: process.env.POLYMARKET_GOLDSKY_CORRELATION !== '0',
@@ -175,32 +172,18 @@ export async function GET(request: Request) {
 
         opportunitiesFound += result.opportunities.length;
 
-        // Find gladiator for this division
         const gladiator = gladiators.find(g => g.division === division);
         if (!gladiator) {
           log.warn('No gladiator found for division', { division });
           continue;
         }
 
-        // Evaluate each opportunity and place phantom bets
         for (const opportunity of result.opportunities) {
-          if (opportunity.edgeScore < EDGE_MIN) continue; // Skip low edge scores (env POLY_EDGE_MIN)
+          if (opportunity.edgeScore < EDGE_MIN) continue;
 
           const evaluation = evaluateMarket(gladiator, opportunity.market, opportunity);
-
-          // FAZA 3.3: Correlate decision cross-source (edge × goldsky × karma × liquidity).
-          // Runs async (may hit Goldsky subgraph) but is budget-bounded: only
-          // calls Goldsky when evaluation edge >= MIN_EDGE_FOR_GOLDSKY (default 40).
-          // Graceful degradation: any source unavailable → multiplier=1.0 (neutru).
           const correlated = await correlateDecision(gladiator, opportunity.market, evaluation, opportunity);
 
-          // Always log decision (acted or not). Best-effort persist — never blocks.
-          // This row is the audit trail for FAZA 3.4 drill-down. runId links
-          // the decision to its scan-history row (nullable — scan history is soft).
-          // FAZA 3.7: AWAIT logDecision to capture decisionId (uuid is generated
-          // locally even if INSERT fails, so threading is safe regardless of DB
-          // state). decisionId is attached to the wallet position so resolve
-          // cron can call settleDecision() with realized PnL.
           decisionsLogged++;
           const logRes = await logDecision({
             gladiator,
@@ -212,17 +195,7 @@ export async function GET(request: Request) {
           });
           const decisionId = logRes.decisionId;
 
-          // Place phantom bet if correlation says so (replaces old plain CONF_MIN gate).
-          // Back-compat: if correlation is disabled, correlated.shouldAct falls back to
-          // the classic (direction!=SKIP && confidence>=50) condition.
-          // NOTE: explicit `direction !== 'SKIP'` is redundant with shouldAct but
-          // restores TypeScript flow-narrowing for the openPosition() call below,
-          // which requires direction ∈ {BUY_YES, BUY_NO}.
           if (correlated.shouldAct && evaluation.direction !== 'SKIP' && evaluation.confidence >= CONF_MIN) {
-            // Create phantom bet on gladiator.
-            // Outcome resolution: prefer literal YES/NO match, fallback to
-            // positional [0]=YES/[1]=NO for markets with arbitrary labels
-            // (NBA teams, candidate names). Sync cu paper-seed pickOutcomeId.
             const outcomes = opportunity.market.outcomes || [];
             let resolvedOutcomeId = outcomes.find(
                 o => (evaluation.direction === 'BUY_YES' && o.name.toUpperCase() === 'YES') ||
@@ -232,7 +205,7 @@ export async function GET(request: Request) {
               const idx = evaluation.direction === 'BUY_YES' ? 0 : 1;
               resolvedOutcomeId = outcomes[idx]?.id;
             }
-            if (!resolvedOutcomeId) continue; // Skip if outcome not found — prevents phantom/live bets with invalid ID
+            if (!resolvedOutcomeId) continue;
 
             const bet = {
               id: `bet-${opportunity.marketId}-${Date.now()}`,
@@ -248,8 +221,22 @@ export async function GET(request: Request) {
 
             gladiator.phantomBets.push(bet);
 
-            // If gladiator is live, actually open position on wallet
-            if (gladiator.isLive && bet.outcomeId) {
+            // AUTO-TRADE mode: queue for ranking, defer position open until after all divisions.
+            if (AUTO_TRADE_TOP_N > 0) {
+              autoTradeCandidates.push({
+                gladiator,
+                marketId: opportunity.marketId,
+                division,
+                outcomeId: resolvedOutcomeId,
+                direction: evaluation.direction,
+                entryPrice: bet.entryPrice,
+                confidence: evaluation.confidence,
+                edgeScore: opportunity.edgeScore,
+                conviction: correlated.finalScore,
+                decisionId,
+              });
+            } else if (gladiator.isLive && bet.outcomeId) {
+              // Legacy path: open immediately when isLive.
               const position = openPosition(
                 wallet,
                 opportunity.marketId,
@@ -259,11 +246,10 @@ export async function GET(request: Request) {
                 bet.entryPrice,
                 evaluation.confidence,
                 opportunity.edgeScore,
-                decisionId, // FAZA 3.7 — thread uuid so resolve can settle pnl
+                decisionId,
               );
-
               if (position) {
-                log.info('Opened live position', {
+                log.info('Opened live position (legacy)', {
                   marketId: opportunity.marketId,
                   division,
                   gladiator: gladiator.id,
@@ -288,6 +274,83 @@ export async function GET(request: Request) {
       }
     }
 
+    // ─── AUTO-TRADE: rank candidates by conviction, take top N, open positions ───
+    let autoTradeOpened = 0;
+    let autoTradePromoted = 0;
+    const autoTradeOpened_details: Array<{ marketId: string; division: string; conviction: number; capital: number }> = [];
+    if (AUTO_TRADE_TOP_N > 0 && autoTradeCandidates.length > 0) {
+      // Sort DESC by conviction (correlated.finalScore). Tiebreak: confidence then edgeScore.
+      autoTradeCandidates.sort((a, b) => {
+        if (b.conviction !== a.conviction) return b.conviction - a.conviction;
+        if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+        return b.edgeScore - a.edgeScore;
+      });
+
+      const top = autoTradeCandidates.slice(0, AUTO_TRADE_TOP_N);
+      log.warn('[AUTO-TRADE] Selecting top-N candidates', {
+        N: AUTO_TRADE_TOP_N,
+        candidatesTotal: autoTradeCandidates.length,
+        topConvictions: top.map(c => c.conviction.toFixed(1)),
+      });
+
+      for (const c of top) {
+        // Force-promote so resolve cron closes positions naturally on market resolution.
+        // Side effect retained beyond this tick — gladiator stays ACTIVE.
+        if (!c.gladiator.isLive) {
+          c.gladiator.isLive = true;
+          c.gladiator.status = 'ACTIVE';
+          autoTradePromoted++;
+          log.warn('[AUTO-TRADE] Force-promoted gladiator', {
+            id: c.gladiator.id,
+            division: c.division,
+            reason: 'top-N AUTO-TRADE selection',
+          });
+        }
+
+        // openPosition is gated by polyWallet's safety net:
+        //   - daily/per-position loss limits
+        //   - MAX_POSITIONS_PER_DIVISION cap
+        //   - MAX_BET_PCT_OF_DIVISION_BALANCE cap
+        // Returns null if any gate trips — we just skip silently.
+        const position = openPosition(
+          wallet,
+          c.marketId,
+          c.division,
+          c.outcomeId,
+          c.direction,
+          c.entryPrice,
+          c.confidence,
+          c.edgeScore,
+          c.decisionId,
+        );
+
+        if (position) {
+          autoTradeOpened++;
+          autoTradeOpened_details.push({
+            marketId: c.marketId,
+            division: c.division,
+            conviction: c.conviction,
+            capital: position.capitalAllocated,
+          });
+          log.warn('[AUTO-TRADE] Position opened', {
+            marketId: c.marketId,
+            division: c.division,
+            gladiator: c.gladiator.id,
+            conviction: c.conviction.toFixed(1),
+            confidence: c.confidence,
+            edgeScore: c.edgeScore,
+            direction: c.direction,
+            capital: position.capitalAllocated,
+          });
+        } else {
+          log.info('[AUTO-TRADE] openPosition skipped (loss limit / max positions / size)', {
+            marketId: c.marketId,
+            division: c.division,
+          });
+        }
+      }
+    }
+
     setLastScans(lastScans);
     await persistWallet();
     await persistGladiators();
@@ -302,9 +365,6 @@ export async function GET(request: Request) {
       envSnapshot,
     });
 
-    // FAZA 3.10 — fire-and-forget settlement gauge refresh so Prometheus
-    // sees fresh Polymarket settlement state every scan tick (~15min).
-    // Zero blocking: errors are swallowed (probe is pure observability).
     void probeSettlementHealth().catch(() => {});
 
     return NextResponse.json({
@@ -317,6 +377,14 @@ export async function GET(request: Request) {
       gladiatorsActive: gladiators.filter(g => g.isLive).length,
       walletBalance: wallet.totalBalance,
       resetGladiators: resetResult,
+      autoTrade: {
+        enabled: AUTO_TRADE_TOP_N > 0,
+        topN: AUTO_TRADE_TOP_N,
+        candidatesQueued: autoTradeCandidates.length,
+        positionsOpened: autoTradeOpened,
+        gladiatorsPromoted: autoTradePromoted,
+        details: autoTradeOpened_details,
+      },
       timestamp: Date.now(),
     });
   } catch (err) {
