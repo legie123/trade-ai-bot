@@ -70,14 +70,23 @@ export async function generateWeeklyReview(): Promise<WeeklyReviewResult> {
     };
   }
 
-  // Realized PnL from snapshot delta over window
+  // Realized PnL from snapshot delta over window.
+  // PRE-BUG FIX: explicit length check; snaps?.[snaps.length-1] evaluates
+  // snaps.length even when snaps is null/undefined (TypeError). Empty
+  // snapshot table → realizedPnl=0 (acceptable: no data, no movement).
   const { data: snaps } = await supabase
     .from('poly_paper_forward_snapshots')
     .select('wallet_realized_pnl_usdc, snapshot_at')
     .gte('snapshot_at', windowStart.toISOString())
     .order('snapshot_at', { ascending: true });
-  const startPnl = Number(snaps?.[0]?.wallet_realized_pnl_usdc ?? 0);
-  const endPnl = Number(snaps?.[snaps.length - 1]?.wallet_realized_pnl_usdc ?? startPnl);
+
+  const snapsList = snaps ?? [];
+  const startPnl = snapsList.length > 0
+    ? Number(snapsList[0].wallet_realized_pnl_usdc ?? 0)
+    : 0;
+  const endPnl = snapsList.length > 0
+    ? Number(snapsList[snapsList.length - 1].wallet_realized_pnl_usdc ?? startPnl)
+    : startPnl;
   const realizedPnl = endPnl - startPnl;
 
   const verdict = classifyVerdict(
