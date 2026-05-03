@@ -20,6 +20,7 @@ const LLM_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // Cache for 24h
 const DEEPSEEK_KEY = () => process.env.DEEPSEEK_API_KEY || '';
 const OPENAI_KEY = () => process.env.OPENAI_API_KEY || '';
 const GEMINI_KEY = () => process.env.GEMINI_API_KEY || '';
+const ANTHROPIC_KEY = () => process.env.ANTHROPIC_API_KEY || '';
 
 export interface MarketAnalysis {
   direction: 'YES' | 'NO' | 'SKIP';
@@ -62,13 +63,11 @@ export async function analyzeMarket(
     };
   }
 
-  // Run both LLMs in parallel
   const [architectOpinion, oracleOpinion] = await Promise.all([
     getArchitectView(market, division),
     getOracleView(market, division),
   ]);
 
-  // Compute consensus
   const consensusDirection = aggregateDirection(
     architectOpinion.direction,
     oracleOpinion.direction,
@@ -82,21 +81,16 @@ export async function analyzeMarket(
     architectOpinion.direction === oracleOpinion.direction ? 100 : 0,
   );
 
-  // ── ADDITIVE (Phase 2 Batch 6): sentiment bias — never flips direction,
-  // only adjusts confidence when sentiment agrees or disagrees. Bounded ±15.
-  // Controlled by SYNDICATE_SENTIMENT_BIAS (default ON). Safe no-op if no sentiment.
   let sentimentAdjustment = 0;
   let sentimentNote = '';
   try {
     const biasEnabled = (process.env.SYNDICATE_SENTIMENT_BIAS ?? 'true').toLowerCase() !== 'false';
     if (biasEnabled) {
       const snap = await sentimentAgent.getSnapshot();
-      // Try to match on title symbols first, then fall back to overall
       const title = (market.title || '').toUpperCase();
       const matched = snap.bySymbol.find((s) => title.includes(s.symbol));
       const overall = snap.overall;
       if (matched && matched.count >= 2) {
-        // Align score with direction: YES benefits from bullish, NO from bearish, SKIP no bias
         const dir = consensusDirection;
         if (dir === 'YES') {
           sentimentAdjustment = Math.round(matched.aggScore * 15);
@@ -105,13 +99,11 @@ export async function analyzeMarket(
         }
         sentimentNote = `sentiment(${matched.symbol}=${matched.aggScore.toFixed(2)}, n=${matched.count}) Δ=${sentimentAdjustment}`;
       } else if (overall.count >= 5 && Math.abs(overall.aggScore) > 0.2) {
-        // Weak fallback: overall market sentiment, smaller magnitude
         sentimentAdjustment = Math.round(overall.aggScore * 5);
         sentimentNote = `sentiment(overall=${overall.aggScore.toFixed(2)}, n=${overall.count}) Δ=${sentimentAdjustment}`;
       }
     }
   } catch (e) {
-    // Sentiment failure never blocks syndicate decision
     log.warn('syndicate sentiment bias skipped', { error: String(e) });
   }
 
@@ -127,7 +119,6 @@ export async function analyzeMarket(
   };
 }
 
-// ─── Batch analyze multiple markets ────────────────────
 export async function batchAnalyze(
   markets: PolyMarket[],
   division: PolyDivision,
@@ -138,30 +129,20 @@ export async function batchAnalyze(
 
   return results.map((r, i) => {
     if (r.status === 'fulfilled') return r.value;
-    log.warn('Market analysis failed', {
-      market: markets[i]?.id,
-      error: r.reason,
-    });
+    log.warn('Market analysis failed', { market: markets[i]?.id, error: r.reason });
     return {
-      direction: 'SKIP',
-      confidence: 0,
-      reasoning: 'Analysis error',
-      architectView: '',
-      oracleView: '',
-      consensusScore: 0,
+      direction: 'SKIP', confidence: 0, reasoning: 'Analysis error',
+      architectView: '', oracleView: '', consensusScore: 0,
     };
   });
 }
 
-// ─── Get consensus for division ────────────────────────
 export async function getConsensusForDivision(
   markets: PolyMarket[],
   division: PolyDivision,
   topN = 5,
 ): Promise<MarketAnalysis[]> {
   const analyses = await batchAnalyze(markets, division);
-
-  // Rank by confidence and consensus
   const ranked = analyses
     .filter(a => a.direction !== 'SKIP')
     .sort((a, b) => {
@@ -169,25 +150,17 @@ export async function getConsensusForDivision(
       const scoreB = b.confidence * 0.7 + b.consensusScore * 0.3;
       return scoreB - scoreA;
     });
-
   return ranked.slice(0, topN);
 }
 
-// ─── Architect LLM: Fundamental analysis ──────────────
 async function getArchitectView(
-  market: PolyMarket,
-  division: PolyDivision,
+  market: PolyMarket, division: PolyDivision,
 ): Promise<ArchitectOpinion> {
   const prompt = buildArchitectPrompt(market, division);
-
   const response = await callLLM(prompt, 'architect', {
-    marketId: market.id,
-    titleHint: market.title,
-    division,
+    marketId: market.id, titleHint: market.title, division,
   });
-  if (!response) {
-    return fallbackArchitectOpinion(market);
-  }
+  if (!response) return fallbackArchitectOpinion(market);
 
   try {
     const parsed = JSON.parse(response);
@@ -204,21 +177,14 @@ async function getArchitectView(
   }
 }
 
-// ─── Oracle LLM: Sentiment & momentum ──────────────────
 async function getOracleView(
-  market: PolyMarket,
-  division: PolyDivision,
+  market: PolyMarket, division: PolyDivision,
 ): Promise<OracleOpinion> {
   const prompt = buildOraclePrompt(market, division);
-
   const response = await callLLM(prompt, 'oracle', {
-    marketId: market.id,
-    titleHint: market.title,
-    division,
+    marketId: market.id, titleHint: market.title, division,
   });
-  if (!response) {
-    return fallbackOracleOpinion(market);
-  }
+  if (!response) return fallbackOracleOpinion(market);
 
   try {
     const parsed = JSON.parse(response);
@@ -235,13 +201,11 @@ async function getOracleView(
   }
 }
 
-// ─── Build architect prompt ────────────────────────────
 function buildArchitectPrompt(market: PolyMarket, division: PolyDivision): string {
   const outcomes = market.outcomes?.map(o => `${o.name}: $${o.price.toFixed(3)}`).join(', ') || 'N/A';
   const timeToExpiry = Math.round(
     (new Date(market.endDate).getTime() - Date.now()) / (1000 * 60 * 60),
   );
-
   return `
 You are a prediction market fundamental analyst.
 
@@ -268,10 +232,8 @@ Respond with valid JSON:
 }`;
 }
 
-// ─── Build oracle prompt ───────────────────────────────
 function buildOraclePrompt(market: PolyMarket, division: PolyDivision): string {
   const outcomes = market.outcomes?.map(o => o.name).join(', ') || 'N/A';
-
   return `
 You are a prediction market sentiment and momentum analyst.
 
@@ -296,7 +258,6 @@ Respond with valid JSON:
 }`;
 }
 
-// ─── Cache layer: get/save/validate ───────────────────
 async function getCachedLLMResponse(prompt: string, role: string): Promise<string | null> {
   try {
     const hash = await hashPrompt(prompt, role);
@@ -305,33 +266,23 @@ async function getCachedLLMResponse(prompt: string, role: string): Promise<strin
       .select('response, created_at')
       .eq('hash', hash)
       .single();
-
     if (error || !data) return null;
-
     const age = Date.now() - new Date(data.created_at).getTime();
-    if (age > LLM_CACHE_TTL_MS) return null; // Expired
-
+    if (age > LLM_CACHE_TTL_MS) return null;
     log.debug('LLM cache hit', { role, age });
     return data.response;
   } catch {
-    return null; // Cache lookup failed, continue to live calls
+    return null;
   }
 }
 
 async function saveCachedLLMResponse(
-  prompt: string,
-  role: string,
-  response: string,
+  prompt: string, role: string, response: string,
 ): Promise<void> {
   try {
     const hash = await hashPrompt(prompt, role);
     await supabase.from('llm_cache').upsert(
-      {
-        hash,
-        role,
-        response,
-        created_at: new Date().toISOString(),
-      },
+      { hash, role, response, created_at: new Date().toISOString() },
       { onConflict: 'hash' },
     );
   } catch (err) {
@@ -340,11 +291,9 @@ async function saveCachedLLMResponse(
 }
 
 async function hashPrompt(prompt: string, role: string): Promise<string> {
-  // Simple hash for cache key: role + first 100 chars of prompt
   return `${role}:${prompt.substring(0, 100)}`.replace(/\s+/g, '_');
 }
 
-// ─── Attribution context — optional, threaded to per-market cost tracker ─
 interface CallAttr {
   marketId?: string;
   titleHint?: string;
@@ -352,28 +301,33 @@ interface CallAttr {
 }
 
 // ─── Call LLM with parallel providers + cache ─────────
+// Phase 1.4 (2026-05-03): Claude added as 4th parallel provider.
+// Chain: cache → [Claude + DeepSeek + OpenAI parallel] → Gemini fallback → null.
+// Each provider is independent — failure on one does not block others.
+// Wiring polySyndicate INTO decision flow happens in Phase 3 (currently orphan).
 async function callLLM(prompt: string, role: string, attr?: CallAttr): Promise<string | null> {
-  // 1. Try cache first — cache hits cost $0, not attributed to markets.
   const cached = await getCachedLLMResponse(prompt, role);
   if (cached) return cached;
 
-  // 2. Run DeepSeek and OpenAI in parallel
+  // Parallel providers — first non-null wins.
   const results = await Promise.allSettled([
+    ANTHROPIC_KEY() ? callClaude(prompt, role, attr) : Promise.resolve(null),
     DEEPSEEK_KEY() ? callDeepSeek(prompt, role, attr) : Promise.resolve(null),
     OPENAI_KEY() ? callOpenAI(prompt, role, attr) : Promise.resolve(null),
   ]);
 
-  const deepseekRes = results[0]?.status === 'fulfilled' ? results[0].value : null;
-  const openaiRes = results[1]?.status === 'fulfilled' ? results[1].value : null;
+  const claudeRes = results[0]?.status === 'fulfilled' ? results[0].value : null;
+  const deepseekRes = results[1]?.status === 'fulfilled' ? results[1].value : null;
+  const openaiRes = results[2]?.status === 'fulfilled' ? results[2].value : null;
 
-  const response = deepseekRes || openaiRes;
+  // Priority: Claude > DeepSeek > OpenAI (Claude tends to be most coherent for reasoning tasks)
+  const response = claudeRes || deepseekRes || openaiRes;
   if (response) {
-    // Cache successful response
     await saveCachedLLMResponse(prompt, role, response);
     return response;
   }
 
-  // 3. Fall back to Gemini if both providers failed
+  // Fall back to Gemini if all primary providers failed
   if (GEMINI_KEY()) {
     const geminiRes = await callGemini(prompt, role, attr);
     if (geminiRes) {
@@ -386,7 +340,55 @@ async function callLLM(prompt: string, role: string, attr?: CallAttr): Promise<s
   return null;
 }
 
-// ─── DeepSeek API call ────────────────────────────────
+// ─── Claude (Anthropic) API call ─────────────────────────
+async function callClaude(prompt: string, role: string, attr?: CallAttr): Promise<string | null> {
+  const model = 'claude-opus-4-6';
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY(),
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 300,
+        system: `You are a ${role === 'architect' ? 'fundamental analyst' : 'sentiment analyst'} for prediction markets. Respond with ONLY valid JSON.`,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+      }),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
+
+    if (!res.ok) {
+      log.warn('Claude API error', { status: res.status });
+      return null;
+    }
+
+    const data = await res.json();
+    // Anthropic returns content as array of blocks; first text block is the response.
+    const content = (data.content as Array<{ type: string; text?: string }> | undefined)
+      ?.find((b) => b.type === 'text')?.text ?? null;
+    const tokens = Number(data.usage?.input_tokens ?? 0) + Number(data.usage?.output_tokens ?? 0);
+    if (content && attr?.marketId) {
+      recordLlmCall({
+        marketId: attr.marketId,
+        role,
+        provider: 'claude',
+        model,
+        tokens,
+        titleHint: attr.titleHint,
+        division: attr.division,
+      });
+    }
+    return content;
+  } catch (err) {
+    log.debug('Claude call failed', { error: String(err) });
+    return null;
+  }
+}
+
 async function callDeepSeek(prompt: string, role: string, attr?: CallAttr): Promise<string | null> {
   const model = 'deepseek-chat';
   try {
@@ -399,10 +401,7 @@ async function callDeepSeek(prompt: string, role: string, attr?: CallAttr): Prom
       body: JSON.stringify({
         model,
         messages: [
-          {
-            role: 'system',
-            content: `You are a ${role === 'architect' ? 'fundamental analyst' : 'sentiment analyst'} for prediction markets. Respond with ONLY valid JSON.`,
-          },
+          { role: 'system', content: `You are a ${role === 'architect' ? 'fundamental analyst' : 'sentiment analyst'} for prediction markets. Respond with ONLY valid JSON.` },
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
@@ -411,24 +410,17 @@ async function callDeepSeek(prompt: string, role: string, attr?: CallAttr): Prom
       }),
       signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
-
     if (!res.ok) {
       log.warn('DeepSeek API error', { status: res.status });
       return null;
     }
-
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content || null;
     const tokens = Number(data.usage?.total_tokens ?? 0);
     if (content && attr?.marketId) {
       recordLlmCall({
-        marketId: attr.marketId,
-        role,
-        provider: 'deepseek',
-        model,
-        tokens,
-        titleHint: attr.titleHint,
-        division: attr.division,
+        marketId: attr.marketId, role, provider: 'deepseek',
+        model, tokens, titleHint: attr.titleHint, division: attr.division,
       });
     }
     return content;
@@ -438,7 +430,6 @@ async function callDeepSeek(prompt: string, role: string, attr?: CallAttr): Prom
   }
 }
 
-// ─── OpenAI API call ──────────────────────────────────
 async function callOpenAI(prompt: string, role: string, attr?: CallAttr): Promise<string | null> {
   const model = 'gpt-4o-mini';
   try {
@@ -451,10 +442,7 @@ async function callOpenAI(prompt: string, role: string, attr?: CallAttr): Promis
       body: JSON.stringify({
         model,
         messages: [
-          {
-            role: 'system',
-            content: `You are a ${role === 'architect' ? 'fundamental analyst' : 'sentiment analyst'} for prediction markets. Respond with ONLY valid JSON.`,
-          },
+          { role: 'system', content: `You are a ${role === 'architect' ? 'fundamental analyst' : 'sentiment analyst'} for prediction markets. Respond with ONLY valid JSON.` },
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
@@ -463,24 +451,17 @@ async function callOpenAI(prompt: string, role: string, attr?: CallAttr): Promis
       }),
       signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
-
     if (!res.ok) {
       log.warn('OpenAI API error', { status: res.status });
       return null;
     }
-
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content || null;
     const tokens = Number(data.usage?.total_tokens ?? 0);
     if (content && attr?.marketId) {
       recordLlmCall({
-        marketId: attr.marketId,
-        role,
-        provider: 'openai',
-        model,
-        tokens,
-        titleHint: attr.titleHint,
-        division: attr.division,
+        marketId: attr.marketId, role, provider: 'openai',
+        model, tokens, titleHint: attr.titleHint, division: attr.division,
       });
     }
     return content;
@@ -490,7 +471,6 @@ async function callOpenAI(prompt: string, role: string, attr?: CallAttr): Promis
   }
 }
 
-// ─── Gemini API call ──────────────────────────────────
 async function callGemini(prompt: string, role: string, attr?: CallAttr): Promise<string | null> {
   const model = 'gemini-1.5-flash';
   try {
@@ -501,36 +481,23 @@ async function callGemini(prompt: string, role: string, attr?: CallAttr): Promis
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [
-            {
-              parts: [
-                {
-                  text: `${role === 'architect' ? 'Fundamental analyst' : 'Sentiment analyst'} for prediction markets.\n${prompt}\nRespond with ONLY valid JSON.`,
-                },
-              ],
-            },
+            { parts: [{ text: `${role === 'architect' ? 'Fundamental analyst' : 'Sentiment analyst'} for prediction markets.\n${prompt}\nRespond with ONLY valid JSON.` }] },
           ],
         }),
         signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
       },
     );
-
     if (!res.ok) {
       log.warn('Gemini API error', { status: res.status });
       return null;
     }
-
     const data = await res.json();
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text || null;
     const tokens = Number(data.usageMetadata?.totalTokenCount ?? 0);
     if (content && attr?.marketId) {
       recordLlmCall({
-        marketId: attr.marketId,
-        role,
-        provider: 'gemini',
-        model,
-        tokens,
-        titleHint: attr.titleHint,
-        division: attr.division,
+        marketId: attr.marketId, role, provider: 'gemini',
+        model, tokens, titleHint: attr.titleHint, division: attr.division,
       });
     }
     return content;
@@ -540,17 +507,12 @@ async function callGemini(prompt: string, role: string, attr?: CallAttr): Promis
   }
 }
 
-// ─── Fallback opinions (no LLM) ────────────────────────
 function fallbackArchitectOpinion(market: PolyMarket): ArchitectOpinion {
   const outcomes = market.outcomes || [];
   const yesPrice = outcomes[0]?.price || 0.5;
-
-  // Simple heuristic: if YES is <0.4, buy YES; if >0.6, buy NO
   const direction = yesPrice < 0.4 ? 'YES' : yesPrice > 0.6 ? 'NO' : 'SKIP';
-
   return {
-    direction,
-    confidence: 35,
+    direction, confidence: 35,
     reasoning: 'Fallback: Simple price heuristic. LLM unavailable.',
     baseRate: 50,
   };
@@ -559,7 +521,6 @@ function fallbackArchitectOpinion(market: PolyMarket): ArchitectOpinion {
 function fallbackOracleOpinion(market: PolyMarket): OracleOpinion {
   const hasVolume = (market.volume24h || 0) > 500;
   const hasLiquidity = (market.liquidityUSD || 0) > 1000;
-
   return {
     direction: hasVolume && hasLiquidity ? 'YES' : 'SKIP',
     confidence: 25,
@@ -569,7 +530,6 @@ function fallbackOracleOpinion(market: PolyMarket): OracleOpinion {
   };
 }
 
-// ─── Validate direction ────────────────────────────────
 function validateDirection(value: unknown): 'YES' | 'NO' | 'SKIP' {
   if (typeof value === 'string') {
     const upper = value.toUpperCase();
@@ -578,29 +538,17 @@ function validateDirection(value: unknown): 'YES' | 'NO' | 'SKIP' {
   return 'SKIP';
 }
 
-// ─── Aggregate direction from both LLMs ────────────────
 function aggregateDirection(
   architectDir: 'YES' | 'NO' | 'SKIP',
   oracleDir: 'YES' | 'NO' | 'SKIP',
 ): 'YES' | 'NO' | 'SKIP' {
-  // Both agree: strong signal
   if (architectDir === oracleDir) return architectDir;
-
-  // One says SKIP: defer to other
   if (architectDir === 'SKIP') return oracleDir;
   if (oracleDir === 'SKIP') return architectDir;
-
-  // Disagreement (YES vs NO): default to SKIP
   return 'SKIP';
 }
 
-// ─── Compute consensus strength ────────────────────────
-function computeAgreement(
-  confA: number,
-  confO: number,
-  directionMatch: number,
-): number {
-  // High confidence from both + direction agreement = high consensus
+function computeAgreement(confA: number, confO: number, directionMatch: number): number {
   const avgConf = (confA + confO) / 2;
   return Math.round(avgConf * 0.7 + directionMatch * 0.3);
 }
