@@ -141,6 +141,26 @@ gcloud scheduler jobs create http trade-ai-moltbook \
     --quiet
 echo "     OK"
 
+# ─── JOB 8: Polymarket Resolve (every 10 min) — ADDED 2026-05-02 ───
+# CRITICAL: Phase 0 audit discovered this job was missing → 0 settled / 9697 acted.
+# /cron/resolve endpoint + settlementHook.ts exist + are wired, but never invoked.
+# This job triggers settlement loop: detects expired markets, fetches resolution,
+# closes paper positions, writes realized PnL to polymarket_decisions.settled_*.
+# Cadence: every 10min — faster than scan/mtm because settlements happen at
+# arbitrary moments. Cron is idempotent; missing settlements caught in next tick.
+echo "  -> Job: trade-ai-polymarket-resolve (every 10 min) [NEW]"
+gcloud scheduler jobs delete trade-ai-polymarket-resolve --location="$REGION" --quiet 2>/dev/null || true
+gcloud scheduler jobs create http trade-ai-polymarket-resolve \
+    --location="$REGION" \
+    --schedule="*/10 * * * *" \
+    --uri="${SERVICE_URL}/api/v2/polymarket/cron/resolve" \
+    --http-method=GET \
+    --headers="Authorization=Bearer ${CRON_SECRET}" \
+    --attempt-deadline=180s \
+    --description="Polymarket settlement loop: close resolved positions, settle PnL" \
+    --quiet
+echo "     OK"
+
 echo ""
 echo "[5/6] Verific joburile create..."
 echo ""
@@ -149,24 +169,25 @@ gcloud scheduler jobs list --location="$REGION" --format="table(name,schedule,st
 echo ""
 echo "[6/6] Trigger manual pe toate joburile (prima rulare)..."
 echo ""
-for JOB in trade-ai-cron-loop trade-ai-polymarket-scan trade-ai-polymarket-mtm trade-ai-sentiment trade-ai-auto-promote trade-ai-positions trade-ai-moltbook; do
+for JOB in trade-ai-cron-loop trade-ai-polymarket-scan trade-ai-polymarket-mtm trade-ai-sentiment trade-ai-auto-promote trade-ai-positions trade-ai-moltbook trade-ai-polymarket-resolve; do
     echo "  -> Trigger: $JOB"
     gcloud scheduler jobs run "$JOB" --location="$REGION" --quiet 2>/dev/null || echo "     (skip - va rula la urmatorul interval)"
 done
 
 echo ""
 echo "=========================================="
-echo "  DONE! 7 cron jobs create si pornite."
+echo "  DONE! 8 cron jobs create si pornite."
 echo "=========================================="
 echo ""
 echo "Jobs active:"
-echo "  - Cron loop:       every 5 min"
-echo "  - Polymarket scan: every 15 min"
-echo "  - Polymarket MTM:  every 30 min"
-echo "  - Sentiment:       every 30 min"
-echo "  - Auto-promote:    every hour"
-echo "  - Positions:       every 5 min"
-echo "  - Moltbook:        every 30 min"
+echo "  - Cron loop:           every 5 min"
+echo "  - Polymarket scan:     every 15 min"
+echo "  - Polymarket MTM:      every 30 min"
+echo "  - Polymarket resolve:  every 10 min   [NEW — settlement loop]"
+echo "  - Sentiment:           every 30 min"
+echo "  - Auto-promote:        every hour"
+echo "  - Positions:           every 5 min"
+echo "  - Moltbook:            every 30 min"
 echo ""
 echo "Verifica in GCP Console:"
 echo "  https://console.cloud.google.com/cloudscheduler?project=$PROJECT"
