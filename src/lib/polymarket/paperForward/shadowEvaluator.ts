@@ -6,7 +6,7 @@
 
 import { supabase } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
-import type { PolyOpportunity, PolyDivision } from '@/lib/polymarket/polyTypes';
+import type { PolyOpportunity, PolyDivision, PolyMarket } from '@/lib/polymarket/polyTypes';
 
 const log = createLogger('ShadowEvaluator');
 
@@ -28,6 +28,15 @@ export interface ShadowEvalContext {
   liveDirection: string;
   liveActed: boolean;
   liveConviction: number;
+}
+
+interface AnalyzeMarketShape {
+  direction?: string;
+  confidence?: number;
+  consensusScore?: number;
+  reasoning?: string;
+  architectView?: string;
+  oracleView?: string;
 }
 
 /**
@@ -74,20 +83,22 @@ export async function evaluateShadowProposals(ctx: ShadowEvalContext): Promise<v
   try {
     dailyCallCount++;
     const mod = await import('@/lib/polymarket/polySyndicate');
-    const analyzeMarket = (mod as { analyzeMarket?: (mkt: unknown) => Promise<{
-      action?: string;
-      confidence?: number;
-      consensusScore?: number;
-      reasoning?: string;
-    }>; }).analyzeMarket;
+    const analyzeMarket = (
+      mod as {
+        analyzeMarket?: (
+          market: PolyMarket,
+          division: PolyDivision,
+        ) => Promise<AnalyzeMarketShape>;
+      }
+    ).analyzeMarket;
     if (typeof analyzeMarket !== 'function') {
       log.warn('analyzeMarket not exported from polySyndicate');
       return;
     }
-    const analysis = await analyzeMarket(ctx.opportunity.market);
-    const action = (analysis?.action ?? 'SKIP').toUpperCase();
+    const analysis = await analyzeMarket(ctx.opportunity.market, ctx.division);
+    const dirRaw = (analysis?.direction ?? 'SKIP').toUpperCase();
     const dir =
-      action === 'YES' ? 'BUY_YES' : action === 'NO' ? 'BUY_NO' : 'SKIP';
+      dirRaw === 'YES' ? 'BUY_YES' : dirRaw === 'NO' ? 'BUY_NO' : 'SKIP';
     await supabase.from('poly_shadow_proposals').insert({
       strategy_id: 'syndicate_llm',
       market_id: ctx.opportunity.marketId,
