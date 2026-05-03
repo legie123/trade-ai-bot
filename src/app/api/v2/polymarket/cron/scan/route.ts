@@ -1,6 +1,7 @@
 // GET /api/v2/polymarket/cron/scan — Auto scan + evaluate + phantom bet placement
 //                                  + AUTO-TRADE top-N by conviction (2026-05-02)
 //                                  + riskManager guard (2026-05-03 Phase 1.3)
+//                                  + strategy plugin shadow (2026-05-03 Phase 2)
 import { NextResponse } from 'next/server';
 import { PolyDivision, PolyOpportunity } from '@/lib/polymarket/polyTypes';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
@@ -11,6 +12,7 @@ import { logDecision } from '@/lib/polymarket/decisionLog';
 import { startScanRun, finishScanRun } from '@/lib/polymarket/scanHistory';
 import { probeSettlementHealth } from '@/lib/polymarket/settlementHealth';
 import { checkRisk } from '@/lib/polymarket/riskManager';
+import { strategyRegistry, StrategyProposal } from '@/lib/polymarket/strategies';
 import {
   ensureInitialized,
   getWallet,
@@ -37,18 +39,15 @@ const ROT_PERIOD_MS =
   Math.max(1, Number.parseInt(process.env.POLY_SCAN_ROTATION_PERIOD_MIN ?? '15', 10) || 15) * 60_000;
 
 const AUTO_TRADE_TOP_N = Math.max(0, Number.parseInt(process.env.POLY_AUTO_TRADE_TOP_N ?? '0', 10) || 0);
-
-// Phase 1.3: kill-switch — POLY_RISK_GATE_ENABLED=0 bypasses checkRisk entirely.
-// Default ON (gate active). Use this if riskManager produces false-rejects in prod
-// before tuning DEFAULT_RISK_CONFIG thresholds.
 const RISK_GATE_ENABLED = (process.env.POLY_RISK_GATE_ENABLED ?? '1') !== '0';
 
-// Type for the candidate queue used in AUTO-TRADE mode.
-// Phase 1.3: include the full PolyOpportunity so checkRisk can read
-// market.liquidityUSD, .endDate, .volume24h at gate time.
+// Phase 2: kill-switch for strategy plugin shadow execution.
+// Default ON. Set to '0' if shadow execution disrupts production for any reason.
+const STRATEGY_SHADOW_ENABLED = (process.env.POLY_STRATEGY_SHADOW_ENABLED ?? '1') !== '0';
+
 interface AutoTradeCandidate {
   gladiator: PolyGladiator;
-  opportunity: PolyOpportunity; // NEW — required by checkRisk
+  opportunity: PolyOpportunity;
   marketId: string;
   division: PolyDivision;
   outcomeId: string;
@@ -69,10 +68,7 @@ async function maybeResetGladiators(
   const STORE_KEY = 'poly_reset_gladiators_token';
   try {
     const { data } = await supabase
-      .from('json_store')
-      .select('value')
-      .eq('key', STORE_KEY)
-      .single();
+      .from('json_store').select('value').eq('key', STORE_KEY).single();
     const lastApplied = (data?.value as string) || null;
     if (lastApplied === token) return { applied: false, reason: 'token_already_applied' };
 
@@ -103,6 +99,50 @@ async function maybeResetGladiators(
   }
 }
 
+/**
+ * Phase 2 — Run all registered strategies on a single opportunity (parallel).
+ * SHADOW mode: results LOGGED + COUNTED but do NOT trigger openPosition.
+ * Phase 3 will activate strategies whose status='paper' or higher.
+ */
+async function runStrategiesShadow(
+  opportunity: PolyOpportunity,
+  division: PolyDivision,
+  shadowStats: Record<string, { yes: number; no: number; skip: number; avgConviction: number; samples: number }>,
+): Promise<void> {
+  if (!STRATEGY_SHADOW_ENABLED) return;
+  const all = strategyRegistry.getAll();
+  if (all.length === 0) return;
+
+  const ctx = {
+    market: opportunity.market,
+    opportunity,
+    division,
+    evaluatedAt: Date.now(),
+  };
+
+  const results = await Promise.allSettled(
+    all.map((p) => p.evaluate(ctx)),
+  );
+
+  for (let i = 0; i < all.length; i++) {
+    const plugin = all[i];
+    const r = results[i];
+    if (r.status !== 'fulfilled') continue;
+    const proposal: StrategyProposal = r.value;
+
+    const id = plugin.metadata.strategyId;
+    if (!shadowStats[id]) {
+      shadowStats[id] = { yes: 0, no: 0, skip: 0, avgConviction: 0, samples: 0 };
+    }
+    const s = shadowStats[id];
+    if (proposal.direction === 'BUY_YES') s.yes++;
+    else if (proposal.direction === 'BUY_NO') s.no++;
+    else s.skip++;
+    s.avgConviction = (s.avgConviction * s.samples + proposal.conviction) / (s.samples + 1);
+    s.samples++;
+  }
+}
+
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
@@ -110,6 +150,13 @@ export async function GET(request: Request) {
   try {
     ensureInitialized();
     await waitForInit();
+
+    // Phase 2: refresh strategy metadata from DB (lazy, 5min TTL).
+    if (STRATEGY_SHADOW_ENABLED) {
+      void strategyRegistry.refreshFromDb().catch((e) =>
+        log.warn('Strategy DB refresh failed (non-blocking)', { error: String(e) }),
+      );
+    }
 
     const wallet = getWallet();
     const gladiators = getGladiators();
@@ -139,9 +186,16 @@ export async function GET(request: Request) {
 
     const autoTradeCandidates: AutoTradeCandidate[] = [];
 
+    // Phase 2: per-strategy aggregate proposal stats for this scan tick.
+    const strategyShadowStats: Record<string, {
+      yes: number; no: number; skip: number; avgConviction: number; samples: number;
+    }> = {};
+
     const envSnapshot = {
       EDGE_MIN, CONF_MIN, AUTO_TRADE_TOP_N,
       RISK_GATE_ENABLED,
+      STRATEGY_SHADOW_ENABLED,
+      registeredStrategies: strategyRegistry.getAll().map((p) => p.metadata.strategyId),
       ACT_THRESHOLD: process.env.POLY_FINAL_ACT_THRESHOLD ?? '45',
       CORRELATION_ENABLED: process.env.POLYMARKET_CORRELATION_ENABLED !== '0',
       GOLDSKY_CORRELATION: process.env.POLYMARKET_GOLDSKY_CORRELATION !== '0',
@@ -164,6 +218,10 @@ export async function GET(request: Request) {
 
         for (const opportunity of result.opportunities) {
           if (opportunity.edgeScore < EDGE_MIN) continue;
+
+          // Phase 2: SHADOW strategy execution (parallel, logging-only).
+          // Runs BEFORE existing gladiator/correlation flow — non-blocking.
+          await runStrategiesShadow(opportunity, division, strategyShadowStats);
 
           const evaluation = evaluateMarket(gladiator, opportunity.market, opportunity);
           const correlated = await correlateDecision(gladiator, opportunity.market, evaluation, opportunity);
@@ -204,7 +262,7 @@ export async function GET(request: Request) {
             if (AUTO_TRADE_TOP_N > 0) {
               autoTradeCandidates.push({
                 gladiator,
-                opportunity, // NEW Phase 1.3 — for risk gate
+                opportunity,
                 marketId: opportunity.marketId,
                 division,
                 outcomeId: resolvedOutcomeId,
@@ -243,14 +301,13 @@ export async function GET(request: Request) {
       }
     }
 
-    // ─── AUTO-TRADE: rank + risk gate + top-N openPosition ───
     let autoTradeOpened = 0;
     let autoTradePromoted = 0;
-    let autoTradeRiskRejected = 0; // NEW Phase 1.3
+    let autoTradeRiskRejected = 0;
     const autoTradeOpened_details: Array<{
       marketId: string; division: string; conviction: number; capital: number;
     }> = [];
-    const riskRejectionReasons: Record<string, number> = {}; // NEW
+    const riskRejectionReasons: Record<string, number> = {};
 
     if (AUTO_TRADE_TOP_N > 0 && autoTradeCandidates.length > 0) {
       autoTradeCandidates.sort((a, b) => {
@@ -268,8 +325,6 @@ export async function GET(request: Request) {
       });
 
       for (const c of top) {
-        // Phase 1.3 RISK GATE — runs BEFORE force-promote + openPosition.
-        // Bypassable via POLY_RISK_GATE_ENABLED=0.
         if (RISK_GATE_ENABLED) {
           try {
             const risk = checkRisk(wallet, c.opportunity, c.confidence, c.edgeScore);
@@ -277,21 +332,13 @@ export async function GET(request: Request) {
               autoTradeRiskRejected++;
               riskRejectionReasons[risk.reason] = (riskRejectionReasons[risk.reason] || 0) + 1;
               log.warn('[AUTO-TRADE] Risk gate REJECTED candidate', {
-                marketId: c.marketId,
-                division: c.division,
-                reason: risk.reason,
-                riskLevel: risk.riskLevel,
+                marketId: c.marketId, division: c.division,
+                reason: risk.reason, riskLevel: risk.riskLevel,
                 conviction: c.conviction.toFixed(1),
               });
-              continue; // skip this candidate
+              continue;
             }
-            log.info('[AUTO-TRADE] Risk gate APPROVED', {
-              marketId: c.marketId,
-              riskLevel: risk.riskLevel,
-              maxBetSize: risk.maxBetSize,
-            });
           } catch (e) {
-            // Defensive: if risk check throws, fail-safe = skip the candidate.
             log.warn('[AUTO-TRADE] Risk check threw, skipping candidate', {
               marketId: c.marketId, error: String(e),
             });
@@ -301,15 +348,10 @@ export async function GET(request: Request) {
           }
         }
 
-        // Force-promote so resolve cron closes positions naturally.
         if (!c.gladiator.isLive) {
           c.gladiator.isLive = true;
           c.gladiator.status = 'ACTIVE';
           autoTradePromoted++;
-          log.warn('[AUTO-TRADE] Force-promoted gladiator', {
-            id: c.gladiator.id, division: c.division,
-            reason: 'top-N AUTO-TRADE selection (risk-approved)',
-          });
         }
 
         const position = openPosition(
@@ -322,16 +364,6 @@ export async function GET(request: Request) {
           autoTradeOpened_details.push({
             marketId: c.marketId, division: c.division,
             conviction: c.conviction, capital: position.capitalAllocated,
-          });
-          log.warn('[AUTO-TRADE] Position opened', {
-            marketId: c.marketId, division: c.division, gladiator: c.gladiator.id,
-            conviction: c.conviction.toFixed(1), confidence: c.confidence,
-            edgeScore: c.edgeScore, direction: c.direction,
-            capital: position.capitalAllocated,
-          });
-        } else {
-          log.info('[AUTO-TRADE] openPosition skipped (loss limit / max positions / size)', {
-            marketId: c.marketId, division: c.division,
           });
         }
       }
@@ -363,6 +395,11 @@ export async function GET(request: Request) {
         riskRejected: autoTradeRiskRejected,
         riskRejectionReasons,
         details: autoTradeOpened_details,
+      },
+      strategyShadow: {
+        enabled: STRATEGY_SHADOW_ENABLED,
+        registeredCount: strategyRegistry.getAll().length,
+        perStrategy: strategyShadowStats,
       },
       timestamp: Date.now(),
     });
