@@ -1,20 +1,15 @@
 // ============================================================
-// Strategy Registry — Phase 2
-// In-memory registry of strategy plugins. Hydrates metadata from
-// poly_strategies Supabase table (lazy refresh, 5-min TTL).
+// Strategy Registry — Phase 2 (in-memory only)
+// DB hydration deferred to Phase 3.
 // ============================================================
 
-import type { StrategyPlugin, StrategyStatus, StrategyMetadata } from './types';
-import { supabase } from '@/lib/store/db';
+import type { StrategyPlugin, StrategyStatus } from './types';
 import { createLogger } from '@/lib/core/logger';
 
 const log = createLogger('StrategyRegistry');
 
-const METADATA_REFRESH_MS = 5 * 60_000;
-
 class StrategyRegistry {
   private strategies = new Map<string, StrategyPlugin>();
-  private lastDbRefresh = 0;
 
   register(plugin: StrategyPlugin): void {
     if (this.strategies.has(plugin.metadata.strategyId)) {
@@ -38,57 +33,8 @@ class StrategyRegistry {
   }
 
   getByStatus(...statuses: StrategyStatus[]): StrategyPlugin[] {
-    const set = new Set(statuses);
+    const set = new Set<StrategyStatus>(statuses);
     return this.getAll().filter((p) => set.has(p.metadata.status));
-  }
-
-  async refreshFromDb(force = false): Promise<void> {
-    const now = Date.now();
-    if (!force && now - this.lastDbRefresh < METADATA_REFRESH_MS) return;
-    this.lastDbRefresh = now;
-
-    try {
-      const { data, error } = await supabase
-        .from('poly_strategies')
-        .select(
-          'strategy_id, display_name, hypothesis, status, bankroll_share_pct, kelly_fraction, min_edge_bps, max_position_usdc, gate_min_sample, gate_min_wr_wilson_lower, gate_min_pf, gate_max_dd_pct, config_json',
-        );
-      if (error) {
-        log.warn('Strategy DB refresh failed', { error: String(error) });
-        return;
-      }
-      if (!data) return;
-
-      let updated = 0;
-      for (const row of data) {
-        const plugin = this.strategies.get(row.strategy_id as string);
-        if (!plugin) continue;
-        const next: StrategyMetadata = {
-          strategyId: row.strategy_id as string,
-          displayName: (row.display_name as string) ?? plugin.metadata.displayName,
-          hypothesis: (row.hypothesis as string) ?? plugin.metadata.hypothesis,
-          status: (row.status as StrategyStatus) ?? plugin.metadata.status,
-          bankrollSharePct: Number(row.bankroll_share_pct ?? plugin.metadata.bankrollSharePct),
-          kellyFraction: Number(row.kelly_fraction ?? plugin.metadata.kellyFraction),
-          minEdgeBps: Number(row.min_edge_bps ?? plugin.metadata.minEdgeBps),
-          maxPositionUsdc: Number(row.max_position_usdc ?? plugin.metadata.maxPositionUsdc),
-          gates: {
-            minSample: Number(row.gate_min_sample ?? plugin.metadata.gates.minSample),
-            minWrWilsonLower: Number(
-              row.gate_min_wr_wilson_lower ?? plugin.metadata.gates.minWrWilsonLower,
-            ),
-            minPf: Number(row.gate_min_pf ?? plugin.metadata.gates.minPf),
-            maxDdPct: Number(row.gate_max_dd_pct ?? plugin.metadata.gates.maxDdPct),
-          },
-          configJson: (row.config_json as Record<string, unknown>) ?? plugin.metadata.configJson,
-        };
-        plugin.metadata = next;
-        updated++;
-      }
-      if (updated > 0) log.info('Strategy metadata refreshed from DB', { updated });
-    } catch (e) {
-      log.warn('Strategy DB refresh threw (non-blocking)', { error: String(e) });
-    }
   }
 }
 

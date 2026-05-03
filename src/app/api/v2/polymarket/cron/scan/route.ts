@@ -1,21 +1,16 @@
 // GET /api/v2/polymarket/cron/scan — Auto scan + evaluate + phantom bet placement
 //                                  + AUTO-TRADE top-N by conviction (2026-05-02)
 //                                  + riskManager guard (2026-05-03 Phase 1.3)
-//                                  + strategy plugin shadow (2026-05-03 Phase 2)
 import { NextResponse } from 'next/server';
-import { PolyDivision } from '@/lib/polymarket/polyTypes';
-import type { PolyOpportunity } from '@/lib/polymarket/polyTypes';
+import { PolyDivision, PolyOpportunity } from '@/lib/polymarket/polyTypes';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
-import { evaluateMarket } from '@/lib/polymarket/polyGladiators';
-import type { PolyGladiator } from '@/lib/polymarket/polyGladiators';
+import { evaluateMarket, PolyGladiator } from '@/lib/polymarket/polyGladiators';
 import { openPosition } from '@/lib/polymarket/polyWallet';
 import { correlateDecision } from '@/lib/polymarket/correlationLayer';
 import { logDecision } from '@/lib/polymarket/decisionLog';
 import { startScanRun, finishScanRun } from '@/lib/polymarket/scanHistory';
 import { probeSettlementHealth } from '@/lib/polymarket/settlementHealth';
 import { checkRisk } from '@/lib/polymarket/riskManager';
-import { strategyRegistry } from '@/lib/polymarket/strategies';
-import type { StrategyProposal } from '@/lib/polymarket/strategies';
 import {
   ensureInitialized,
   getWallet,
@@ -43,7 +38,6 @@ const ROT_PERIOD_MS =
 
 const AUTO_TRADE_TOP_N = Math.max(0, Number.parseInt(process.env.POLY_AUTO_TRADE_TOP_N ?? '0', 10) || 0);
 const RISK_GATE_ENABLED = (process.env.POLY_RISK_GATE_ENABLED ?? '1') !== '0';
-const STRATEGY_SHADOW_ENABLED = (process.env.POLY_STRATEGY_SHADOW_ENABLED ?? '1') !== '0';
 
 interface AutoTradeCandidate {
   gladiator: PolyGladiator;
@@ -99,45 +93,6 @@ async function maybeResetGladiators(
   }
 }
 
-async function runStrategiesShadow(
-  opportunity: PolyOpportunity,
-  division: PolyDivision,
-  shadowStats: Record<string, { yes: number; no: number; skip: number; avgConviction: number; samples: number }>,
-): Promise<void> {
-  if (!STRATEGY_SHADOW_ENABLED) return;
-  const all = strategyRegistry.getAll();
-  if (all.length === 0) return;
-
-  const ctx = {
-    market: opportunity.market,
-    opportunity,
-    division,
-    evaluatedAt: Date.now(),
-  };
-
-  const results = await Promise.allSettled(
-    all.map((p) => p.evaluate(ctx)),
-  );
-
-  for (let i = 0; i < all.length; i++) {
-    const plugin = all[i];
-    const r = results[i];
-    if (r.status !== 'fulfilled') continue;
-    const proposal: StrategyProposal = r.value;
-
-    const id = plugin.metadata.strategyId;
-    if (!shadowStats[id]) {
-      shadowStats[id] = { yes: 0, no: 0, skip: 0, avgConviction: 0, samples: 0 };
-    }
-    const s = shadowStats[id];
-    if (proposal.direction === 'BUY_YES') s.yes++;
-    else if (proposal.direction === 'BUY_NO') s.no++;
-    else s.skip++;
-    s.avgConviction = (s.avgConviction * s.samples + proposal.conviction) / (s.samples + 1);
-    s.samples++;
-  }
-}
-
 export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) return authError;
@@ -145,12 +100,6 @@ export async function GET(request: Request) {
   try {
     ensureInitialized();
     await waitForInit();
-
-    if (STRATEGY_SHADOW_ENABLED) {
-      void strategyRegistry.refreshFromDb().catch((e) =>
-        log.warn('Strategy DB refresh failed (non-blocking)', { error: String(e) }),
-      );
-    }
 
     const wallet = getWallet();
     const gladiators = getGladiators();
@@ -180,15 +129,9 @@ export async function GET(request: Request) {
 
     const autoTradeCandidates: AutoTradeCandidate[] = [];
 
-    const strategyShadowStats: Record<string, {
-      yes: number; no: number; skip: number; avgConviction: number; samples: number;
-    }> = {};
-
     const envSnapshot = {
       EDGE_MIN, CONF_MIN, AUTO_TRADE_TOP_N,
       RISK_GATE_ENABLED,
-      STRATEGY_SHADOW_ENABLED,
-      registeredStrategies: strategyRegistry.getAll().map((p) => p.metadata.strategyId),
       ACT_THRESHOLD: process.env.POLY_FINAL_ACT_THRESHOLD ?? '45',
       CORRELATION_ENABLED: process.env.POLYMARKET_CORRELATION_ENABLED !== '0',
       GOLDSKY_CORRELATION: process.env.POLYMARKET_GOLDSKY_CORRELATION !== '0',
@@ -211,8 +154,6 @@ export async function GET(request: Request) {
 
         for (const opportunity of result.opportunities) {
           if (opportunity.edgeScore < EDGE_MIN) continue;
-
-          await runStrategiesShadow(opportunity, division, strategyShadowStats);
 
           const evaluation = evaluateMarket(gladiator, opportunity.market, opportunity);
           const correlated = await correlateDecision(gladiator, opportunity.market, evaluation, opportunity);
@@ -252,10 +193,8 @@ export async function GET(request: Request) {
 
             if (AUTO_TRADE_TOP_N > 0) {
               autoTradeCandidates.push({
-                gladiator,
-                opportunity,
-                marketId: opportunity.marketId,
-                division,
+                gladiator, opportunity,
+                marketId: opportunity.marketId, division,
                 outcomeId: resolvedOutcomeId,
                 direction: evaluation.direction,
                 entryPrice: bet.entryPrice,
@@ -279,10 +218,6 @@ export async function GET(request: Request) {
             }
 
             betsPlaced++;
-            log.info('Phantom bet placed', {
-              gladiator: gladiator.id, marketId: opportunity.marketId,
-              direction: evaluation.direction, confidence: evaluation.confidence,
-            });
           }
         }
       } catch (err) {
@@ -386,11 +321,6 @@ export async function GET(request: Request) {
         riskRejected: autoTradeRiskRejected,
         riskRejectionReasons,
         details: autoTradeOpened_details,
-      },
-      strategyShadow: {
-        enabled: STRATEGY_SHADOW_ENABLED,
-        registeredCount: strategyRegistry.getAll().length,
-        perStrategy: strategyShadowStats,
       },
       timestamp: Date.now(),
     });
