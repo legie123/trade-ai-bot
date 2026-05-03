@@ -4,7 +4,7 @@
 // poly_strategies Supabase table (lazy refresh, 5-min TTL).
 // ============================================================
 
-import { StrategyPlugin, StrategyStatus, StrategyMetadata } from './types';
+import type { StrategyPlugin, StrategyStatus, StrategyMetadata } from './types';
 import { supabase } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 
@@ -16,7 +16,6 @@ class StrategyRegistry {
   private strategies = new Map<string, StrategyPlugin>();
   private lastDbRefresh = 0;
 
-  /** Register a plugin. Called at module load (see strategies/index.ts). */
   register(plugin: StrategyPlugin): void {
     if (this.strategies.has(plugin.metadata.strategyId)) {
       log.warn('Strategy already registered, overwriting', {
@@ -43,12 +42,6 @@ class StrategyRegistry {
     return this.getAll().filter((p) => set.has(p.metadata.status));
   }
 
-  /**
-   * Refresh in-memory metadata from poly_strategies table.
-   * Updates status / gates / kellyFraction / configJson on registered plugins.
-   * Plugins not in DB are left at their hardcoded defaults.
-   * Plugins in DB but not registered are silently ignored.
-   */
   async refreshFromDb(force = false): Promise<void> {
     const now = Date.now();
     if (!force && now - this.lastDbRefresh < METADATA_REFRESH_MS) return;

@@ -1,19 +1,8 @@
 // ============================================================
-// Null Baseline Strategy — Phase 2
-//
-// Random direction (50/50) with fixed conviction. Acts as the control
-// arm for measuring REAL edge of other strategies via statistical
-// significance testing.
-//
-// Hypothesis: ~50% WR over large sample (assumes binary markets).
-// If a candidate strategy fails to outperform null_baseline statistically,
-// it has no edge — promotion blocked.
-//
-// Status: shadow (no paper / no real positions) — logging only until
-// Phase 3 wires the strategy decision flow.
+// Null Baseline Strategy — Phase 2 (random control)
 // ============================================================
 
-import { StrategyPlugin, StrategyContext, StrategyProposal } from './types';
+import type { StrategyPlugin, StrategyContext, StrategyProposal } from './types';
 import { strategyRegistry } from './registry';
 
 const plugin: StrategyPlugin = {
@@ -37,8 +26,6 @@ const plugin: StrategyPlugin = {
   },
 
   async evaluate(ctx: StrategyContext): Promise<StrategyProposal> {
-    // Skip clearly broken markets even for the random baseline — don't
-    // contaminate the control arm with garbage data.
     if (!ctx.market.active || !ctx.market.outcomes || ctx.market.outcomes.length < 2) {
       return {
         direction: 'SKIP',

@@ -3,16 +3,19 @@
 //                                  + riskManager guard (2026-05-03 Phase 1.3)
 //                                  + strategy plugin shadow (2026-05-03 Phase 2)
 import { NextResponse } from 'next/server';
-import { PolyDivision, PolyOpportunity } from '@/lib/polymarket/polyTypes';
+import { PolyDivision } from '@/lib/polymarket/polyTypes';
+import type { PolyOpportunity } from '@/lib/polymarket/polyTypes';
 import { scanDivision } from '@/lib/polymarket/marketScanner';
-import { evaluateMarket, PolyGladiator } from '@/lib/polymarket/polyGladiators';
+import { evaluateMarket } from '@/lib/polymarket/polyGladiators';
+import type { PolyGladiator } from '@/lib/polymarket/polyGladiators';
 import { openPosition } from '@/lib/polymarket/polyWallet';
 import { correlateDecision } from '@/lib/polymarket/correlationLayer';
 import { logDecision } from '@/lib/polymarket/decisionLog';
 import { startScanRun, finishScanRun } from '@/lib/polymarket/scanHistory';
 import { probeSettlementHealth } from '@/lib/polymarket/settlementHealth';
 import { checkRisk } from '@/lib/polymarket/riskManager';
-import { strategyRegistry, StrategyProposal } from '@/lib/polymarket/strategies';
+import { strategyRegistry } from '@/lib/polymarket/strategies';
+import type { StrategyProposal } from '@/lib/polymarket/strategies';
 import {
   ensureInitialized,
   getWallet,
@@ -40,9 +43,6 @@ const ROT_PERIOD_MS =
 
 const AUTO_TRADE_TOP_N = Math.max(0, Number.parseInt(process.env.POLY_AUTO_TRADE_TOP_N ?? '0', 10) || 0);
 const RISK_GATE_ENABLED = (process.env.POLY_RISK_GATE_ENABLED ?? '1') !== '0';
-
-// Phase 2: kill-switch for strategy plugin shadow execution.
-// Default ON. Set to '0' if shadow execution disrupts production for any reason.
 const STRATEGY_SHADOW_ENABLED = (process.env.POLY_STRATEGY_SHADOW_ENABLED ?? '1') !== '0';
 
 interface AutoTradeCandidate {
@@ -99,11 +99,6 @@ async function maybeResetGladiators(
   }
 }
 
-/**
- * Phase 2 — Run all registered strategies on a single opportunity (parallel).
- * SHADOW mode: results LOGGED + COUNTED but do NOT trigger openPosition.
- * Phase 3 will activate strategies whose status='paper' or higher.
- */
 async function runStrategiesShadow(
   opportunity: PolyOpportunity,
   division: PolyDivision,
@@ -151,7 +146,6 @@ export async function GET(request: Request) {
     ensureInitialized();
     await waitForInit();
 
-    // Phase 2: refresh strategy metadata from DB (lazy, 5min TTL).
     if (STRATEGY_SHADOW_ENABLED) {
       void strategyRegistry.refreshFromDb().catch((e) =>
         log.warn('Strategy DB refresh failed (non-blocking)', { error: String(e) }),
@@ -186,7 +180,6 @@ export async function GET(request: Request) {
 
     const autoTradeCandidates: AutoTradeCandidate[] = [];
 
-    // Phase 2: per-strategy aggregate proposal stats for this scan tick.
     const strategyShadowStats: Record<string, {
       yes: number; no: number; skip: number; avgConviction: number; samples: number;
     }> = {};
@@ -219,8 +212,6 @@ export async function GET(request: Request) {
         for (const opportunity of result.opportunities) {
           if (opportunity.edgeScore < EDGE_MIN) continue;
 
-          // Phase 2: SHADOW strategy execution (parallel, logging-only).
-          // Runs BEFORE existing gladiator/correlation flow — non-blocking.
           await runStrategiesShadow(opportunity, division, strategyShadowStats);
 
           const evaluation = evaluateMarket(gladiator, opportunity.market, opportunity);
