@@ -13,7 +13,7 @@ REGION="europe-west1"
 # to trade-ai-657910053930 (canonical service per deploy.yml + memory).
 # Previous URL pointed to a legacy/secondary service whose state diverges
 # from the live wallet/decisions. Re-running this script idempotently
-# updates all 8 jobs to use the canonical service.
+# updates all jobs to use the canonical service.
 SERVICE_URL="https://trade-ai-657910053930.europe-west1.run.app"
 CRON_SECRET="tradeai_cron_secret_2026"
 
@@ -135,7 +135,7 @@ gcloud scheduler jobs create http trade-ai-moltbook \
     --quiet
 echo "     OK"
 
-echo "  -> Job: trade-ai-polymarket-resolve (every 10 min) [NEW]"
+echo "  -> Job: trade-ai-polymarket-resolve (every 10 min)"
 gcloud scheduler jobs delete trade-ai-polymarket-resolve --location="$REGION" --quiet 2>/dev/null || true
 gcloud scheduler jobs create http trade-ai-polymarket-resolve \
     --location="$REGION" \
@@ -148,6 +148,52 @@ gcloud scheduler jobs create http trade-ai-polymarket-resolve \
     --quiet
 echo "     OK"
 
+# ============================================================
+# Phase 5 Paper Forward 30 zile (2026-05-03 → 2026-06-02)
+# ============================================================
+
+echo "  -> Job: trade-ai-poly-daily-snapshot (daily 06:00 UTC) [Phase 5]"
+gcloud scheduler jobs delete trade-ai-poly-daily-snapshot --location="$REGION" --quiet 2>/dev/null || true
+gcloud scheduler jobs create http trade-ai-poly-daily-snapshot \
+    --location="$REGION" \
+    --schedule="0 6 * * *" \
+    --time-zone="UTC" \
+    --uri="${SERVICE_URL}/api/v2/polymarket/cron/daily-snapshot" \
+    --http-method=GET \
+    --headers="Authorization=Bearer ${CRON_SECRET}" \
+    --attempt-deadline=120s \
+    --description="Phase 5: Daily wallet+activity+DD snapshot to poly_paper_forward_snapshots" \
+    --quiet
+echo "     OK"
+
+echo "  -> Job: trade-ai-poly-weekly-review (Monday 07:00 UTC) [Phase 5]"
+gcloud scheduler jobs delete trade-ai-poly-weekly-review --location="$REGION" --quiet 2>/dev/null || true
+gcloud scheduler jobs create http trade-ai-poly-weekly-review \
+    --location="$REGION" \
+    --schedule="0 7 * * 1" \
+    --time-zone="UTC" \
+    --uri="${SERVICE_URL}/api/v2/polymarket/cron/weekly-review" \
+    --http-method=GET \
+    --headers="Authorization=Bearer ${CRON_SECRET}" \
+    --attempt-deadline=180s \
+    --description="Phase 5: Weekly aggregate review of last 7d → poly_weekly_reports + verdict" \
+    --quiet
+echo "     OK"
+
+echo "  -> Job: trade-ai-poly-day30-validator (June 2, 08:00 UTC) [Phase 5 final]"
+gcloud scheduler jobs delete trade-ai-poly-day30-validator --location="$REGION" --quiet 2>/dev/null || true
+gcloud scheduler jobs create http trade-ai-poly-day30-validator \
+    --location="$REGION" \
+    --schedule="0 8 2 6 *" \
+    --time-zone="UTC" \
+    --uri="${SERVICE_URL}/api/v2/polymarket/cron/day30-validator" \
+    --http-method=GET \
+    --headers="Authorization=Bearer ${CRON_SECRET}" \
+    --attempt-deadline=240s \
+    --description="Phase 5: Day-30 final validator on 2026-06-02 → PROMOTE_TO_PILOT / EXTEND_PAPER / KILL_AND_RESEARCH" \
+    --quiet
+echo "     OK"
+
 echo ""
 echo "[5/6] Verific joburile create..."
 echo ""
@@ -156,27 +202,31 @@ gcloud scheduler jobs list --location="$REGION" --format="table(name,schedule,st
 echo ""
 echo "[6/6] Trigger manual pe toate joburile (prima rulare)..."
 echo ""
-for JOB in trade-ai-cron-loop trade-ai-polymarket-scan trade-ai-polymarket-mtm trade-ai-sentiment trade-ai-auto-promote trade-ai-positions trade-ai-moltbook trade-ai-polymarket-resolve; do
+for JOB in trade-ai-cron-loop trade-ai-polymarket-scan trade-ai-polymarket-mtm trade-ai-sentiment trade-ai-auto-promote trade-ai-positions trade-ai-moltbook trade-ai-polymarket-resolve trade-ai-poly-daily-snapshot trade-ai-poly-weekly-review; do
     echo "  -> Trigger: $JOB"
     gcloud scheduler jobs run "$JOB" --location="$REGION" --quiet 2>/dev/null || echo "     (skip - va rula la urmatorul interval)"
 done
+# Note: day30-validator NU se triggeruieste manual — fires automat pe 2026-06-02
 
 echo ""
 echo "=========================================="
-echo "  DONE! 8 cron jobs create si pornite."
+echo "  DONE! 11 cron jobs create si pornite."
 echo "=========================================="
 echo ""
 echo "Jobs active (TOATE pe trade-ai-657910053930 — canonical):"
-echo "  - Cron loop:           every 5 min"
-echo "  - Polymarket scan:     every 15 min"
-echo "  - Polymarket MTM:      every 30 min"
-echo "  - Polymarket resolve:  every 10 min   [settlement loop, A+B paths]"
-echo "  - Sentiment:           every 30 min"
-echo "  - Auto-promote:        every hour"
-echo "  - Positions:           every 5 min"
-echo "  - Moltbook:            every 30 min"
+echo "  - Cron loop:               every 5 min"
+echo "  - Polymarket scan:         every 15 min"
+echo "  - Polymarket MTM:          every 30 min"
+echo "  - Polymarket resolve:      every 10 min   [settlement loop]"
+echo "  - Sentiment:               every 30 min"
+echo "  - Auto-promote:            every hour"
+echo "  - Positions:               every 5 min"
+echo "  - Moltbook:                every 30 min"
+echo "  - [P5] Daily snapshot:     daily 06:00 UTC"
+echo "  - [P5] Weekly review:      Monday 07:00 UTC"
+echo "  - [P5] Day-30 validator:   2026-06-02 08:00 UTC (ONE-SHOT)"
 echo ""
-echo "NOTA: 8 joburi vechi pe antigravity-trade au fost LEFT INTACT."
+echo "NOTA: joburi vechi pe antigravity-trade au fost LEFT INTACT."
 echo "Daca vrei sa le stergi: gcloud scheduler jobs delete <job-name> --location=$REGION"
 echo ""
 echo "Verifica in GCP Console:"
