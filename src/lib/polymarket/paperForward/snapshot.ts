@@ -6,6 +6,7 @@
 import { supabase } from '@/lib/store/db';
 import { createLogger } from '@/lib/core/logger';
 import { getWallet, getGladiators } from '@/lib/polymarket/polyState';
+import { calculateUnrealizedPnL } from '@/lib/polymarket/polyWallet';
 
 const log = createLogger('PaperForwardSnapshot');
 
@@ -38,19 +39,11 @@ export async function captureDailySnapshot(): Promise<SnapshotResult> {
   const wallet = getWallet();
   const gladiators = getGladiators();
 
-  const openPositions = wallet.openPositions?.length ?? 0;
+  const openPositions = wallet.allPositions?.length ?? 0;
   const walletBalance = wallet.totalBalance ?? 0;
-  const walletInvested =
-    (wallet.openPositions ?? []).reduce(
-      (sum: number, p: { capitalAllocated?: number }) => sum + (p.capitalAllocated ?? 0),
-      0,
-    );
-  const walletUnrealizedPnl =
-    (wallet.openPositions ?? []).reduce(
-      (sum: number, p: { unrealizedPnl?: number }) => sum + (p.unrealizedPnl ?? 0),
-      0,
-    );
-  const walletRealizedPnl = wallet.totalPnl ?? 0;
+  const walletInvested = wallet.totalInvested ?? 0;
+  const walletUnrealizedPnl = calculateUnrealizedPnL(wallet);
+  const walletRealizedPnl = wallet.totalRealizedPnL ?? 0;
 
   // Last 24h activity from polymarket_decisions
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
